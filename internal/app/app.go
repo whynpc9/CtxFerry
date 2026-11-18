@@ -20,10 +20,11 @@ import (
 type Error struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	Details any    `json:"details,omitempty"`
 }
 
 func (e *Error) Error() string        { return e.Message }
-func Fail(code, message string) error { return &Error{code, message} }
+func Fail(code, message string) error { return &Error{Code: code, Message: message} }
 func Classify(err error) *Error {
 	var e *Error
 	if errors.As(err, &e) {
@@ -31,15 +32,15 @@ func Classify(err error) *Error {
 	}
 	switch {
 	case errors.Is(err, store.ErrNotInitialized):
-		return &Error{"not-initialized", err.Error()}
+		return &Error{Code: "not-initialized", Message: err.Error()}
 	case errors.Is(err, store.ErrUnsupportedSchema):
-		return &Error{"unsupported-schema", err.Error()}
+		return &Error{Code: "unsupported-schema", Message: err.Error()}
 	}
 	var sqliteErr interface{ Code() int }
 	if errors.As(err, &sqliteErr) && (sqliteErr.Code()&255 == 5 || sqliteErr.Code()&255 == 6) {
-		return &Error{"store-busy", "local store is busy; retry the command"}
+		return &Error{Code: "store-busy", Message: "local store is busy; retry the command"}
 	}
-	return &Error{"store-error", err.Error()}
+	return &Error{Code: "store-error", Message: err.Error()}
 }
 
 type Workspace struct {
@@ -59,11 +60,13 @@ type Project struct {
 	CreatedAt string `json:"createdAt"`
 }
 type Binding struct {
-	ID        string `json:"id"`
-	ProjectID string `json:"projectId"`
-	DeviceID  string `json:"deviceId"`
-	Path      string `json:"path"`
-	CreatedAt string `json:"createdAt"`
+	ID           string `json:"id"`
+	ProjectID    string `json:"projectId"`
+	DeviceID     string `json:"deviceId"`
+	Path         string `json:"path"`
+	CreatedAt    string `json:"createdAt"`
+	MembershipID string `json:"membershipId,omitempty"`
+	RepositoryID string `json:"repositoryId,omitempty"`
 }
 type InitResult struct {
 	Workspace Workspace `json:"workspace"`
@@ -79,8 +82,9 @@ type ListResult struct {
 	Projects []Project `json:"projects"`
 }
 type InspectResult struct {
-	Project  Project   `json:"project"`
-	Bindings []Binding `json:"bindings"`
+	Project    Project     `json:"project"`
+	Bindings   []Binding   `json:"bindings"`
+	Resolution *Resolution `json:"resolution"`
 }
 type App struct{ DataDir string }
 
@@ -189,6 +193,9 @@ var slugRuns = regexp.MustCompile(`[^a-z0-9]+`)
 var validSlug = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
 func (a App) BindProject(ctx context.Context, path, slug string) (BindResult, error) {
+	return a.BindProjectWith(ctx, path, slug, "", "", nil)
+}
+func (a App) BindProjectWith(ctx context.Context, path, slug, selector, repository string, remotes []string) (BindResult, error) {
 	var r BindResult
 	path, e := canonical(path)
 	if e != nil {
@@ -203,6 +210,21 @@ func (a App) BindProject(ctx context.Context, path, slug string) (BindResult, er
 	}
 	if contains(path, root) {
 		return r, Fail("invalid-path", "application data directory must be outside the bound directory")
+	}
+	if selector != "" && slug != "" {
+		return r, Fail("usage", "project and slug cannot be combined")
+	}
+	git := discoverGit(ctx, path)
+	if repository != "" && git.CommonDir == "" {
+		return r, Fail("invalid-repository", "repository requires a Git checkout")
+	}
+	aliases := []string{}
+	for _, raw := range remotes {
+		remote, err := normalizeRemote(raw)
+		if err != nil {
+			return r, err
+		}
+		aliases = append(aliases, remote)
 	}
 	explicit := slug != ""
 	if explicit && (len(slug) > 63 || !validSlug.MatchString(slug)) {
@@ -238,34 +260,43 @@ func (a App) BindProject(ctx context.Context, path, slug string) (BindResult, er
 		}
 		err := c.QueryRowContext(ctx, `SELECT p.id,p.slug,p.created_at,b.id,b.project_id,b.device_id,b.path,b.created_at FROM checkout_bindings b JOIN projects p ON p.id=b.project_id WHERE b.device_id=? AND b.path=?`, did, path).Scan(&r.Project.ID, &r.Project.Slug, &r.Project.CreatedAt, &r.Binding.ID, &r.Binding.ProjectID, &r.Binding.DeviceID, &r.Binding.Path, &r.Binding.CreatedAt)
 		if err == nil {
-			if explicit && slug != r.Project.Slug {
+			if (explicit && slug != r.Project.Slug) || (selector != "" && selector != r.Project.ID && selector != r.Project.Slug) {
 				return Fail("binding-conflict", "directory is already bound to a different slug")
 			}
-			return nil
+			return registerGit(ctx, c, &r, git, repository, aliases)
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
+		}
+		if selector != "" {
+			p, err := selectProject(ctx, c, selector)
+			if err != nil {
+				return err
+			}
+			pid, slug, stamp = p.ID, p.Slug, p.CreatedAt
 		}
 		var count int
 		if err = c.QueryRowContext(ctx, "SELECT count(*) FROM projects WHERE slug=?", slug).Scan(&count); err != nil {
 			return err
 		}
-		if count > 0 {
+		if count > 0 && selector == "" {
 			if explicit {
 				return Fail("slug-conflict", "slug is already in use")
 			}
 			slug = strings.TrimRight(slug[:min(54, len(slug))], "-") + "-" + pid[:8]
 		}
 		r.Project = Project{pid, slug, stamp}
-		r.Binding = Binding{bid, pid, did, path, stamp}
-		if _, err = c.ExecContext(ctx, "INSERT INTO projects VALUES(?,?,?)", pid, slug, stamp); err != nil {
-			return err
+		r.Binding = Binding{ID: bid, ProjectID: pid, DeviceID: did, Path: path, CreatedAt: now()}
+		if selector == "" {
+			if _, err = c.ExecContext(ctx, "INSERT INTO projects VALUES(?,?,?)", pid, slug, stamp); err != nil {
+				return err
+			}
 		}
-		if _, err = c.ExecContext(ctx, "INSERT INTO checkout_bindings VALUES(?,?,?,?,?)", bid, pid, did, path, stamp); err != nil {
+		if _, err = c.ExecContext(ctx, "INSERT INTO checkout_bindings(id,project_id,device_id,path,created_at) VALUES(?,?,?,?,?)", bid, pid, did, path, r.Binding.CreatedAt); err != nil {
 			return err
 		}
 		r.Created = true
-		return nil
+		return registerGit(ctx, c, &r, git, repository, aliases)
 	})
 	return r, e
 }
@@ -297,36 +328,12 @@ func (a App) InspectProject(ctx context.Context, selector, cwd string) (InspectR
 		return r, e
 	}
 	defer db.Close()
-	if selector == "" {
-		path, err := canonical(cwd)
-		if err != nil {
-			return r, err
-		}
-		rows, err := db.QueryContext(ctx, "SELECT project_id,path FROM checkout_bindings")
-		if err != nil {
-			return r, err
-		}
-		best := ""
-		for rows.Next() {
-			var id, p string
-			if err = rows.Scan(&id, &p); err != nil {
-				rows.Close()
-				return r, err
-			}
-			if contains(p, path) && len(p) > len(best) {
-				selector = id
-				best = p
-			}
-		}
-		err = rows.Err()
-		rows.Close()
-		if err != nil {
-			return r, err
-		}
-		if selector == "" {
-			return r, Fail("project-unbound", "current directory has no project binding")
-		}
+	resolution, err := resolveProject(ctx, db, selector, cwd)
+	r.Resolution = &resolution
+	if err != nil {
+		return r, err
 	}
+	selector = resolution.Project.ID
 	e = db.QueryRowContext(ctx, "SELECT id,slug,created_at FROM projects WHERE id=? OR slug=? ORDER BY CASE WHEN id=? THEN 0 ELSE 1 END LIMIT 1", selector, selector, selector).Scan(&r.Project.ID, &r.Project.Slug, &r.Project.CreatedAt)
 	if errors.Is(e, sql.ErrNoRows) {
 		return r, Fail("project-not-found", fmt.Sprintf("project %q was not found", selector))
@@ -334,14 +341,14 @@ func (a App) InspectProject(ctx context.Context, selector, cwd string) (InspectR
 	if e != nil {
 		return r, e
 	}
-	rows, e := db.QueryContext(ctx, "SELECT id,project_id,device_id,path,created_at FROM checkout_bindings WHERE project_id=? ORDER BY path", r.Project.ID)
+	rows, e := db.QueryContext(ctx, "SELECT b.id,b.project_id,b.device_id,b.path,b.created_at,COALESCE(b.membership_id,''),COALESCE(m.repository_id,'') FROM checkout_bindings b LEFT JOIN memberships m ON m.id=b.membership_id WHERE b.project_id=? ORDER BY b.path", r.Project.ID)
 	if e != nil {
 		return r, e
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var b Binding
-		if e = rows.Scan(&b.ID, &b.ProjectID, &b.DeviceID, &b.Path, &b.CreatedAt); e != nil {
+		if e = rows.Scan(&b.ID, &b.ProjectID, &b.DeviceID, &b.Path, &b.CreatedAt, &b.MembershipID, &b.RepositoryID); e != nil {
 			return r, e
 		}
 		r.Bindings = append(r.Bindings, b)

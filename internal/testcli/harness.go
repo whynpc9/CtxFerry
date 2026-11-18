@@ -15,7 +15,11 @@ import (
 	"time"
 )
 
-type Harness struct{ Binary, DataDir, Dir, Home string }
+type Harness struct {
+	Binary, DataDir, Dir, Home string
+	GitPath                    string
+	ExtraEnv                   []string
+}
 type Result struct {
 	Stdout, Stderr string
 	ExitCode       int
@@ -30,7 +34,7 @@ type Response struct {
 func New(t *testing.T, binary string) *Harness {
 	t.Helper()
 	root := t.TempDir()
-	h := &Harness{binary, filepath.Join(root, "data"), filepath.Join(root, "checkout"), filepath.Join(root, "home")}
+	h := &Harness{Binary: binary, DataDir: filepath.Join(root, "data"), Dir: filepath.Join(root, "checkout"), Home: filepath.Join(root, "home")}
 	for _, p := range []string{h.Dir, h.Home} {
 		if e := os.MkdirAll(p, 0700); e != nil {
 			t.Fatal(e)
@@ -49,6 +53,10 @@ func (h *Harness) Run(t *testing.T, args ...string) Result {
 	if runtime.GOOS == "windows" {
 		cmd.Env = append(cmd.Env, "SystemRoot="+os.Getenv("SystemRoot"))
 	}
+	if h.GitPath != "" {
+		cmd.Env = append(cmd.Env, "PATH="+filepath.Dir(h.Binary)+string(os.PathListSeparator)+h.GitPath)
+	}
+	cmd.Env = append(cmd.Env, h.ExtraEnv...)
 	var out, diagnostics bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &diagnostics
