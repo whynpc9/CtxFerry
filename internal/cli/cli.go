@@ -93,7 +93,8 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 	remote.AddCommand(addRemote)
 	project.AddCommand(bind, list, inspect, remote)
-	root.AddCommand(initCmd, project)
+	root.AddCommand(initCmd, project, contextCommand(ctx, invoke, &projectSelector))
+
 	// Detect format before parsing so usage errors also obey the JSON contract.
 	requestedJSON := false
 	for i, arg := range args {
@@ -118,6 +119,9 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 	project.RunE = root.RunE
 	err := root.ExecuteContext(ctx)
+	if err == nil {
+		result, err = budgetContext(result, format)
+	}
 	code := 0
 	var failure *app.Error
 	if err != nil {
@@ -183,6 +187,12 @@ func render(w io.Writer, result any) error {
 				return err
 			}
 		}
+	case app.ContextResult:
+		b, e := json.MarshalIndent(r, "", "  ")
+		if e != nil {
+			return e
+		}
+		_, err = fmt.Fprintln(w, string(b))
 	case map[string]any:
 		if help, ok := r["help"]; ok {
 			_, err = fmt.Fprint(w, help)

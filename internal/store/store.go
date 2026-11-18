@@ -59,7 +59,7 @@ func Open(ctx context.Context, root string, create bool) (*sql.DB, error) {
 	if err = db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		return fail(err)
 	}
-	if version > 2 {
+	if version > 3 {
 		return fail(ErrUnsupportedSchema)
 	}
 	if version == 0 && !create {
@@ -72,11 +72,14 @@ func Open(ctx context.Context, root string, create bool) (*sql.DB, error) {
 	if mode != "wal" {
 		return fail(fmt.Errorf("WAL unavailable: %s", mode))
 	}
-	if create || version < 2 {
+	if version < 3 {
 		err = Write(ctx, db, func(c *sql.Conn) error {
 			var v int
 			if err := c.QueryRowContext(ctx, "PRAGMA user_version").Scan(&v); err != nil {
 				return err
+			}
+			if v > 3 {
+				return ErrUnsupportedSchema
 			}
 			if v == 0 {
 				if _, err := c.ExecContext(ctx, schema); err != nil {
@@ -85,7 +88,13 @@ func Open(ctx context.Context, root string, create bool) (*sql.DB, error) {
 				v = 1
 			}
 			if v == 1 {
-				_, err := c.ExecContext(ctx, identificationSchema)
+				if _, err := c.ExecContext(ctx, identificationSchema); err != nil {
+					return err
+				}
+				v = 2
+			}
+			if v == 2 {
+				_, err := c.ExecContext(ctx, contextSchema)
 				return err
 			}
 			return nil
@@ -131,3 +140,10 @@ ALTER TABLE checkout_bindings ADD COLUMN checkout_root TEXT;
 ALTER TABLE checkout_bindings ADD COLUMN git_dir TEXT;
 ALTER TABLE checkout_bindings ADD COLUMN git_common_dir TEXT;
 PRAGMA user_version=2;`
+
+const contextSchema = `
+CREATE TABLE records (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), kind TEXT NOT NULL, metadata TEXT NOT NULL);
+CREATE INDEX records_project ON records(project_id,id);
+CREATE TABLE context_bodies (record_id TEXT PRIMARY KEY REFERENCES records(id), body TEXT NOT NULL);
+CREATE VIRTUAL TABLE context_fts USING fts5(id UNINDEXED, project_id UNINDEXED, content);
+PRAGMA user_version=3;`
