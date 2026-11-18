@@ -115,6 +115,7 @@ func contextCommand(ctx context.Context, invoke func(func(app.App) (any, error))
 
 // Budget the actual envelope/text representation, never serialized fragments.
 func budgetContext(result any, format string) (any, error) {
+	compact := false
 	r, ok := result.(app.ContextResult)
 	if !ok || r.Environment == nil {
 		return result, nil
@@ -136,13 +137,42 @@ func budgetContext(result any, format string) (any, error) {
 		if len(b) <= 8192 {
 			return r, nil
 		}
-		if len(r.Documents) == 0 {
-			return nil, app.Fail("size-limit", "required context metadata exceeds 8192-byte show budget")
+		if len(r.Documents) <= 1 {
+			if compact {
+				return nil, app.Fail("size-limit", "required context metadata exceeds 8192-byte show budget")
+			}
+			// Keep a retrievable entry on every nonempty page. Escaping can
+			// expand a byte of metadata sixfold, including the repeated summary.
+			compact = true
+			if r.Summary != nil {
+				s := compactText(*r.Summary)
+				r.Summary = &s
+			}
+			if len(r.Documents) == 1 {
+				d := &r.Documents[0]
+				d.Title = compactText(d.Title)
+				d.Purpose = compactText(d.Purpose)
+				d.Source = compactText(d.Source)
+				if d.Summary != nil {
+					s := compactText(*d.Summary)
+					d.Summary = &s
+				}
+			}
+			continue
 		}
 		r.Documents = r.Documents[:len(r.Documents)-1]
 		r.Truncated = true
-		if len(r.Documents) > 0 {
-			r.NextCursor = r.Documents[len(r.Documents)-1].ID
-		}
+		r.NextCursor = r.Documents[len(r.Documents)-1].ID
 	}
+}
+
+func compactText(s string) string {
+	if len(s) <= 64 {
+		return s
+	}
+	s = s[:64]
+	for !utf8.ValidString(s) {
+		s = s[:len(s)-1]
+	}
+	return s + "…"
 }

@@ -106,7 +106,11 @@ func TestContextProjectAndSummary(t *testing.T) {
 	h := contextHarness(t)
 	d := obj(t, putDoc(t, h, "overview", "hiddenbody", "local-only", "summary", "--purpose", "project-summary").Success(t), "document")
 	show := h.Run(t, "context", "show", "--format=json").Success(t)
-	if string(show.Data["summary"]) != `"approved overview"` || obj(t, show, "environment")["cwd"] != h.Dir {
+	canonicalCWD, e := filepath.EvalSymlinks(h.Dir)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if string(show.Data["summary"]) != `"approved overview"` || obj(t, show, "environment")["cwd"] != canonicalCWD {
 		t.Fatal("orientation", show)
 	}
 	putDoc(t, h, "overview", "hiddenbody", "local-only", "reference", d["id"].(string), "--if-revision", d["revision"].(string), "--purpose", "project-summary").Success(t)
@@ -260,5 +264,51 @@ func TestContextUnknownPolicyFailsClosed(t *testing.T) {
 		if strings.Contains(r.Stdout+r.Stderr, "neverdisclose") {
 			t.Fatal("fail-open")
 		}
+	}
+}
+
+func TestContextEscapedSummaryPagination(t *testing.T) {
+	h := contextHarness(t)
+	path := filepath.Join(h.Home, "escaped.md")
+	if e := os.WriteFile(path, []byte("body"), 0600); e != nil {
+		t.Fatal(e)
+	}
+	first := h.Run(t, "context", "put", "--title", strings.Repeat("<", 160), "--purpose=project-summary", "--source", strings.Repeat("<", 160), "--summary", strings.Repeat("<", 512), "--body-file", path, "--storage=local-only", "--disclosure=summary", "--format=json").Success(t)
+	firstID := field(t, first, "document")
+	for _, format := range []string{"json", "text"} {
+		r := h.Run(t, "context", "show", "--format", format)
+		if r.ExitCode != 0 || len(r.Stdout) > 8192 || !strings.Contains(r.Stdout, firstID) {
+			t.Fatal("single escaped entry lost", r)
+		}
+	}
+	second := putDoc(t, h, "another", "body", "local-only", "full").Success(t)
+	ids := map[string]bool{}
+	cursor := ""
+	for range 3 {
+		r := h.Run(t, "context", "show", "--cursor", cursor, "--format=json")
+		v := r.Success(t)
+		if len(r.Stdout) > 8192 {
+			t.Fatal("budget")
+		}
+		ds := documents(t, v)
+		if len(ds) == 0 {
+			t.Fatal("empty page cannot progress")
+		}
+		for _, d := range ds {
+			id := d["id"].(string)
+			if ids[id] {
+				t.Fatal("duplicate page")
+			}
+			ids[id] = true
+		}
+		if string(v.Data["truncated"]) == "false" {
+			break
+		}
+		if e := json.Unmarshal(v.Data["nextCursor"], &cursor); e != nil || cursor != ds[len(ds)-1]["id"] {
+			t.Fatal("cursor skips emitted boundary")
+		}
+	}
+	if !ids[firstID] || !ids[field(t, second, "document")] {
+		t.Fatal("lost entry", ids)
 	}
 }
