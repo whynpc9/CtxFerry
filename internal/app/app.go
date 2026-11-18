@@ -196,6 +196,12 @@ func (a App) BindProject(ctx context.Context, path, slug string) (BindResult, er
 	return a.BindProjectWith(ctx, path, slug, "", "", nil)
 }
 func (a App) BindProjectWith(ctx context.Context, path, slug, selector, repository string, remotes []string) (BindResult, error) {
+
+	release, lockErr := a.syncOwner(ctx)
+	if lockErr != nil {
+		return BindResult{}, lockErr
+	}
+	defer release()
 	var r BindResult
 	path, e := canonical(path)
 	if e != nil {

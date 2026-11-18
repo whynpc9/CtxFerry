@@ -247,6 +247,12 @@ func registerGit(ctx context.Context, c *sql.Conn, r *BindResult, g GitLocation,
 }
 
 func (a App) AddRemote(ctx context.Context, repository, raw string) (map[string]string, error) {
+	release, lockErr := a.syncOwner(ctx)
+	if lockErr != nil {
+		return nil, lockErr
+	}
+	defer release()
+
 	remote, e := normalizeRemote(raw)
 	if e != nil {
 		return nil, e

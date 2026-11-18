@@ -28,7 +28,7 @@ func TestMain(m *testing.M) {
 	if runtime.GOOS == "windows" {
 		binary += ".exe"
 	}
-	cmd := exec.Command("go", "build", "-o", binary, "../cmd/ctxferry")
+	cmd := exec.Command("go", "build", "-tags", "ctxferry_test", "-o", binary, "../cmd/ctxferry")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if e = cmd.Run(); e != nil {
