@@ -35,3 +35,34 @@ func TestConnectionAndAtomicity(t *testing.T) {
 		t.Fatal("transaction did not roll back", count, e)
 	}
 }
+
+func TestV1MigrationPreservesBindings(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	db, e := Open(ctx, root, true)
+	if e != nil {
+		t.Fatal(e)
+	}
+	// Recreate precisely the old schema rather than merely changing its version.
+	_, e = db.Exec(`DROP TABLE checkout_bindings; DROP TABLE memberships; DROP TABLE repository_aliases; DROP TABLE repositories;` + schema + `
+ INSERT INTO projects VALUES('project','old','time');
+ INSERT INTO checkout_bindings VALUES('binding','project','device','/old/path','time');`)
+	if e != nil {
+		t.Fatal(e)
+	}
+	db.Close()
+	db, e = Open(ctx, root, false)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer db.Close()
+	var id string
+	var membership sql.NullString
+	if e = db.QueryRow("SELECT id,membership_id FROM checkout_bindings WHERE project_id='project'").Scan(&id, &membership); e != nil || id != "binding" || membership.Valid {
+		t.Fatal(id, membership, e)
+	}
+	var v int
+	if e = db.QueryRow("PRAGMA user_version").Scan(&v); e != nil || v != 2 {
+		t.Fatal(v, e)
+	}
+}

@@ -59,7 +59,7 @@ func Open(ctx context.Context, root string, create bool) (*sql.DB, error) {
 	if err = db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		return fail(err)
 	}
-	if version > 1 {
+	if version > 2 {
 		return fail(ErrUnsupportedSchema)
 	}
 	if version == 0 && !create {
@@ -72,10 +72,23 @@ func Open(ctx context.Context, root string, create bool) (*sql.DB, error) {
 	if mode != "wal" {
 		return fail(fmt.Errorf("WAL unavailable: %s", mode))
 	}
-	if create {
+	if create || version < 2 {
 		err = Write(ctx, db, func(c *sql.Conn) error {
-			_, err := c.ExecContext(ctx, schema)
-			return err
+			var v int
+			if err := c.QueryRowContext(ctx, "PRAGMA user_version").Scan(&v); err != nil {
+				return err
+			}
+			if v == 0 {
+				if _, err := c.ExecContext(ctx, schema); err != nil {
+					return err
+				}
+				v = 1
+			}
+			if v == 1 {
+				_, err := c.ExecContext(ctx, identificationSchema)
+				return err
+			}
+			return nil
 		})
 		if err != nil {
 			return fail(err)
@@ -108,3 +121,13 @@ CREATE TABLE IF NOT EXISTS device (singleton INTEGER PRIMARY KEY CHECK(singleton
 CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS checkout_bindings (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), device_id TEXT NOT NULL, path TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(device_id,path));
 PRAGMA user_version=1;`
+
+const identificationSchema = `
+CREATE TABLE repositories (id TEXT PRIMARY KEY, created_at TEXT NOT NULL);
+CREATE TABLE repository_aliases (repository_id TEXT NOT NULL REFERENCES repositories(id), remote TEXT NOT NULL, PRIMARY KEY(repository_id,remote));
+CREATE TABLE memberships (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), repository_id TEXT NOT NULL REFERENCES repositories(id), subdirectory TEXT NOT NULL, UNIQUE(project_id,repository_id,subdirectory));
+ALTER TABLE checkout_bindings ADD COLUMN membership_id TEXT REFERENCES memberships(id);
+ALTER TABLE checkout_bindings ADD COLUMN checkout_root TEXT;
+ALTER TABLE checkout_bindings ADD COLUMN git_dir TEXT;
+ALTER TABLE checkout_bindings ADD COLUMN git_common_dir TEXT;
+PRAGMA user_version=2;`
