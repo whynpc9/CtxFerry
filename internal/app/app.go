@@ -341,14 +341,14 @@ func (a App) InspectProject(ctx context.Context, selector, cwd string) (InspectR
 	if e != nil {
 		return r, e
 	}
-	rows, e := db.QueryContext(ctx, "SELECT id,project_id,device_id,path,created_at FROM checkout_bindings WHERE project_id=? ORDER BY path", r.Project.ID)
+	rows, e := db.QueryContext(ctx, "SELECT b.id,b.project_id,b.device_id,b.path,b.created_at,COALESCE(b.membership_id,''),COALESCE(m.repository_id,'') FROM checkout_bindings b LEFT JOIN memberships m ON m.id=b.membership_id WHERE b.project_id=? ORDER BY b.path", r.Project.ID)
 	if e != nil {
 		return r, e
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var b Binding
-		if e = rows.Scan(&b.ID, &b.ProjectID, &b.DeviceID, &b.Path, &b.CreatedAt); e != nil {
+		if e = rows.Scan(&b.ID, &b.ProjectID, &b.DeviceID, &b.Path, &b.CreatedAt, &b.MembershipID, &b.RepositoryID); e != nil {
 			return r, e
 		}
 		r.Bindings = append(r.Bindings, b)

@@ -125,6 +125,21 @@ func TestRemoteCandidatesAndAliases(t *testing.T) {
 	h := gitHarness(t)
 	bound := bind(t, h, "--slug=api", "--remote=git@github.com:Owner/Repo.git")
 	repo := obj(t, bound, "binding")["repositoryId"].(string)
+	var bindings []map[string]any
+	if e := json.Unmarshal(inspect(t, h).Data["bindings"], &bindings); e != nil {
+		t.Fatal(e)
+	}
+	if len(bindings) != 1 || bindings[0]["repositoryId"] != repo || bindings[0]["membershipId"] != obj(t, bound, "binding")["membershipId"] {
+		t.Fatal("inspection lost persisted identity", bindings)
+	}
+	textBound := h.Run(t, "project", "bind", ".")
+	if !strings.Contains(textBound.Stdout, repo) {
+		t.Fatal(textBound)
+	}
+	textInspect := h.Run(t, "project", "inspect")
+	if !strings.Contains(textInspect.Stdout, repo) {
+		t.Fatal(textInspect)
+	}
 	root := h.Dir
 	clone := filepath.Join(filepath.Dir(root), "clone")
 	os.Mkdir(clone, 0700)

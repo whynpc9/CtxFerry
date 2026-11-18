@@ -158,6 +158,9 @@ func render(w io.Writer, result any) error {
 		_, err = fmt.Fprintf(w, "Workspace %s\nDevice %s (%s/%s)\n", r.Workspace.ID, r.Device.ID, r.Device.OS, r.Device.Arch)
 	case app.BindResult:
 		_, err = fmt.Fprintf(w, "%s (%s)\nCheckout: %s\n", r.Project.Slug, r.Project.ID, r.Binding.Path)
+		if err == nil && r.Binding.RepositoryID != "" {
+			_, err = fmt.Fprintf(w, "Repository: %s\nMembership: %s\n", r.Binding.RepositoryID, r.Binding.MembershipID)
+		}
 	case app.ListResult:
 		if len(r.Projects) == 0 {
 			_, err = fmt.Fprintln(w, "No Projects bound.")
@@ -176,7 +179,7 @@ func render(w io.Writer, result any) error {
 			return err
 		}
 		for _, b := range r.Bindings {
-			if _, err = fmt.Fprintf(w, "Checkout: %s\n", b.Path); err != nil {
+			if _, err = fmt.Fprintf(w, "Checkout: %s\nRepository: %s\nMembership: %s\n", b.Path, b.RepositoryID, b.MembershipID); err != nil {
 				return err
 			}
 		}
