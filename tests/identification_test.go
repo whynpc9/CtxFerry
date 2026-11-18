@@ -87,7 +87,17 @@ func TestWorktreesAndMemberships(t *testing.T) {
 			t.Fatal("scope", p)
 		}
 		res := obj(t, r, "resolution")
-		if res["source"] != "git-common-dir" || res["git"].(map[string]any)["checkoutRoot"] != wt {
+		// The resolver returns canonical paths: macOS /var and /private/var,
+		// and Windows drive casing, can name the same directory differently.
+		current, err := os.Stat(res["git"].(map[string]any)["checkoutRoot"].(string))
+		if err != nil {
+			t.Fatal(err)
+		}
+		expected, err := os.Stat(wt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res["source"] != "git-common-dir" || !os.SameFile(current, expected) {
 			t.Fatal(res)
 		}
 	}
