@@ -36,11 +36,20 @@ func (gitSyncBackend) Publish(ctx context.Context, dir string, conf SyncConfig, 
 		return nil
 	}
 	switch Classify(err).Code {
-	case "lease-rejected", "auth-required", "unlock-required":
+	case "lease-rejected", "auth-required", "unlock-required", "incomplete":
 		return err
-	default:
-		return Fail("push-pending", "publication result requires reconciliation; candidate and operations retained")
 	}
+	// Git versions and remote helpers use different ref-update diagnostics.
+	// A changed remote head is enough to require history reconciliation,
+	// including when a successful push lost its response. Never retry blindly.
+	head, readErr := readRemoteRef(ctx, dir, conf)
+	if readErr != nil {
+		return readErr
+	}
+	if head != p.ExpectedHead {
+		return Fail("lease-rejected", "remote head changed; fetch and reconcile pending publication")
+	}
+	return Fail("push-pending", "publication result requires reconciliation; candidate and operations retained")
 }
 
 // A command has a bounded retry budget. A rejected lease starts a whole fresh
@@ -81,18 +90,12 @@ func retrySync(ctx context.Context, round func(context.Context) (SyncResult, err
 // Initialization alone may interpret a successful, exact ref listing as absent.
 // Existing workspaces are validated without silently adopting a competing root.
 func inspectInitialization(ctx context.Context, dir string, conf SyncConfig, p pendingPush) (bool, error) {
-	_, remote := syncEndpoints(conf.Remote)
-	ref := "refs/heads/" + conf.Branch
-	listing, err := syncGit(ctx, dir, nil, "ls-remote", "--refs", "--", remote, ref)
+	remoteHead, err := readRemoteRef(ctx, dir, conf)
 	if err != nil {
 		return false, err
 	}
-	if listing == "" {
+	if remoteHead == "" {
 		return false, nil
-	}
-	fields := strings.Fields(listing)
-	if len(fields) != 2 || fields[1] != ref || !validCommitID(fields[0]) {
-		return false, Fail("incomplete", "invalid remote ref listing")
 	}
 	head, files, err := newSyncBackend().Fetch(ctx, dir, conf)
 	if err != nil {
@@ -131,4 +134,23 @@ func persistSyncFailure(db *sql.DB, err error) {
 		code = "pending"
 	}
 	db.ExecContext(context.Background(), "UPDATE sync_state SET outcome=?", code)
+}
+
+// Only a successful exact ref listing can establish absence. All malformed
+// listings and transport failures stay errors, including during initialization.
+func readRemoteRef(ctx context.Context, dir string, conf SyncConfig) (string, error) {
+	_, remote := syncEndpoints(conf.Remote)
+	ref := "refs/heads/" + conf.Branch
+	listing, err := syncGit(ctx, dir, nil, "ls-remote", "--refs", "--", remote, ref)
+	if err != nil {
+		return "", err
+	}
+	if listing == "" {
+		return "", nil
+	}
+	fields := strings.Fields(listing)
+	if len(fields) != 2 || fields[1] != ref || !validCommitID(fields[0]) {
+		return "", Fail("incomplete", "invalid remote ref listing")
+	}
+	return fields[0], nil
 }

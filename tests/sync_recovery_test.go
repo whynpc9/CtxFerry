@@ -3,6 +3,7 @@ package tests
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -328,6 +329,19 @@ func TestServerSideLeaseRace(t *testing.T) {
 			if err := os.WriteFile(hook, []byte(script), 0700); err != nil {
 				t.Fatal(err)
 			}
+			// Simulate a Git version/helper that supplies no stable rejection
+			// text. Recovery must use the remote ref, never diagnostic wording.
+			realGit, err := exec.LookPath("git")
+			if err != nil {
+				t.Fatal(err)
+			}
+			wrapper := t.TempDir()
+			quotedGit := "'" + strings.ReplaceAll(realGit, "'", "'\"'\"'") + "'"
+			script = "#!/bin/sh\nfor arg do\n if test \"$arg\" = push; then\n  " + quotedGit + " \"$@\" >/dev/null 2>&1\n  exit $?\n fi\ndone\nexec " + quotedGit + " \"$@\"\n"
+			if err = os.WriteFile(filepath.Join(wrapper, "git"), []byte(script), 0700); err != nil {
+				t.Fatal(err)
+			}
+			a.GitPath = wrapper + string(os.PathListSeparator) + a.GitPath
 			if initialization {
 				failure(t, a.Run(t, "sync", "init", "--preview", previewSync(t, a), "--format=json"), "branch-exists")
 				if git(t, a, "--git-dir", remote, "rev-parse", "ctxferry-v1") != candidate {

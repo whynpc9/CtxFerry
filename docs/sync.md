@@ -153,9 +153,10 @@ reports `auth-required`. Authentication diagnostics are redacted.
 Routine sync and initialization allow at most four rounds in a two-minute command
 budget, with cancellable waits of 250 ms, 500 ms and 1 s. Transient transport errors
 and exact-lease contention retry; authentication, unlock, missing branches and
-catalog incompatibility/damage stop immediately. An uncertain push stays journaled
-as `pending`; the next invocation checks candidate ancestry before any further
-publication. Permanent push rejection also keeps the journal for explicit retry.
+catalog incompatibility/damage stop immediately. A failed push also reads the exact remote ref: a changed head starts a fresh
+reconciliation round, independently of Git diagnostic wording. If its outcome
+remains uncertain it stays journaled as `pending`; the next invocation checks
+candidate ancestry before any further publication. Permanent push rejection also keeps the journal for explicit retry.
 There is no background scheduler in this phase.
 
 The `ctxferry_test` binary wraps the real backend to lose push responses, publish a
