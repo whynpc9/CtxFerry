@@ -1,0 +1,2 @@
+# Keep gofmt's LF output intact on Windows checkouts with core.autocrlf=true.
+*.go text eol=lf
