@@ -106,11 +106,17 @@ func TestContextProjectAndSummary(t *testing.T) {
 	h := contextHarness(t)
 	d := obj(t, putDoc(t, h, "overview", "hiddenbody", "local-only", "summary", "--purpose", "project-summary").Success(t), "document")
 	show := h.Run(t, "context", "show", "--format=json").Success(t)
-	canonicalCWD, e := filepath.EvalSymlinks(h.Dir)
+	// OS working-directory APIs can preserve Windows 8.3 names or expand
+	// macOS /var. Assert directory identity rather than path spelling.
+	expectedDir, e := os.Stat(h.Dir)
 	if e != nil {
 		t.Fatal(e)
 	}
-	if string(show.Data["summary"]) != `"approved overview"` || obj(t, show, "environment")["cwd"] != canonicalCWD {
+	actualDir, e := os.Stat(obj(t, show, "environment")["cwd"].(string))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if string(show.Data["summary"]) != `"approved overview"` || !os.SameFile(expectedDir, actualDir) {
 		t.Fatal("orientation", show)
 	}
 	putDoc(t, h, "overview", "hiddenbody", "local-only", "reference", d["id"].(string), "--if-revision", d["revision"].(string), "--purpose", "project-summary").Success(t)
