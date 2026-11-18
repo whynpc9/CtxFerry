@@ -1,0 +1,31 @@
+name: CI
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      CGO_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Check formatting
+        shell: bash
+        run: test -z "$(gofmt -l cmd internal tests)"
+      - run: go vet ./...
+      - run: go test ./...
+      - run: go build -o ctxferry ./cmd/ctxferry
+      - name: Offline headless smoke
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/ctxferry-offline"
+          docker run --rm --network none -v "$PWD/ctxferry:/ctxferry:ro" -v "$RUNNER_TEMP/ctxferry-offline:/data" alpine:3.22 /ctxferry --data-dir /data init --format json
