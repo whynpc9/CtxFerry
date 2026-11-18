@@ -51,9 +51,8 @@ exact expected-absent lease; a competing root is preserved. A failed or ambiguou
 push stays pending. Retrying the same preview reuses the same candidate and can
 acknowledge an already accepted candidate when it is still the remote tip. A
 changed snapshot or a different existing remote history requires reconciliation;
-it is never overwritten. Joining, routine sync, descendant-history recovery and
-conflicts belong to subsequent slices. `synced` here acknowledges that first
-snapshot; it does not yet track later local edits.
+it is never overwritten. Routine sync and join use the same validated record format. Descendant-history
+recovery and explicit conflict resolution are tracked by issues #10 and #9.
 
 ## Format decisions
 
@@ -81,3 +80,53 @@ snapshot; it does not yet track later local edits.
 CLI scenarios compile with `ctxferry_test`, which substitutes a loopback metadata
 endpoint and local bare Git transport. These environment overrides are absent from
 production builds. Tests never push context to an external repository.
+
+## Joining and two-way sync
+
+```sh
+ctxferry join git@github.com:owner/private-context.git --subscribe my-project
+ctxferry project list --all --format json
+ctxferry project subscribe my-project
+ctxferry project bind . --project my-project
+ctxferry sync --format json
+ctxferry context show --sync --format json
+```
+
+Join requires a fresh application data directory and an existing sync branch.
+It verifies authenticated repository identity/privacy, stages the full catalog,
+and adopts its workspace identity in one transaction with a new local Device ID.
+Use repeated `--subscribe` selectors or `--all-projects`. The default subscribes
+to no Projects. `project unsubscribe` hides a Project from ordinary listing and
+context queries and removes its search entries. `project list --all` discovers
+all Projects. The full shared baseline stays available for synchronization.
+Subscriptions and checkout paths remain device-local.
+
+Shared edits queue durably with their original base envelope, epoch, operation
+ID and desired envelope in the same transaction as the local edit. Reads use
+local SQLite immediately and include `lastSyncAt`. `--sync` on context reads
+waits for a successful round. `sync status` reports the last observed outcome,
+last successful time and pending operation count without contacting the network.
+Offline/authentication failures preserve local records and queued edits.
+
+A round fetches and validates the complete snapshot, checks ancestry and record
+baselines, and publishes compatible operations with an exact expected-head lease.
+The candidate has the fetched commit as its sole parent. Unchanged record files
+and content-addressed bodies retain their Git blob identities. Empty rounds
+advance the local observation without publishing an empty commit. Hashes, paths,
+schema, scopes, references and application uniqueness constraints are verified
+before downloaded records become visible in a database transaction.
+
+Concurrent edits retain the original base, desired local envelope and current
+remote baseline. Independent records can proceed. A conflict reports `conflict`;
+explicit resolution follows in #9. A failed/ambiguous push retains its pinned
+candidate and operation IDs. The next round checks fetched history to acknowledge
+an accepted candidate or reconcile its operations against the current head. Issue
+#10 extends fault injection and retry scheduling.
+Published records cannot disappear or change kind. Tombstones and changing an
+already-published record to local-only require the explicit deletion flow in #9.
+
+Schema 5 adds baseline, outbox and subscription tables plus sync timestamps and
+outcomes. An existing schema-4 publisher bootstraps its actual confirmed Git
+snapshot from the locally retained commit before its next edit or routine sync, preserving later unpublished edits. A staged
+catalog is limited to 64 MiB, each Markdown object to 1 MiB, and each envelope to
+256 KiB. Existing local-only data and bindings survive sync.

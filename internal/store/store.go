@@ -59,7 +59,7 @@ func Open(ctx context.Context, root string, create bool) (*sql.DB, error) {
 	if err = db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		return fail(err)
 	}
-	if version > 4 {
+	if version > 5 {
 		return fail(ErrUnsupportedSchema)
 	}
 	if version == 0 && !create {
@@ -72,13 +72,13 @@ func Open(ctx context.Context, root string, create bool) (*sql.DB, error) {
 	if mode != "wal" {
 		return fail(fmt.Errorf("WAL unavailable: %s", mode))
 	}
-	if version < 4 {
+	if version < 5 {
 		err = Write(ctx, db, func(c *sql.Conn) error {
 			var v int
 			if err := c.QueryRowContext(ctx, "PRAGMA user_version").Scan(&v); err != nil {
 				return err
 			}
-			if v > 4 {
+			if v > 5 {
 				return ErrUnsupportedSchema
 			}
 			if v == 0 {
@@ -100,7 +100,13 @@ func Open(ctx context.Context, root string, create bool) (*sql.DB, error) {
 				v = 3
 			}
 			if v == 3 {
-				_, err := c.ExecContext(ctx, syncSchema)
+				if _, err := c.ExecContext(ctx, syncSchema); err != nil {
+					return err
+				}
+				v = 4
+			}
+			if v == 4 {
+				_, err := c.ExecContext(ctx, roundSchema)
 				return err
 			}
 			return nil
@@ -160,3 +166,11 @@ CREATE TABLE sync_state (singleton INTEGER PRIMARY KEY CHECK(singleton=1), epoch
 CREATE TABLE sync_previews (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, files TEXT NOT NULL);
 CREATE TABLE export_identities (id TEXT PRIMARY KEY, revision TEXT NOT NULL, operation_id TEXT NOT NULL, fingerprint TEXT NOT NULL, previous_revision TEXT NOT NULL);
 PRAGMA user_version=4;`
+
+const roundSchema = `
+CREATE TABLE sync_baselines (path TEXT PRIMARY KEY, data BLOB NOT NULL);
+CREATE TABLE sync_outbox (id TEXT PRIMARY KEY, base BLOB, proposed BLOB NOT NULL, operation_id TEXT NOT NULL, epoch TEXT NOT NULL);
+CREATE TABLE project_subscriptions (project_id TEXT PRIMARY KEY REFERENCES projects(id), subscribed INTEGER NOT NULL);
+ALTER TABLE sync_state ADD COLUMN last_sync_at TEXT NOT NULL DEFAULT '';
+ALTER TABLE sync_state ADD COLUMN outcome TEXT NOT NULL DEFAULT '';
+PRAGMA user_version=5;`

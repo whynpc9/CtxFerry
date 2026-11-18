@@ -36,7 +36,7 @@ func contextCommand(ctx context.Context, invoke func(func(app.App) (any, error))
 	put.Flags().StringVar(&input.Source, "source", "", "Agent-visible source description (never inferred from file path)")
 	put.Flags().StringVar(&input.Summary, "summary", "", "Explicit agent-approved summary")
 	put.Flags().StringVar(&summaryFile, "summary-file", "", "UTF-8 summary file (alternative to --summary)")
-	put.Flags().StringVar(&input.Storage, "storage", "", "Required: local-only or shared (eligible for future sync)")
+	put.Flags().StringVar(&input.Storage, "storage", "", "Required: local-only or shared")
 	put.Flags().StringVar(&input.Disclosure, "disclosure", "", "Required: full, summary, reference or local-tool")
 	put.Flags().StringVar(&input.ValidUntil, "valid-until", "", "Optional freshness expiry, RFC3339")
 	put.Flags().StringVar(&file, "body-file", "", "Required UTF-8 Markdown file; - reads stdin")
@@ -108,6 +108,19 @@ func contextCommand(ctx context.Context, invoke func(func(app.App) (any, error))
 		return run(cmd, args, func(a app.App, cwd string) (any, error) {
 			return a.QueryContext(ctx, *selector, cwd, "search", args[0], "")
 		})
+	}
+	for _, cmd := range []*cobra.Command{show, get, search} {
+		var wait bool
+		cmd.Flags().BoolVar(&wait, "sync", false, "Wait for a successful sync before querying")
+		original := cmd.RunE
+		cmd.RunE = func(cmd *cobra.Command, args []string) error {
+			if wait {
+				if err := invoke(func(a app.App) (any, error) { return a.Sync(ctx) })(cmd, args); err != nil {
+					return err
+				}
+			}
+			return original(cmd, args)
+		}
 	}
 	group.AddCommand(put, show, get, search)
 	return group

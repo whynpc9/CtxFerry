@@ -259,6 +259,9 @@ func (a App) BindProjectWith(ctx context.Context, path, slug, selector, reposito
 		return r, e
 	}
 	defer db.Close()
+	if e = a.prepareBaseline(ctx, db); e != nil {
+		return r, e
+	}
 	e = store.Write(ctx, db, func(c *sql.Conn) error {
 		var did string
 		if err := c.QueryRowContext(ctx, "SELECT id FROM device WHERE singleton=1").Scan(&did); err != nil {
@@ -269,7 +272,10 @@ func (a App) BindProjectWith(ctx context.Context, path, slug, selector, reposito
 			if (explicit && slug != r.Project.Slug) || (selector != "" && selector != r.Project.ID && selector != r.Project.Slug) {
 				return Fail("binding-conflict", "directory is already bound to a different slug")
 			}
-			return registerGit(ctx, c, &r, git, repository, aliases)
+			if err := registerGit(ctx, c, &r, git, repository, aliases); err != nil {
+				return err
+			}
+			return queueChanges(ctx, c)
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
@@ -302,18 +308,28 @@ func (a App) BindProjectWith(ctx context.Context, path, slug, selector, reposito
 			return err
 		}
 		r.Created = true
-		return registerGit(ctx, c, &r, git, repository, aliases)
+		if err := registerGit(ctx, c, &r, git, repository, aliases); err != nil {
+			return err
+		}
+		return queueChanges(ctx, c)
 	})
 	return r, e
 }
 func (a App) ListProjects(ctx context.Context) (ListResult, error) {
+	return a.ListProjectsAll(ctx, false)
+}
+func (a App) ListProjectsAll(ctx context.Context, all bool) (ListResult, error) {
 	r := ListResult{Projects: []Project{}}
 	db, e := store.Open(ctx, a.DataDir, false)
 	if e != nil {
 		return r, e
 	}
 	defer db.Close()
-	rows, e := db.QueryContext(ctx, "SELECT id,slug,created_at FROM projects ORDER BY slug,id")
+	query := "SELECT id,slug,created_at FROM projects"
+	if !all {
+		query += " WHERE id NOT IN (SELECT project_id FROM project_subscriptions WHERE subscribed=0)"
+	}
+	rows, e := db.QueryContext(ctx, query+" ORDER BY slug,id")
 	if e != nil {
 		return r, e
 	}

@@ -44,7 +44,7 @@ func TestV1MigrationPreservesBindings(t *testing.T) {
 		t.Fatal(e)
 	}
 	// Recreate precisely the old schema rather than merely changing its version.
-	_, e = db.Exec(`DROP TABLE sync_config; DROP TABLE sync_state; DROP TABLE sync_previews; DROP TABLE export_identities; DROP TABLE context_fts; DROP TABLE context_bodies; DROP TABLE records; DROP TABLE checkout_bindings; DROP TABLE memberships; DROP TABLE repository_aliases; DROP TABLE repositories;` + schema + `
+	_, e = db.Exec(`DROP TABLE sync_baselines; DROP TABLE sync_outbox; DROP TABLE project_subscriptions; DROP TABLE sync_config; DROP TABLE sync_state; DROP TABLE sync_previews; DROP TABLE export_identities; DROP TABLE context_fts; DROP TABLE context_bodies; DROP TABLE records; DROP TABLE checkout_bindings; DROP TABLE memberships; DROP TABLE repository_aliases; DROP TABLE repositories;` + schema + `
  INSERT INTO projects VALUES('project','old','time');
  INSERT INTO checkout_bindings VALUES('binding','project','device','/old/path','time');`)
 	if e != nil {
@@ -62,7 +62,7 @@ func TestV1MigrationPreservesBindings(t *testing.T) {
 		t.Fatal(id, membership, e)
 	}
 	var v int
-	if e = db.QueryRow("PRAGMA user_version").Scan(&v); e != nil || v != 4 {
+	if e = db.QueryRow("PRAGMA user_version").Scan(&v); e != nil || v != 5 {
 		t.Fatal(v, e)
 	}
 }

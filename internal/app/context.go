@@ -150,6 +150,9 @@ func (a App) PutContext(ctx context.Context, selector, cwd string, in PutContext
 		return r, e
 	}
 	defer db.Close()
+	if e = a.prepareBaseline(ctx, db); e != nil {
+		return r, e
+	}
 	e = store.Write(ctx, db, func(c *sql.Conn) error {
 		id := in.ID
 		previous := ""
@@ -222,17 +225,10 @@ func (a App) PutContext(ctx context.Context, selector, cwd string, in PutContext
 		if err != nil {
 			return err
 		}
-		content := visible.Title + " " + visible.Purpose + " " + visible.Source
-		if visible.Summary != nil {
-			content += " " + *visible.Summary
-		}
-		if visible.Body != nil {
-			content += " " + *visible.Body
-		}
-		if _, err = c.ExecContext(ctx, "DELETE FROM context_fts WHERE id=?", id); err != nil {
+		if err = indexDoc(ctx, c, d); err != nil {
 			return err
 		}
-		if _, err = c.ExecContext(ctx, "INSERT INTO context_fts(id,project_id,content) VALUES(?,?,?)", id, r.Project.ID, content); err != nil {
+		if err = queueChanges(ctx, c); err != nil {
 			return err
 		}
 		// Receipts contain metadata only, even for full disclosure.
@@ -255,6 +251,19 @@ func (a App) QueryContext(ctx context.Context, selector, cwd, mode, arg, cursor 
 		return r, e
 	}
 	defer db.Close()
+	var stamp string
+	if err := db.QueryRowContext(ctx, "SELECT last_sync_at FROM sync_state").Scan(&stamp); err != nil && err != sql.ErrNoRows {
+		return r, err
+	}
+	if stamp != "" {
+		r.LastSyncAt = &stamp
+	}
+	var subscribed int
+	if err := db.QueryRowContext(ctx, "SELECT subscribed FROM project_subscriptions WHERE project_id=?", r.Project.ID).Scan(&subscribed); err == nil && subscribed == 0 {
+		return r, Fail("not-subscribed", "subscribe to this Project to query its context")
+	} else if err != nil && err != sql.ErrNoRows {
+		return r, err
+	}
 	if mode == "show" {
 		var did string
 		if e = db.QueryRowContext(ctx, "SELECT id FROM device WHERE singleton=1").Scan(&did); e != nil {

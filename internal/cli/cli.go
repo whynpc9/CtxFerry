@@ -68,7 +68,9 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			return a.BindProjectWith(ctx, argv[0], slug, projectSelector, repository, remotes)
 		})(cmd, argv)
 	}
-	list := &cobra.Command{Use: "list", Short: "List local Projects", Args: cobra.NoArgs, RunE: invoke(func(a app.App) (any, error) { return a.ListProjects(ctx) })}
+	var allProjects bool
+	list := &cobra.Command{Use: "list", Short: "List local Projects", Args: cobra.NoArgs, RunE: invoke(func(a app.App) (any, error) { return a.ListProjectsAll(ctx, allProjects) })}
+	list.Flags().BoolVar(&allProjects, "all", false, "Include unsubscribed Projects")
 	inspect := &cobra.Command{Use: "inspect [uuid-or-slug]", Short: "Inspect a Project or the current directory", Args: cobra.MaximumNArgs(1)}
 	inspect.RunE = func(cmd *cobra.Command, argv []string) error {
 		return invoke(func(a app.App) (any, error) {
@@ -92,8 +94,19 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return invoke(func(a app.App) (any, error) { return a.AddRemote(ctx, argv[0], argv[1]) })(cmd, argv)
 	}
 	remote.AddCommand(addRemote)
+	for _, enabled := range []bool{true, false} {
+		name := "unsubscribe"
+		if enabled {
+			name = "subscribe"
+		}
+		command := &cobra.Command{Use: name + " <project>", Args: cobra.ExactArgs(1)}
+		command.RunE = func(cmd *cobra.Command, args []string) error {
+			return invoke(func(a app.App) (any, error) { return a.Subscribe(ctx, args[0], enabled) })(cmd, args)
+		}
+		project.AddCommand(command)
+	}
 	project.AddCommand(bind, list, inspect, remote)
-	root.AddCommand(initCmd, project, contextCommand(ctx, invoke, &projectSelector), syncCommand(ctx, invoke))
+	root.AddCommand(initCmd, project, contextCommand(ctx, invoke, &projectSelector), syncCommand(ctx, invoke), joinCommand(ctx, invoke))
 
 	// Detect format before parsing so usage errors also obey the JSON contract.
 	requestedJSON := false
