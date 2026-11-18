@@ -343,3 +343,34 @@ func TestPendingBeforeRejectedPushAndRestart(t *testing.T) {
 		t.Fatal("remote changed during reconciliation")
 	}
 }
+
+func TestSyncResolvesIsolationSymlinks(t *testing.T) {
+	for _, kind := range []string{"data-root", "managed-repository"} {
+		t.Run(kind, func(t *testing.T) {
+			var metadata atomic.Value
+			metadata.Store(privateMetadata)
+			h, _ := syncHarness(t, &metadata)
+			git(t, h, "init")
+			var target, link string
+			if kind == "data-root" {
+				target = filepath.Join(h.Dir, "state")
+				link = h.DataDir
+				if err := os.Rename(h.DataDir, target); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				target = h.Dir
+				link = filepath.Join(h.DataDir, "workspaces/default/sync.git")
+			}
+			if err := os.Symlink(target, link); err != nil {
+				t.Skipf("directory symlinks unavailable: %v", err)
+			}
+			failure(t, h.Run(t, "sync", "enable", "--remote=https://github.com/example/context", "--format=json"), "invalid-path")
+			if kind == "data-root" {
+				if _, err := os.Stat(filepath.Join(target, "workspaces/default/sync.git")); !os.IsNotExist(err) {
+					t.Fatal("created managed Git in checkout", err)
+				}
+			}
+		})
+	}
+}

@@ -120,9 +120,21 @@ func syncGit(ctx context.Context, dir string, input []byte, args ...string) (str
 	return strings.TrimSpace(out.String()), nil
 }
 func (a App) managedGit(ctx context.Context) (string, error) {
-	dir := filepath.Join(filepath.Dir(store.Path(a.DataDir)), "sync.git")
+	parent, err := canonical(filepath.Dir(store.Path(a.DataDir)))
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(parent, "sync.git")
+	if _, statErr := os.Lstat(dir); statErr == nil {
+		dir, err = canonical(dir)
+		if err != nil {
+			return "", err
+		}
+	} else if !os.IsNotExist(statErr) {
+		return "", statErr
+	}
 	// A data root nested in a source checkout is never a managed repository location.
-	for p := filepath.Dir(dir); ; p = filepath.Dir(p) {
+	for p := dir; ; p = filepath.Dir(p) {
 		if _, err := os.Stat(filepath.Join(p, ".git")); err == nil {
 			return "", Fail("invalid-path", "sync data must be outside source checkouts")
 		}
