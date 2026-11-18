@@ -130,3 +130,49 @@ outcomes. An existing schema-4 publisher bootstraps its actual confirmed Git
 snapshot from the locally retained commit before its next edit or routine sync, preserving later unpublished edits. A staged
 catalog is limited to 64 MiB, each Markdown object to 1 MiB, and each envelope to
 256 KiB. Existing local-only data and bindings survive sync.
+
+## Record conflicts and deletion
+
+`sync status` lists active conflict IDs and record IDs, plus pending records held
+by a dependency or uniqueness constraint. An offline attempt does not hide active
+conflicts. `sync conflicts <record-uuid>` shows the preserved base, local and remote
+envelopes, revisions, devices and policy-approved bodies. Summary/reference/local-tool
+policies still restrict disclosure. Conflict evidence and its immutable objects stay
+in the local database, including after resolution; they are not exported.
+
+Choose explicitly against the conflict you inspected:
+
+```sh
+ctxferry sync resolve <record-uuid> --if-conflict <conflict-id> --take local
+ctxferry sync resolve <record-uuid> --if-conflict <conflict-id> --take remote
+ctxferry sync resolve <record-uuid> --if-conflict <conflict-id> --file resolution.json
+ctxferry sync
+```
+
+A replacement file describes context content, never identity or revision:
+
+```json
+{"title":"Notes","purpose":"notes","source":"manual resolution","body":"New Markdown content","summary":"Approved summary","policy":{"storage":"shared","agentDisclosure":"full"},"deleted":false}
+```
+
+Every choice creates fresh revision and operation UUIDs, including choosing remote
+or identical content. It is queued against the observed remote revision. A later
+remote edit produces another conflict. Ordinary edits to conflicted records are
+refused until resolved. Future secret-reference/resource/task/Skill record schemas
+remain unsupported; no field or clock based merge grants execution authority.
+
+Pending records connected by Project/Repository references form one publication
+unit. A conflicting member holds that unit; unchanged published parents do not
+couple independent documents. Eligible units share one append-only commit.
+
+Delete a shared context document with
+`context delete <id> --if-revision <revision>`. Its envelope remains as a tombstone
+indefinitely; get/show/search omit it. An unchanged offline device adopts the
+removal, while edit-versus-delete requires explicit resolution. History still
+contains the plaintext content.
+
+`context restore <id> --if-revision <current-revision> --from-commit <full-sha>`
+loads that record from a validated ancestor of confirmed history and queues a fresh
+revision. Use Git history to find the tombstone's current revision when needed.
+Restoration appends through routine sync and never resets the branch. Deletion and
+restoration require configured sync; local-only record deletion is outside this command.

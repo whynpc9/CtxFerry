@@ -4,6 +4,8 @@ import (
 	"context"
 	"github.com/spf13/cobra"
 	"github.com/whynpc9/CtxFerry/internal/app"
+	"io"
+	"os"
 )
 
 func syncCommand(ctx context.Context, invoke func(func(app.App) (any, error)) func(*cobra.Command, []string) error) *cobra.Command {
@@ -17,7 +19,31 @@ func syncCommand(ctx context.Context, invoke func(func(app.App) (any, error)) fu
 	init.Flags().StringVar(&preview, "preview", "", "Required current preview ID")
 	status := &cobra.Command{Use: "status", Args: cobra.NoArgs, RunE: invoke(func(a app.App) (any, error) { return a.SyncStatus(ctx) })}
 	check := &cobra.Command{Use: "check", Args: cobra.NoArgs, RunE: invoke(func(a app.App) (any, error) { return a.CheckSync(ctx) })}
-	group.AddCommand(enable, plan, init, status, check)
+	var take, token, file string
+	detail := &cobra.Command{Use: "conflicts <record-uuid>", Args: cobra.ExactArgs(1), RunE: func(c *cobra.Command, args []string) error {
+		return invoke(func(a app.App) (any, error) { return a.Conflict(ctx, args[0]) })(c, args)
+	}}
+	resolve := &cobra.Command{Use: "resolve <record-uuid>", Args: cobra.ExactArgs(1), RunE: func(c *cobra.Command, args []string) error {
+		return invoke(func(a app.App) (any, error) {
+			var b []byte
+			if file != "" {
+				f, e := os.Open(file)
+				if e != nil {
+					return nil, app.Fail("usage", "cannot open resolution file")
+				}
+				defer f.Close()
+				b, e = io.ReadAll(io.LimitReader(f, app.BodyLimit+app.MetadataLimit+1))
+				if e != nil || len(b) > app.BodyLimit+app.MetadataLimit {
+					return nil, app.Fail("size-limit", "resolution file exceeds limit")
+				}
+			}
+			return a.Resolve(ctx, args[0], token, take, b)
+		})(c, args)
+	}}
+	resolve.Flags().StringVar(&take, "take", "", "Explicit choice: local or remote")
+	resolve.Flags().StringVar(&token, "if-conflict", "", "Required conflict ID from sync status")
+	resolve.Flags().StringVar(&file, "file", "", "Strict context replacement JSON with inline body")
+	group.AddCommand(enable, plan, init, status, check, detail, resolve)
 	return group
 }
 

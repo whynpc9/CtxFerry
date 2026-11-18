@@ -29,6 +29,7 @@ type Policy struct {
 	AgentDisclosure string `json:"agentDisclosure"`
 }
 type ContextDoc struct {
+	Deleted          bool    `json:"deleted,omitempty"`
 	SchemaVersion    int     `json:"schemaVersion"`
 	ID               string  `json:"id"`
 	Kind             string  `json:"kind"`
@@ -172,6 +173,12 @@ func (a App) PutContext(ctx context.Context, selector, cwd string, in PutContext
 			if _, err = projectDoc(old, false); err != nil {
 				return err
 			}
+			if old.Deleted {
+				return Fail("record-deleted", "use context restore to restore a tombstone")
+			}
+			if err = requireNoConflict(ctx, c, id); err != nil {
+				return err
+			}
 			previous = old.Revision
 			if previous != in.IfRevision {
 				return Fail("revision-conflict", "document changed; read its current revision before replacing")
@@ -207,7 +214,7 @@ func (a App) PutContext(ctx context.Context, selector, cwd string, in PutContext
 		}
 		if in.Purpose == "project-summary" {
 			var count int
-			if err = c.QueryRowContext(ctx, `SELECT count(*) FROM records WHERE project_id=? AND id<>? AND json_extract(metadata,'$.purpose')='project-summary'`, r.Project.ID, id).Scan(&count); err != nil {
+			if err = c.QueryRowContext(ctx, `SELECT count(*) FROM records WHERE project_id=? AND id<>? AND coalesce(json_extract(metadata,'$.deleted'),0)=0 AND json_extract(metadata,'$.purpose')='project-summary'`, r.Project.ID, id).Scan(&count); err != nil {
 				return err
 			}
 			if count > 0 {
@@ -275,7 +282,7 @@ func (a App) QueryContext(ctx context.Context, selector, cwd, mode, arg, cursor 
 	if mode == "get" {
 		bodyColumn = "b.body"
 	}
-	query := `SELECT r.metadata,` + bodyColumn + ` FROM records r JOIN context_bodies b ON b.record_id=r.id WHERE r.project_id=? AND r.kind='context'`
+	query := `SELECT r.metadata,` + bodyColumn + ` FROM records r JOIN context_bodies b ON b.record_id=r.id WHERE r.project_id=? AND r.kind='context' AND coalesce(json_extract(r.metadata,'$.deleted'),0)=0`
 	args := []any{r.Project.ID}
 	switch mode {
 	case "get":
@@ -350,7 +357,7 @@ func (a App) QueryContext(ctx context.Context, selector, cwd, mode, arg, cursor 
 	}
 	if mode == "show" {
 		var raw string
-		e = db.QueryRowContext(ctx, `SELECT metadata FROM records WHERE project_id=? AND kind='context' AND json_extract(metadata,'$.purpose')='project-summary'`, r.Project.ID).Scan(&raw)
+		e = db.QueryRowContext(ctx, `SELECT metadata FROM records WHERE project_id=? AND kind='context' AND coalesce(json_extract(metadata,'$.deleted'),0)=0 AND json_extract(metadata,'$.purpose')='project-summary'`, r.Project.ID).Scan(&raw)
 		if e != nil && !errors.Is(e, sql.ErrNoRows) {
 			return r, e
 		}

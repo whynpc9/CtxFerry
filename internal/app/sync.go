@@ -40,15 +40,17 @@ type UploadFile struct {
 	SHA256 string `json:"sha256"`
 }
 type SyncResult struct {
-	Config     *SyncConfig  `json:"config,omitempty"`
-	Check      *SyncCheck   `json:"check,omitempty"`
-	PreviewID  string       `json:"previewId,omitempty"`
-	Files      []UploadFile `json:"files,omitempty"`
-	Boundary   string       `json:"boundary"`
-	State      string       `json:"state"`
-	Head       string       `json:"head,omitempty"`
-	LastSyncAt *string      `json:"lastSyncAt"`
-	Pending    int          `json:"pending"`
+	Conflicts  []ConflictInfo  `json:"conflicts,omitempty"`
+	Blocked    []BlockedRecord `json:"blocked,omitempty"`
+	Config     *SyncConfig     `json:"config,omitempty"`
+	Check      *SyncCheck      `json:"check,omitempty"`
+	PreviewID  string          `json:"previewId,omitempty"`
+	Files      []UploadFile    `json:"files,omitempty"`
+	Boundary   string          `json:"boundary"`
+	State      string          `json:"state"`
+	Head       string          `json:"head,omitempty"`
+	LastSyncAt *string         `json:"lastSyncAt"`
+	Pending    int             `json:"pending"`
 }
 
 const plaintextBoundary = "Shared records and their bodies are uploaded in plaintext. Local-only records, checkout bindings, credential stores and authentication are excluded. Shared prose can contain pasted secrets; inspect it before publishing."
@@ -388,6 +390,7 @@ func exportConn(ctx context.Context, conn *sql.Conn, c SyncConfig) (map[string][
 			env.Provenance.DeviceID = did
 			env.Provenance.UpdatedAt = stamp
 			if doc != nil {
+				env.Deleted = doc.Deleted
 				env.Revision = doc.Revision
 				env.PreviousRevision = doc.PreviousRevision
 				env.OperationID = doc.OperationID
@@ -399,11 +402,30 @@ func exportConn(ctx context.Context, conn *sql.Conn, c SyncConfig) (map[string][
 				if err != nil {
 					return err
 				}
+				var normalized any
+				json.Unmarshal(b, &normalized)
+				b, _ = json.Marshal(normalized)
 				hash := digest(b)
 				var previousHash string
 				err = conn.QueryRowContext(ctx, "SELECT revision,operation_id,fingerprint,previous_revision FROM export_identities WHERE id=?", id).Scan(&env.Revision, &env.OperationID, &previousHash, &env.PreviousRevision)
 				if err != nil && err != sql.ErrNoRows {
 					return err
+				}
+				if previousHash != hash {
+					// Older publishers hashed struct field order. Reuse confirmed identity when only encoding changed.
+					var baseline []byte
+					if e := conn.QueryRowContext(ctx, "SELECT data FROM sync_baselines WHERE path=?", recordPath(id)).Scan(&baseline); e == nil {
+						if prior, e := decodeRecord(baseline); e == nil && bytes.Equal(prior.Data, b) && !prior.Deleted {
+							env.Revision = prior.Revision
+							env.OperationID = prior.OperationID
+							env.PreviousRevision = prior.PreviousRevision
+							previousHash = hash
+							err = nil
+							if _, e = conn.ExecContext(ctx, "UPDATE export_identities SET fingerprint=?,revision=?,operation_id=?,previous_revision=? WHERE id=?", hash, env.Revision, env.OperationID, env.PreviousRevision, id); e != nil {
+								return e
+							}
+						}
+					}
 				}
 				if err == sql.ErrNoRows || previousHash != hash {
 					env.PreviousRevision = env.Revision
@@ -560,6 +582,9 @@ func exportConn(ctx context.Context, conn *sql.Conn, c SyncConfig) (map[string][
 		}
 		return rows.Err()
 	}()
+	if err == nil {
+		err = overlayTombstones(ctx, conn, files)
+	}
 	return files, ops, err
 }
 
@@ -792,6 +817,13 @@ func (a App) SyncStatus(ctx context.Context) (SyncResult, error) {
 	}
 	if outcome != "" && outcome != "synced" {
 		r.State = outcome
+	}
+	r.Conflicts, r.Blocked, err = conflictStatus(ctx, db)
+	if err != nil {
+		return r, err
+	}
+	if len(r.Conflicts) > 0 {
+		r.State = "conflict"
 	}
 	return r, nil
 }
