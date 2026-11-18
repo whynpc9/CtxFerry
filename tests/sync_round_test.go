@@ -134,7 +134,7 @@ func TestSyncRejectsInvalidSnapshotAtomically(t *testing.T) {
 	git(t, a, "-C", checkout, "add", "--", paths[0])
 	git(t, a, "-C", checkout, "commit", "-m", "corrupt object")
 	git(t, a, "-C", checkout, "push", "origin", "ctxferry-v1")
-	failure(t, b.Run(t, "sync", "--format=json"), "invalid-catalog")
+	failure(t, b.Run(t, "sync", "--format=json"), "incomplete")
 	after := b.Run(t, "sync", "status", "--format=json").Success(t)
 	if string(before.Data["head"]) != string(after.Data["head"]) || string(before.Data["lastSyncAt"]) != string(after.Data["lastSyncAt"]) {
 		t.Fatal("invalid snapshot advanced baseline")
@@ -146,7 +146,7 @@ func TestSyncRejectsInvalidSnapshotAtomically(t *testing.T) {
 	c := testcli.New(t, a.Binary)
 	c.GitPath = a.GitPath
 	c.ExtraEnv = a.ExtraEnv
-	failure(t, c.Run(t, "join", "https://github.com/example/context.git", "--format=json"), "invalid-catalog")
+	failure(t, c.Run(t, "join", "https://github.com/example/context.git", "--format=json"), "incomplete")
 	c.Run(t, "init", "--format=json").Success(t)
 }
 

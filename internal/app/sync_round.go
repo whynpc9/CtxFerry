@@ -50,8 +50,14 @@ type remoteRecord struct {
 func strictJSON(b []byte, v any) error {
 	d := json.NewDecoder(bytes.NewReader(b))
 	d.DisallowUnknownFields()
-	if d.Decode(v) != nil || d.Decode(new(any)) != io.EOF {
-		return Fail("unsupported-schema", "unsupported or invalid catalog JSON")
+	if err := d.Decode(v); err != nil {
+		if strings.HasPrefix(err.Error(), "json: unknown field ") {
+			return Fail("unsupported-schema", "unknown catalog field")
+		}
+		return Fail("incomplete", "malformed or partial catalog JSON")
+	}
+	if d.Decode(new(any)) != io.EOF {
+		return Fail("incomplete", "malformed or partial catalog JSON")
 	}
 	return nil
 }
@@ -63,6 +69,9 @@ func decodeRecord(b []byte) (remoteRecord, error) {
 	var r remoteRecord
 	if err := strictJSON(b, &r.publishedEnvelope); err != nil {
 		return r, err
+	}
+	if r.SchemaVersion != 1 {
+		return r, Fail("unsupported-schema", "unsupported record schema")
 	}
 	raw, err := json.Marshal(r.Payload)
 	if err != nil {
@@ -78,7 +87,7 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 	var w workspaceFormat
 	records := map[string]remoteRecord{}
 	invalid := func() (workspaceFormat, map[string]remoteRecord, error) {
-		return w, nil, Fail("invalid-catalog", "catalog hash, schema or reference validation failed")
+		return w, nil, Fail("incomplete", "catalog hash or reference validation failed")
 	}
 	if err := strictJSON(files["workspace.json"], &w); err != nil {
 		return w, nil, err
@@ -111,7 +120,10 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 		if err != nil {
 			return w, nil, err
 		}
-		if !validUUID(r.ID) || path != recordPath(r.ID) || r.SchemaVersion != 1 || r.WorkspaceID != w.WorkspaceID || !validUUID(r.Revision) || !validUUID(r.OperationID) || !validUUID(r.Provenance.DeviceID) || r.PreviousRevision != "" && !validUUID(r.PreviousRevision) || r.Deleted || r.Policy.Storage != "shared" || !validPolicy(r.Policy) {
+		if r.SchemaVersion != 1 {
+			return w, nil, Fail("unsupported-schema", "unsupported record schema")
+		}
+		if !validUUID(r.ID) || path != recordPath(r.ID) || r.WorkspaceID != w.WorkspaceID || !validUUID(r.Revision) || !validUUID(r.OperationID) || !validUUID(r.Provenance.DeviceID) || r.PreviousRevision != "" && !validUUID(r.PreviousRevision) || r.Deleted || r.Policy.Storage != "shared" || !validPolicy(r.Policy) {
 			return invalid()
 		}
 		if _, err = time.Parse(time.RFC3339Nano, r.Provenance.UpdatedAt); err != nil {
@@ -121,7 +133,10 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 		switch r.Kind {
 		case "project":
 			var p Project
-			if strictJSON(r.Data, &p) != nil || p.ID != r.ID || !validSlug.MatchString(p.Slug) || len(p.Slug) > 63 || slugs[p.Slug] || r.Scope != (Scope{"workspace", w.WorkspaceID}) {
+			if err := strictJSON(r.Data, &p); err != nil {
+				return w, nil, err
+			}
+			if p.ID != r.ID || !validSlug.MatchString(p.Slug) || len(p.Slug) > 63 || slugs[p.Slug] || r.Scope != (Scope{"workspace", w.WorkspaceID}) {
 				return invalid()
 			}
 			slugs[p.Slug] = true
@@ -132,7 +147,10 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 			var p struct {
 				RemoteAliases []string `json:"remoteAliases"`
 			}
-			if strictJSON(r.Data, &p) != nil || r.Scope != (Scope{"workspace", w.WorkspaceID}) {
+			if err := strictJSON(r.Data, &p); err != nil {
+				return w, nil, err
+			}
+			if r.Scope != (Scope{"workspace", w.WorkspaceID}) {
 				return invalid()
 			}
 			for _, alias := range v.RemoteAliases {
@@ -146,7 +164,10 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 				RepositoryID string `json:"repositoryId"`
 				Subdirectory string `json:"subdirectory"`
 			}
-			if strictJSON(r.Data, &p) != nil || r.Scope.Kind != "project" || !validUUID(v.RepositoryID) || v.Subdirectory == "" || filepath.IsAbs(v.Subdirectory) || strings.Contains(v.Subdirectory, "..") || strings.Contains(v.Subdirectory, "\\") {
+			if err := strictJSON(r.Data, &p); err != nil {
+				return w, nil, err
+			}
+			if r.Scope.Kind != "project" || !validUUID(v.RepositoryID) || v.Subdirectory == "" || filepath.IsAbs(v.Subdirectory) || strings.Contains(v.Subdirectory, "..") || strings.Contains(v.Subdirectory, "\\") {
 				return invalid()
 			}
 		case "context":
@@ -159,7 +180,10 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 				ValidUntil string          `json:"validUntil"`
 				Body       *objectManifest `json:"body"`
 			}
-			if strictJSON(r.Data, &p) != nil || r.Scope.Kind != "project" || strings.TrimSpace(v.Title) == "" || strings.TrimSpace(v.Purpose) == "" || strings.TrimSpace(v.Source) == "" || v.Body == nil {
+			if err := strictJSON(r.Data, &p); err != nil {
+				return w, nil, err
+			}
+			if r.Scope.Kind != "project" || strings.TrimSpace(v.Title) == "" || strings.TrimSpace(v.Purpose) == "" || strings.TrimSpace(v.Source) == "" || v.Body == nil {
 				return invalid()
 			}
 			b, ok := files["objects/"+v.Body.SHA256]
@@ -201,6 +225,9 @@ func readSnapshot(ctx context.Context, dir, head string) (map[string][]byte, err
 	if err != nil {
 		return nil, err
 	}
+	if listing == "" || !strings.HasSuffix(listing, "\x00") {
+		return nil, Fail("incomplete", "partial Git tree listing")
+	}
 	files := map[string][]byte{}
 	total := 0
 	for _, line := range strings.Split(listing, "\x00") {
@@ -209,11 +236,11 @@ func readSnapshot(ctx context.Context, dir, head string) (map[string][]byte, err
 		}
 		parts := strings.SplitN(line, "\t", 2)
 		if len(parts) != 2 {
-			return nil, Fail("invalid-catalog", "invalid Git tree")
+			return nil, Fail("incomplete", "invalid Git tree")
 		}
 		meta := strings.Fields(parts[0])
 		if len(meta) != 3 || meta[0] != "100644" || meta[1] != "blob" {
-			return nil, Fail("invalid-catalog", "catalog requires regular files")
+			return nil, Fail("incomplete", "catalog requires regular files")
 		}
 		size, err := syncGit(ctx, dir, nil, "cat-file", "-s", meta[2])
 		if err != nil {
@@ -230,6 +257,9 @@ func readSnapshot(ctx context.Context, dir, head string) (map[string][]byte, err
 		data, err := syncGitRaw(ctx, dir, nil, "cat-file", "blob", meta[2])
 		if err != nil {
 			return nil, err
+		}
+		if len(data) != n {
+			return nil, Fail("incomplete", "partial Git blob")
 		}
 		files[parts[1]] = []byte(data)
 	}
@@ -477,7 +507,7 @@ func (a App) Join(ctx context.Context, remote, branch string, subscriptions []st
 		return r, Fail("privacy-unconfirmed", "join requires reachable Git and confirmed private repository identity")
 	}
 	conf.Identity = check.Identity
-	head, files, err := fetchSnapshot(ctx, dir, conf)
+	head, files, err := newSyncBackend().Fetch(ctx, dir, conf)
 	if err != nil {
 		return r, err
 	}
@@ -543,10 +573,10 @@ func (a App) Join(ctx context.Context, remote, branch string, subscriptions []st
 }
 func fetchSnapshot(ctx context.Context, dir string, c SyncConfig) (string, map[string][]byte, error) {
 	_, remote := syncEndpoints(c.Remote)
-	if _, err := syncGit(ctx, dir, nil, "fetch", "--no-tags", "--no-recurse-submodules", "--", remote, "refs/heads/"+c.Branch+":refs/ctxferry/fetched"); err != nil {
+	if _, err := syncGit(ctx, dir, nil, "fetch", "--no-tags", "--no-recurse-submodules", "--", remote, "refs/heads/"+c.Branch); err != nil {
 		return "", nil, err
 	}
-	head, err := syncGit(ctx, dir, nil, "rev-parse", "refs/ctxferry/fetched")
+	head, err := syncGit(ctx, dir, nil, "rev-parse", "FETCH_HEAD")
 	if err != nil {
 		return "", nil, err
 	}
@@ -586,7 +616,7 @@ func reindex(ctx context.Context, c *sql.Conn) error {
 	return nil
 }
 
-func (a App) Sync(ctx context.Context) (result SyncResult, err error) {
+func (a App) syncRound(ctx context.Context) (result SyncResult, err error) {
 	result = SyncResult{Boundary: plaintextBoundary, State: "pending"}
 	release, err := a.syncOwner(ctx)
 	if err != nil {
@@ -600,11 +630,7 @@ func (a App) Sync(ctx context.Context) (result SyncResult, err error) {
 	defer db.Close()
 	defer func() {
 		if err != nil {
-			code := Classify(err).Code
-			if code == "git-error" {
-				code = "offline"
-			}
-			db.ExecContext(context.Background(), "UPDATE sync_state SET outcome=?", code)
+			persistSyncFailure(db, err)
 		}
 	}()
 	conf, err := loadSync(ctx, db)
@@ -630,7 +656,7 @@ func (a App) Sync(ctx context.Context) (result SyncResult, err error) {
 		}
 		return result, Fail(code, "authenticated private repository identity could not be confirmed")
 	}
-	head, remote, err := fetchSnapshot(ctx, dir, conf)
+	head, remote, err := newSyncBackend().Fetch(ctx, dir, conf)
 	if err != nil {
 		return result, err
 	}
@@ -641,7 +667,11 @@ func (a App) Sync(ctx context.Context) (result SyncResult, err error) {
 	if confirmed == "" {
 		return result, Fail("initialization-required", "use explicit sync init for first publication")
 	}
-	if _, err = syncGit(ctx, dir, nil, "merge-base", "--is-ancestor", confirmed, head); err != nil {
+	extends, err := newSyncBackend().Ancestor(ctx, dir, confirmed, head)
+	if err != nil {
+		return result, err
+	}
+	if !extends {
 		return result, Fail("history-rewritten", "remote head no longer extends confirmed history")
 	}
 	if pending != "" {
@@ -649,7 +679,11 @@ func (a App) Sync(ctx context.Context) (result SyncResult, err error) {
 		if json.Unmarshal([]byte(pending), &attempt) != nil || attempt.Epoch != epoch || attempt.ExpectedHead == "" {
 			return result, Fail("push-pending", "pending initialization requires its explicit preview retry")
 		}
-		if _, e := syncGit(ctx, dir, nil, "merge-base", "--is-ancestor", attempt.Candidate, head); e == nil {
+		accepted, e := newSyncBackend().Ancestor(ctx, dir, attempt.Candidate, head)
+		if e != nil {
+			return result, e
+		}
+		if accepted {
 			candidateFiles, e := readSnapshot(ctx, dir, attempt.Candidate)
 			if e != nil {
 				return result, e
@@ -861,10 +895,8 @@ func (a App) Sync(ctx context.Context) (result SyncResult, err error) {
 	if _, err = db.ExecContext(ctx, "UPDATE sync_state SET pending=?", string(encoded)); err != nil {
 		return result, err
 	}
-	_, transport := syncEndpoints(conf.Remote)
-	ref := "refs/heads/" + conf.Branch
-	if _, err = syncGit(ctx, dir, nil, "push", "--porcelain", "--force-with-lease="+ref+":"+head, "--", transport, candidate+":"+ref); err != nil {
-		return result, Fail("push-pending", "publication result requires reconciliation; candidate and operations retained")
+	if err = newSyncBackend().Publish(ctx, dir, conf, attempt); err != nil {
+		return result, err
 	}
 	// Install only acknowledged records, keeping conflicting local working versions.
 	for id := range conflicts {

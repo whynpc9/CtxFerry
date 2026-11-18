@@ -49,10 +49,9 @@ The root is pinned locally and the pending push (expected absent head, candidate
 epoch and operation IDs) is committed durably before publication. The push uses an
 exact expected-absent lease; a competing root is preserved. A failed or ambiguous
 push stays pending. Retrying the same preview reuses the same candidate and can
-acknowledge an already accepted candidate when it is still the remote tip. A
+acknowledge an already accepted candidate anywhere in validated remote history. A
 changed snapshot or a different existing remote history requires reconciliation;
-it is never overwritten. Routine sync and join use the same validated record format. Descendant-history
-recovery and explicit conflict resolution are tracked by issues #10 and #9.
+it is never overwritten. Routine sync and join use the same validated record format. Recovery also works when another device has appended descendants. Explicit conflict resolution is tracked by issue #9.
 
 ## Format decisions
 
@@ -120,8 +119,7 @@ Concurrent edits retain the original base, desired local envelope and current
 remote baseline. Independent records can proceed. A conflict reports `conflict`;
 explicit resolution follows in #9. A failed/ambiguous push retains its pinned
 candidate and operation IDs. The next round checks fetched history to acknowledge
-an accepted candidate or reconcile its operations against the current head. Issue
-#10 extends fault injection and retry scheduling.
+an accepted candidate or reconcile its operations against the current head. Lease rejection starts a fresh fetch and business-baseline comparison within the same bounded invocation.
 Published records cannot disappear or change kind. Tombstones and changing an
 already-published record to local-only require the explicit deletion flow in #9.
 
@@ -130,3 +128,37 @@ outcomes. An existing schema-4 publisher bootstraps its actual confirmed Git
 snapshot from the locally retained commit before its next edit or routine sync, preserving later unpublished edits. A staged
 catalog is limited to 64 MiB, each Markdown object to 1 MiB, and each envelope to
 256 KiB. Existing local-only data and bindings survive sync.
+
+## Recovery and failure states
+
+The Git backend separates ancestry false (exit 1) from an operational failure.
+An ancestry failure never acknowledges or discards a pending candidate. Fetch uses
+`FETCH_HEAD`, so rewritten remote history can be inspected without modifying a
+remote branch. A head that no longer extends confirmed history reports
+`history-rewritten` and stops publication while preserving local reads and work.
+
+Initialization reads and validates an existing winner after an expected-absent
+race. A different root reports `branch-exists` and retains this device's workspace,
+preview and candidate; it never silently adopts or replaces the winner. Invalid
+winners report the validation failure. Missing branches in routine sync or join,
+404s, permissions and failed listings never authorize initialization.
+
+Malformed JSON, missing or corrupt payloads, partial Git listings and short blob
+reads report `incomplete`. Future record versions, kinds and unknown fields report
+`unsupported-schema` and refuse publication of the unfamiliar catalog. Neither
+failure advances the confirmed head, last successful sync time or visible data.
+Git helper/SSH-agent lock signals report `unlock-required`; ordinary access denial
+reports `auth-required`. Authentication diagnostics are redacted.
+
+Routine sync and initialization allow at most four rounds in a two-minute command
+budget, with cancellable waits of 250 ms, 500 ms and 1 s. Transient transport errors
+and exact-lease contention retry; authentication, unlock, missing branches and
+catalog incompatibility/damage stop immediately. An uncertain push stays journaled
+as `pending`; the next invocation checks candidate ancestry before any further
+publication. Permanent push rejection also keeps the journal for explicit retry.
+There is no background scheduler in this phase.
+
+The `ctxferry_test` binary wraps the real backend to lose push responses, publish a
+competing candidate immediately before the lease, fail ancestry/fetch, or truncate
+Git reads. These controls are absent from production builds. Scenarios use only a
+loopback metadata endpoint, temporary application directories and local bare Git.
