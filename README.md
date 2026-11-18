@@ -15,7 +15,7 @@ ctxferry project inspect <uuid-or-slug> --format json
 
 Set `--data-dir <root>` or `CTXFERRY_DATA_DIR` to isolate an installation. The flag takes precedence. Defaults are `$XDG_DATA_HOME/ctxferry` (or `~/.local/share/ctxferry`) on Linux/WSL, `~/Library/Application Support/ctxferry` on macOS, and `%LOCALAPPDATA%\ctxferry` on Windows. Windows and WSL have separate installations. Keep the root outside bound directories and on a local filesystem: it contains an active WAL-mode SQLite database, not a shareable sync folder.
 
-Each application root currently holds one Workspace and one Device at `workspaces/default/catalog.sqlite`. UUIDs are stable across process restarts. Local schema version 3 uses short immediate write transactions, foreign keys, FULL synchronous writes, and a 5-second busy timeout on every connection. Unsupported newer schemas and damaged databases fail without replacement. Future workspace switching must preserve the Device identity.
+Each application root currently holds one Workspace and one Device at `workspaces/default/catalog.sqlite`. UUIDs are stable across process restarts. Local schema version 4 uses short immediate write transactions, foreign keys, FULL synchronous writes, and a 5-second busy timeout on every connection. Unsupported newer schemas and damaged databases fail without replacement. Future workspace switching must preserve the Device identity.
 
 Every command supports `--format json`, emitting one object (including failures and help):
 
@@ -64,3 +64,5 @@ Raw remote URLs are not echoed or stored. Schema 2 migrates old bindings transac
 keeping identities and paths; repeat bind explicitly to enrich old Git bindings.
 
 Context commands add offline ContextDocs with independent storage and disclosure policies, revision-checked `context put`, and SQLite FTS5 search. See [context commands and decisions](docs/context.md). Schema 3 adds documents after the schema 2 Project identification migration.
+
+First private publication supports separate Git/privacy checks, an exact plaintext preview and explicit branch initialization. See [sync workflow and format](docs/sync.md).

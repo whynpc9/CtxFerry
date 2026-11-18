@@ -93,7 +93,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 	remote.AddCommand(addRemote)
 	project.AddCommand(bind, list, inspect, remote)
-	root.AddCommand(initCmd, project, contextCommand(ctx, invoke, &projectSelector))
+	root.AddCommand(initCmd, project, contextCommand(ctx, invoke, &projectSelector), syncCommand(ctx, invoke))
 
 	// Detect format before parsing so usage errors also obey the JSON contract.
 	requestedJSON := false
@@ -187,6 +187,12 @@ func render(w io.Writer, result any) error {
 				return err
 			}
 		}
+	case app.SyncResult:
+		b, e := json.MarshalIndent(r, "", "  ")
+		if e != nil {
+			return e
+		}
+		_, err = fmt.Fprintln(w, string(b))
 	case app.ContextResult:
 		b, e := json.MarshalIndent(r, "", "  ")
 		if e != nil {

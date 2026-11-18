@@ -110,6 +110,12 @@ func projectDoc(d ContextDoc, body bool) (ContextDoc, error) {
 	return d, nil
 }
 func (a App) PutContext(ctx context.Context, selector, cwd string, in PutContext) (ContextResult, error) {
+
+	release, lockErr := a.syncOwner(ctx)
+	if lockErr != nil {
+		return ContextResult{}, lockErr
+	}
+	defer release()
 	r, e := a.contextProject(ctx, selector, cwd)
 	if e != nil {
 		return r, e
