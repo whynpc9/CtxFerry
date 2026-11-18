@@ -111,7 +111,7 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 		if err != nil {
 			return w, nil, err
 		}
-		if !validUUID(r.ID) || path != recordPath(r.ID) || r.SchemaVersion != 1 || r.WorkspaceID != w.WorkspaceID || !validUUID(r.Revision) || !validUUID(r.OperationID) || !validUUID(r.Provenance.DeviceID) || r.PreviousRevision != "" && !validUUID(r.PreviousRevision) || r.Deleted || r.Policy.Storage != "shared" || !validPolicy(r.Policy) {
+		if !validUUID(r.ID) || path != recordPath(r.ID) || r.SchemaVersion != 1 || r.WorkspaceID != w.WorkspaceID || !validUUID(r.Revision) || !validUUID(r.OperationID) || !validUUID(r.Provenance.DeviceID) || r.PreviousRevision != "" && !validUUID(r.PreviousRevision) || r.Policy.Storage != "shared" || !validPolicy(r.Policy) {
 			return invalid()
 		}
 		if _, err = time.Parse(time.RFC3339Nano, r.Provenance.UpdatedAt); err != nil {
@@ -121,10 +121,12 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 		switch r.Kind {
 		case "project":
 			var p Project
-			if strictJSON(r.Data, &p) != nil || p.ID != r.ID || !validSlug.MatchString(p.Slug) || len(p.Slug) > 63 || slugs[p.Slug] || r.Scope != (Scope{"workspace", w.WorkspaceID}) {
+			if strictJSON(r.Data, &p) != nil || p.ID != r.ID || !validSlug.MatchString(p.Slug) || len(p.Slug) > 63 || (!r.Deleted && slugs[p.Slug]) || r.Scope != (Scope{"workspace", w.WorkspaceID}) {
 				return invalid()
 			}
-			slugs[p.Slug] = true
+			if !r.Deleted {
+				slugs[p.Slug] = true
+			}
 			if _, err = time.Parse(time.RFC3339Nano, p.CreatedAt); err != nil {
 				return invalid()
 			}
@@ -171,7 +173,7 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 					return invalid()
 				}
 			}
-			if v.Purpose == "project-summary" {
+			if !r.Deleted && v.Purpose == "project-summary" {
 				if summaries[r.Scope.ID] {
 					return invalid()
 				}
@@ -183,13 +185,16 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 		records[r.ID] = r
 	}
 	for _, r := range records {
+		if r.Deleted {
+			continue
+		}
 		if r.Scope.Kind == "project" {
-			if p, ok := records[r.Scope.ID]; !ok || p.Kind != "project" {
+			if p, ok := records[r.Scope.ID]; !ok || p.Kind != "project" || p.Deleted {
 				return invalid()
 			}
 		}
 		if r.Kind == "membership" {
-			if p, ok := records[r.Value.RepositoryID]; !ok || p.Kind != "repository" {
+			if p, ok := records[r.Value.RepositoryID]; !ok || p.Kind != "repository" || p.Deleted {
 				return invalid()
 			}
 		}
@@ -320,13 +325,20 @@ func queueChanges(ctx context.Context, c *sql.Conn) error {
 		if err != nil {
 			return err
 		}
+		var active int
+		if err = c.QueryRowContext(ctx, "SELECT count(*) FROM sync_conflicts WHERE id=? AND active=1", r.ID).Scan(&active); err != nil {
+			return err
+		}
+		if active > 0 {
+			continue
+		}
 		old := base[path]
 		if len(old) > 0 {
 			prior, err := decodeRecord(old)
 			if err != nil {
 				return err
 			}
-			if bytes.Equal(prior.Data, r.Data) && prior.Policy == r.Policy {
+			if prior.Revision == r.Revision {
 				if _, err = c.ExecContext(ctx, "DELETE FROM sync_outbox WHERE id=?", r.ID); err != nil {
 					return err
 				}
@@ -357,12 +369,27 @@ func saveBaseline(ctx context.Context, c *sql.Conn, files map[string][]byte, hea
 	return err
 }
 func installSnapshot(ctx context.Context, c *sql.Conn, files map[string][]byte, records map[string]remoteRecord) error {
+	var err error
+	records, err = installableRecords(ctx, c, records)
+	if err != nil {
+		return err
+	}
 	for _, kind := range []string{"project", "repository", "membership", "context"} {
 		for id, r := range records {
 			if r.Kind != kind {
 				continue
 			}
 			v := r.Value
+			if r.Deleted {
+				b, _ := json.Marshal(r.publishedEnvelope)
+				if _, err := c.ExecContext(ctx, "INSERT INTO sync_tombstones VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data", id, b); err != nil {
+					return err
+				}
+			} else {
+				if _, err := c.ExecContext(ctx, "DELETE FROM sync_tombstones WHERE id=?", id); err != nil {
+					return err
+				}
+			}
 			var err error
 			switch kind {
 			case "project":
@@ -383,7 +410,7 @@ func installSnapshot(ctx context.Context, c *sql.Conn, files map[string][]byte, 
 			case "membership":
 				_, err = c.ExecContext(ctx, "INSERT INTO memberships VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id,repository_id=excluded.repository_id,subdirectory=excluded.subdirectory", id, r.Scope.ID, v.RepositoryID, v.Subdirectory)
 			case "context":
-				d := ContextDoc{SchemaVersion: 1, ID: id, Kind: kind, WorkspaceID: r.WorkspaceID, Scope: r.Scope, Revision: r.Revision, PreviousRevision: r.PreviousRevision, OperationID: r.OperationID, DeviceID: r.Provenance.DeviceID, UpdatedAt: r.Provenance.UpdatedAt, Title: v.Title, Purpose: v.Purpose, Source: v.Source, Summary: v.Summary, ObservedAt: v.ObservedAt, ValidUntil: v.ValidUntil, Policy: r.Policy, Freshness: "unknown"}
+				d := ContextDoc{Deleted: r.Deleted, SchemaVersion: 1, ID: id, Kind: kind, WorkspaceID: r.WorkspaceID, Scope: r.Scope, Revision: r.Revision, PreviousRevision: r.PreviousRevision, OperationID: r.OperationID, DeviceID: r.Provenance.DeviceID, UpdatedAt: r.Provenance.UpdatedAt, Title: v.Title, Purpose: v.Purpose, Source: v.Source, Summary: v.Summary, ObservedAt: v.ObservedAt, ValidUntil: v.ValidUntil, Policy: r.Policy, Freshness: "unknown"}
 				b, _ := json.Marshal(d)
 				_, err = c.ExecContext(ctx, "INSERT INTO records VALUES(?,?,'context',?) ON CONFLICT(id) DO UPDATE SET metadata=excluded.metadata", id, r.Scope.ID, string(b))
 				if err != nil {
@@ -414,6 +441,9 @@ func installSnapshot(ctx context.Context, c *sql.Conn, files map[string][]byte, 
 func indexDoc(ctx context.Context, c *sql.Conn, d ContextDoc) error {
 	if _, err := c.ExecContext(ctx, "DELETE FROM context_fts WHERE id=?", d.ID); err != nil {
 		return err
+	}
+	if d.Deleted {
+		return nil
 	}
 	var subscribed int
 	err := c.QueryRowContext(ctx, "SELECT subscribed FROM project_subscriptions WHERE project_id=?", d.Scope.ID).Scan(&subscribed)
@@ -702,11 +732,6 @@ func (a App) Sync(ctx context.Context) (result SyncResult, err error) {
 	if err != nil {
 		return result, err
 	}
-	type operation struct {
-		id             string
-		base, proposed []byte
-		op             string
-	}
 	ops := []operation{}
 	rows, err := db.QueryContext(ctx, "SELECT id,base,proposed,operation_id FROM sync_outbox ORDER BY id")
 	if err != nil {
@@ -725,50 +750,13 @@ func (a App) Sync(ctx context.Context) (result SyncResult, err error) {
 	if err != nil {
 		return result, err
 	}
-	merged := map[string][]byte{}
-	for p, b := range remote {
-		merged[p] = b
-	}
-	selected := []operation{}
-	conflicts := map[string]bool{}
-	for _, o := range ops {
-		path := recordPath(o.id)
-		r := remote[path]
-		if bytes.Equal(r, o.proposed) {
-			selected = append(selected, o)
-			continue
-		}
-		var baseRev, remoteRev string
-		if len(o.base) > 0 {
-			b, e := decodeRecord(o.base)
-			if e != nil {
-				return result, e
-			}
-			baseRev = b.Revision
-		}
-		if len(r) > 0 {
-			b, e := decodeRecord(r)
-			if e != nil {
-				return result, e
-			}
-			remoteRev = b.Revision
-		}
-		if baseRev != remoteRev {
-			conflicts[o.id] = true
-			continue
-		}
-		merged[path] = o.proposed
-		selected = append(selected, o)
-	}
-	// Locally generated object files are immutable and verified with the merged catalog.
 	local, _, err := exportSnapshot(ctx, db, conf)
 	if err != nil {
 		return result, err
 	}
-	for p, b := range local {
-		if strings.HasPrefix(p, "objects/") {
-			merged[p] = b
-		}
+	merged, selected, conflicts, blocked, err := planOperations(remote, local, ops)
+	if err != nil {
+		return result, err
 	}
 	_, mergedRecords, err := validateSnapshot(merged, conf.WorkspaceID, epoch)
 	if err != nil {
@@ -818,6 +806,9 @@ func (a App) Sync(ctx context.Context) (result SyncResult, err error) {
 		delete(records, o.id)
 	}
 	err = store.Write(ctx, db, func(c *sql.Conn) error {
+		if err := persistConflicts(ctx, c, ops, conflicts, blocked, remote, local, head); err != nil {
+			return err
+		}
 		if err := installSnapshot(ctx, c, remote, records); err != nil {
 			return err
 		}
@@ -867,8 +858,10 @@ func (a App) Sync(ctx context.Context) (result SyncResult, err error) {
 		return result, Fail("push-pending", "publication result requires reconciliation; candidate and operations retained")
 	}
 	// Install only acknowledged records, keeping conflicting local working versions.
-	for id := range conflicts {
-		delete(mergedRecords, id)
+	for _, o := range ops {
+		if !selectedOperation(selected, o.id) {
+			delete(mergedRecords, o.id)
+		}
 	}
 	err = store.Write(ctx, db, func(c *sql.Conn) error {
 		if err := installSnapshot(ctx, c, merged, mergedRecords); err != nil {

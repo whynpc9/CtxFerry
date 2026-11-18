@@ -122,6 +122,23 @@ func contextCommand(ctx context.Context, invoke func(func(app.App) (any, error))
 			return original(cmd, args)
 		}
 	}
+	for _, action := range []string{"delete", "restore"} {
+		var revision, commit string
+		cmd := &cobra.Command{Use: action + " <document-uuid>", Args: cobra.ExactArgs(1)}
+		cmd.Flags().StringVar(&revision, "if-revision", "", "Required current revision")
+		if action == "restore" {
+			cmd.Flags().StringVar(&commit, "from-commit", "", "Required ancestor commit SHA")
+		}
+		cmd.RunE = func(cmd *cobra.Command, args []string) error {
+			return invoke(func(a app.App) (any, error) {
+				if action == "restore" && commit == "" {
+					return nil, app.Fail("usage", "restore requires --from-commit")
+				}
+				return a.ChangeDeletion(ctx, args[0], revision, commit)
+			})(cmd, args)
+		}
+		group.AddCommand(cmd)
+	}
 	group.AddCommand(put, show, get, search)
 	return group
 }

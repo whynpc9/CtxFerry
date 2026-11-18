@@ -59,7 +59,7 @@ func Open(ctx context.Context, root string, create bool) (*sql.DB, error) {
 	if err = db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		return fail(err)
 	}
-	if version > 5 {
+	if version > 6 {
 		return fail(ErrUnsupportedSchema)
 	}
 	if version == 0 && !create {
@@ -72,13 +72,13 @@ func Open(ctx context.Context, root string, create bool) (*sql.DB, error) {
 	if mode != "wal" {
 		return fail(fmt.Errorf("WAL unavailable: %s", mode))
 	}
-	if version < 5 {
+	if version < 6 {
 		err = Write(ctx, db, func(c *sql.Conn) error {
 			var v int
 			if err := c.QueryRowContext(ctx, "PRAGMA user_version").Scan(&v); err != nil {
 				return err
 			}
-			if v > 5 {
+			if v > 6 {
 				return ErrUnsupportedSchema
 			}
 			if v == 0 {
@@ -106,7 +106,13 @@ func Open(ctx context.Context, root string, create bool) (*sql.DB, error) {
 				v = 4
 			}
 			if v == 4 {
-				_, err := c.ExecContext(ctx, roundSchema)
+				if _, err := c.ExecContext(ctx, roundSchema); err != nil {
+					return err
+				}
+				v = 5
+			}
+			if v == 5 {
+				_, err := c.ExecContext(ctx, conflictSchema)
 				return err
 			}
 			return nil
@@ -174,3 +180,11 @@ CREATE TABLE project_subscriptions (project_id TEXT PRIMARY KEY REFERENCES proje
 ALTER TABLE sync_state ADD COLUMN last_sync_at TEXT NOT NULL DEFAULT '';
 ALTER TABLE sync_state ADD COLUMN outcome TEXT NOT NULL DEFAULT '';
 PRAGMA user_version=5;`
+
+const conflictSchema = `
+CREATE TABLE IF NOT EXISTS sync_conflicts (token TEXT PRIMARY KEY, id TEXT NOT NULL, base BLOB, local BLOB NOT NULL, remote BLOB NOT NULL, head TEXT NOT NULL, active INTEGER NOT NULL);
+CREATE UNIQUE INDEX IF NOT EXISTS active_conflict ON sync_conflicts(id) WHERE active=1;
+CREATE TABLE IF NOT EXISTS sync_objects (path TEXT PRIMARY KEY, data BLOB NOT NULL);
+CREATE TABLE IF NOT EXISTS sync_tombstones (id TEXT PRIMARY KEY, data BLOB NOT NULL);
+CREATE TABLE IF NOT EXISTS sync_blocked (id TEXT PRIMARY KEY, reason TEXT NOT NULL);
+PRAGMA user_version=6;`

@@ -200,6 +200,12 @@ func render(w io.Writer, result any) error {
 				return err
 			}
 		}
+	case app.ConflictDetail:
+		b, e := json.MarshalIndent(r, "", "  ")
+		if e != nil {
+			return e
+		}
+		_, err = fmt.Fprintln(w, string(b))
 	case app.SyncResult:
 		b, e := json.MarshalIndent(r, "", "  ")
 		if e != nil {
