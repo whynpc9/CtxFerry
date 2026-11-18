@@ -32,6 +32,7 @@ type SyncCheck struct {
 	GitReachable bool   `json:"gitReachable"`
 	Privacy      string `json:"privacy"`
 	Identity     string `json:"identity,omitempty"`
+	Failure      string `json:"failure,omitempty"`
 }
 type UploadFile struct {
 	Path   string `json:"path"`
@@ -39,13 +40,15 @@ type UploadFile struct {
 	SHA256 string `json:"sha256"`
 }
 type SyncResult struct {
-	Config    *SyncConfig  `json:"config,omitempty"`
-	Check     *SyncCheck   `json:"check,omitempty"`
-	PreviewID string       `json:"previewId,omitempty"`
-	Files     []UploadFile `json:"files,omitempty"`
-	Boundary  string       `json:"boundary"`
-	State     string       `json:"state"`
-	Head      string       `json:"head,omitempty"`
+	Config     *SyncConfig  `json:"config,omitempty"`
+	Check      *SyncCheck   `json:"check,omitempty"`
+	PreviewID  string       `json:"previewId,omitempty"`
+	Files      []UploadFile `json:"files,omitempty"`
+	Boundary   string       `json:"boundary"`
+	State      string       `json:"state"`
+	Head       string       `json:"head,omitempty"`
+	LastSyncAt *string      `json:"lastSyncAt"`
+	Pending    int          `json:"pending"`
 }
 
 const plaintextBoundary = "Shared records and their bodies are uploaded in plaintext. Local-only records, checkout bindings, credential stores and authentication are excluded. Shared prose can contain pasted secrets; inspect it before publishing."
@@ -99,6 +102,10 @@ func (a App) syncOwner(ctx context.Context) (func(), error) {
 	return func() { db.ExecContext(context.Background(), "ROLLBACK"); db.Close() }, nil
 }
 func syncGit(ctx context.Context, dir string, input []byte, args ...string) (string, error) {
+	out, err := syncGitRaw(ctx, dir, input, args...)
+	return strings.TrimSpace(out), err
+}
+func syncGitRaw(ctx context.Context, dir string, input []byte, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	base := []string{"--git-dir=" + dir, "-c", "core.hooksPath=" + os.DevNull, "-c", "commit.gpgSign=false", "-c", "core.attributesFile=" + os.DevNull, "-c", "protocol.ext.allow=never", "-c", "http.followRedirects=false", "-c", "protocol.file.allow=always"}
@@ -111,13 +118,23 @@ func syncGit(ctx context.Context, dir string, input []byte, args ...string) (str
 	}
 	cmd.Env = append(cmd.Env, "GIT_TERMINAL_PROMPT=0", "GIT_AUTHOR_NAME=CtxFerry", "GIT_AUTHOR_EMAIL=ctxferry@localhost", "GIT_COMMITTER_NAME=CtxFerry", "GIT_COMMITTER_EMAIL=ctxferry@localhost")
 	cmd.Stdin = bytes.NewReader(input)
-	var out bytes.Buffer
+	var out, diagnostics bytes.Buffer
 	cmd.Stdout = &out
+	cmd.Stderr = &diagnostics
 	// Git diagnostics may include helper secrets or URLs: do not forward them.
 	if err := cmd.Run(); err != nil {
+		message := strings.ToLower(diagnostics.String())
+		for _, marker := range []string{"authentication failed", "permission denied", "could not read username", "terminal prompts disabled", "http 401", "http 403"} {
+			if strings.Contains(message, marker) {
+				return "", Fail("auth-required", "system Git authentication or repository access is required")
+			}
+		}
+		if strings.Contains(message, "couldn't find remote ref") {
+			return "", Fail("missing-branch", "configured sync branch is missing")
+		}
 		return "", Fail("git-error", "Git operation failed; check reachability and local Git authentication")
 	}
-	return strings.TrimSpace(out.String()), nil
+	return out.String(), nil
 }
 func (a App) managedGit(ctx context.Context) (string, error) {
 	parent, err := canonical(filepath.Dir(store.Path(a.DataDir)))
@@ -199,7 +216,7 @@ func metadataToken(ctx context.Context) string {
 	return strings.TrimSpace(string(b))
 }
 func privacyCheck(ctx context.Context, c SyncConfig) SyncCheck {
-	r := SyncCheck{Privacy: "unknown"}
+	r := SyncCheck{Privacy: "unknown", Failure: "auth-required"}
 	api, remote := syncEndpoints(c.Remote)
 	// Reachability remains independently reportable if metadata authentication fails.
 	_ = remote
@@ -222,10 +239,14 @@ func privacyCheck(ctx context.Context, c SyncConfig) SyncCheck {
 	client := http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	resp, err := client.Do(req)
 	if err != nil {
+		r.Failure = "offline"
 		return r
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
+		if resp.StatusCode >= 500 {
+			r.Failure = "offline"
+		}
 		return r
 	}
 	var m struct {
@@ -243,8 +264,10 @@ func privacyCheck(ctx context.Context, c SyncConfig) SyncCheck {
 	}
 	if *m.Private {
 		r.Privacy = "private"
+		r.Failure = ""
 	} else {
 		r.Privacy = "public"
+		r.Failure = "privacy-unconfirmed"
 	}
 	return r
 }
@@ -325,6 +348,16 @@ func exportSnapshot(ctx context.Context, db *sql.DB, c SyncConfig) (map[string][
 	files := map[string][]byte{}
 	ops := []string{}
 	err := store.Write(ctx, db, func(conn *sql.Conn) error {
+		var err error
+		files, ops, err = exportConn(ctx, conn, c)
+		return err
+	})
+	return files, ops, err
+}
+func exportConn(ctx context.Context, conn *sql.Conn, c SyncConfig) (map[string][]byte, []string, error) {
+	files := map[string][]byte{}
+	ops := []string{}
+	err := func() error {
 		var epoch, did, stamp string
 		if err := conn.QueryRowContext(ctx, "SELECT epoch FROM sync_state WHERE singleton=1").Scan(&epoch); err != nil {
 			return err
@@ -526,9 +559,10 @@ func exportSnapshot(ctx context.Context, db *sql.DB, c SyncConfig) (map[string][
 			}
 		}
 		return rows.Err()
-	})
+	}()
 	return files, ops, err
 }
+
 func snapshotFingerprint(files map[string][]byte, c SyncConfig) string {
 	b, _ := json.Marshal(struct {
 		Config SyncConfig
@@ -582,7 +616,7 @@ type gitTree struct {
 	dirs  map[string]*gitTree
 }
 
-func candidateCommit(ctx context.Context, dir string, files map[string][]byte) (string, error) {
+func candidateCommit(ctx context.Context, dir string, files map[string][]byte, parent ...string) (string, error) {
 	root := &gitTree{map[string][]byte{}, map[string]*gitTree{}}
 	for path, data := range files {
 		parts := strings.Split(path, "/")
@@ -619,7 +653,11 @@ func candidateCommit(ctx context.Context, dir string, files map[string][]byte) (
 	if err != nil {
 		return "", err
 	}
-	return syncGit(ctx, dir, []byte("Initialize CtxFerry plaintext workspace\n"), "commit-tree", tree)
+	args := []string{"commit-tree", tree}
+	if len(parent) > 0 {
+		args = append(args, "-p", parent[0])
+	}
+	return syncGit(ctx, dir, []byte("Publish CtxFerry plaintext workspace\n"), args...)
 }
 func (a App) InitSync(ctx context.Context, previewID string) (SyncResult, error) {
 	r := SyncResult{Boundary: plaintextBoundary, State: "pending"}
@@ -712,7 +750,7 @@ func (a App) InitSync(ctx context.Context, previewID string) (SyncResult, error)
 			return r, Fail("push-pending", "publish did not return success; pending candidate retained for reconciliation, never overwritten")
 		}
 	}
-	if _, err = db.ExecContext(ctx, "UPDATE sync_state SET confirmed_head=?,pending='' WHERE singleton=1", pending.Candidate); err != nil {
+	if err = store.Write(ctx, db, func(conn *sql.Conn) error { return saveBaseline(ctx, conn, files, pending.Candidate, true) }); err != nil {
 		return r, err
 	}
 	r.State = "synced"
@@ -735,12 +773,25 @@ func (a App) SyncStatus(ctx context.Context) (SyncResult, error) {
 	if err = db.QueryRowContext(ctx, "SELECT confirmed_head,pending FROM sync_state WHERE singleton=1").Scan(&r.Head, &pending); err != nil {
 		return r, err
 	}
+	var stamp, outcome string
+	if err = db.QueryRowContext(ctx, "SELECT last_sync_at,outcome FROM sync_state").Scan(&stamp, &outcome); err != nil {
+		return r, err
+	}
+	if stamp != "" {
+		r.LastSyncAt = &stamp
+	}
+	if err = db.QueryRowContext(ctx, "SELECT count(*) FROM sync_outbox").Scan(&r.Pending); err != nil {
+		return r, err
+	}
 	r.State = "enabled"
 	if r.Head != "" {
 		r.State = "synced"
 	}
-	if pending != "" {
+	if pending != "" || r.Pending > 0 {
 		r.State = "pending"
+	}
+	if outcome != "" && outcome != "synced" {
+		r.State = outcome
 	}
 	return r, nil
 }
