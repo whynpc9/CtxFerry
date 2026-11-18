@@ -388,3 +388,71 @@ func TestCorruptLooseGitObjectIsIncomplete(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestLostPushPreservesConflictAndDescendantTombstone(t *testing.T) {
+	a, remote, d := recoveryDevice(t)
+	other := obj(t, putDoc(t, a, "independent", "other base", "shared", "full").Success(t), "document")
+	a.Run(t, "sync", "init", "--preview", previewSync(t, a), "--format=json").Success(t)
+	b := joinDevice(t, a, true)
+	b.Run(t, "project", "bind", b.Dir, "--project", "checkout", "--format=json").Success(t)
+	replaceShared(t, a, d, "remote conflict body")
+	a.Run(t, "sync", "--format=json").Success(t)
+	replaceShared(t, b, d, "local conflict body")
+	replaceShared(t, b, other, "independent accepted")
+	b.ExtraEnv = append(b.ExtraEnv, "CTXFERRY_TEST_PUSH_FAULT="+filepath.Join(t.TempDir(), "lost-independent"))
+	failure(t, b.Run(t, "sync", "--format=json"), "push-pending")
+	token := conflictToken(t, b, d["id"].(string))
+	candidate := git(t, a, "--git-dir", remote, "rev-parse", "ctxferry-v1")
+	a.Run(t, "sync", "--format=json").Success(t)
+	accepted := getShared(t, a, other["id"].(string))
+	if accepted["body"] != "independent accepted" {
+		t.Fatal(accepted)
+	}
+	a.Run(t, "context", "delete", other["id"].(string), "--if-revision", accepted["revision"].(string), "--format=json").Success(t)
+	a.Run(t, "sync", "--format=json").Success(t)
+	head := git(t, a, "--git-dir", remote, "rev-parse", "ctxferry-v1")
+	if head == candidate {
+		t.Fatal("missing descendant tombstone")
+	}
+	b.Run(t, "sync", "--format=json").Success(t)
+	if git(t, a, "--git-dir", remote, "rev-parse", "ctxferry-v1") != head {
+		t.Fatal("acknowledgement republished held work")
+	}
+	failure(t, b.Run(t, "context", "get", other["id"].(string), "--format=json"), "document-not-found")
+	if conflictToken(t, b, d["id"].(string)) != token {
+		t.Fatal("lost conflict identity")
+	}
+	detail := b.Run(t, "sync", "conflicts", d["id"].(string), "--format=json").Success(t)
+	for side, want := range map[string]string{"base": "baseline", "local": "local conflict body", "remote": "remote conflict body"} {
+		if obj(t, detail, side)["payload"].(map[string]any)["body"] != want {
+			t.Fatal(side, detail)
+		}
+	}
+	// Fatal recovery states must be reported alongside retained conflict evidence.
+	for _, code := range []string{"incomplete", "unsupported-schema", "unlock-required", "history-rewritten"} {
+		b.ExtraEnv = append(b.ExtraEnv, "CTXFERRY_TEST_FETCH_FAILURE="+code)
+		failure(t, b.Run(t, "sync", "--format=json"), code)
+		assertSyncState(t, b, code)
+		if conflictToken(t, b, d["id"].(string)) != token {
+			t.Fatal("failure lost conflict")
+		}
+		b.ExtraEnv = b.ExtraEnv[:len(b.ExtraEnv)-1]
+	}
+	b.Run(t, "sync", "--format=json").Success(t)
+	b.Run(t, "sync", "resolve", d["id"].(string), "--if-conflict", token, "--take", "local", "--format=json").Success(t)
+	resolved := getShared(t, b, d["id"].(string))
+	b.ExtraEnv = b.ExtraEnv[:len(b.ExtraEnv)-1]
+	b.ExtraEnv = append(b.ExtraEnv, "CTXFERRY_TEST_PUSH_FAULT="+filepath.Join(t.TempDir(), "lost-resolution"))
+	failure(t, b.Run(t, "sync", "--format=json"), "push-pending")
+	published := git(t, a, "--git-dir", remote, "rev-parse", "ctxferry-v1")
+	b.Run(t, "sync", "--format=json").Success(t)
+	if git(t, a, "--git-dir", remote, "rev-parse", "ctxferry-v1") != published {
+		t.Fatal("resolution duplicated")
+	}
+	a.Run(t, "sync", "--format=json").Success(t)
+	if got := getShared(t, a, d["id"].(string)); got["revision"] != resolved["revision"] || got["body"] != "local conflict body" {
+		t.Fatal(got)
+	}
+	failure(t, a.Run(t, "context", "get", other["id"].(string), "--format=json"), "document-not-found")
+	assertSyncState(t, b, "synced")
+}

@@ -51,7 +51,7 @@ exact expected-absent lease; a competing root is preserved. A failed or ambiguou
 push stays pending. Retrying the same preview reuses the same candidate and can
 acknowledge an already accepted candidate anywhere in validated remote history. A
 changed snapshot or a different existing remote history requires reconciliation;
-it is never overwritten. Routine sync and join use the same validated record format. Recovery also works when another device has appended descendants. Explicit conflict resolution is tracked by issue #9.
+it is never overwritten. Routine sync and join use the same validated record format. Recovery also works when another device has appended descendants. Conflicts are resolved explicitly with `sync resolve`.
 
 ## Format decisions
 
@@ -117,11 +117,10 @@ before downloaded records become visible in a database transaction.
 
 Concurrent edits retain the original base, desired local envelope and current
 remote baseline. Independent records can proceed. A conflict reports `conflict`;
-explicit resolution follows in #9. A failed/ambiguous push retains its pinned
+explicit resolution uses `sync resolve`. A failed/ambiguous push retains its pinned
 candidate and operation IDs. The next round checks fetched history to acknowledge
 an accepted candidate or reconcile its operations against the current head. Lease rejection (including a server-side atomic ref race after advertisement) starts a fresh fetch and business-baseline comparison within the same bounded invocation.
-Published records cannot disappear or change kind. Tombstones and changing an
-already-published record to local-only require the explicit deletion flow in #9.
+Published records cannot disappear or change kind. Deletion uses retained tombstones; changing a published record to local-only still requires an explicit deletion flow.
 
 Schema 5 adds baseline, outbox and subscription tables plus sync timestamps and
 outcomes. An existing schema-4 publisher bootstraps its actual confirmed Git
@@ -163,3 +162,55 @@ The `ctxferry_test` binary wraps the real backend to lose push responses, publis
 competing candidate immediately before the lease, fail ancestry/fetch, or truncate
 Git reads. These controls are absent from production builds. Scenarios use only a
 loopback metadata endpoint, temporary application directories and local bare Git.
+
+## Record conflicts and deletion
+
+`sync status` lists active conflict IDs and record IDs, plus pending records held
+by a dependency or uniqueness constraint. An offline attempt does not hide active
+conflicts. `sync conflicts <record-uuid>` shows the preserved base, local and remote
+envelopes, revisions, devices and policy-approved bodies. Summary/reference/local-tool
+policies still restrict disclosure. Conflict evidence and its immutable objects stay
+in the local database, including after resolution; they are not exported.
+
+Choose explicitly against the conflict you inspected:
+
+```sh
+ctxferry sync resolve <record-uuid> --if-conflict <conflict-id> --take local
+ctxferry sync resolve <record-uuid> --if-conflict <conflict-id> --take remote
+ctxferry sync resolve <record-uuid> --if-conflict <conflict-id> --file resolution.json
+ctxferry sync
+```
+
+A replacement file describes context content, never identity or revision:
+
+```json
+{"title":"Notes","purpose":"notes","source":"manual resolution","body":"New Markdown content","summary":"Approved summary","policy":{"storage":"shared","agentDisclosure":"full"},"deleted":false}
+```
+
+Every choice creates fresh revision and operation UUIDs, including choosing remote
+or identical content. It is queued against the observed remote revision. A later
+remote edit produces another conflict. Ordinary edits to conflicted records are
+refused until resolved. Future secret-reference/resource/task/Skill record schemas
+remain unsupported; no field or clock based merge grants execution authority.
+
+Pending records connected by Project/Repository references form one publication
+unit. A conflicting member holds that unit; unchanged published parents do not
+couple independent documents. Eligible units share one append-only commit.
+
+Delete a shared context document with
+`context delete <id> --if-revision <revision>`. Its envelope remains as a tombstone
+indefinitely; get/show/search omit it. An unchanged offline device adopts the
+removal, while edit-versus-delete requires explicit resolution. History still
+contains the plaintext content.
+
+`context restore <id> --if-revision <current-revision> --from-commit <full-sha>`
+loads that record from a validated ancestor of confirmed history and queues a fresh
+revision. Use Git history to find the tombstone's current revision when needed.
+Restoration appends through routine sync and never resets the branch. Deletion and
+restoration require configured sync; local-only record deletion is outside this command.
+
+When independently created Projects collide on slug, the local pending Project
+and its dependents remain in the working view. The incompatible remote projection
+is deferred while its records remain in the published baseline. Status retains the
+uniqueness blocker; unrelated records continue to upload and download on subsequent
+syncs without violating local database constraints.

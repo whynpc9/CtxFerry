@@ -62,7 +62,36 @@ func TestV1MigrationPreservesBindings(t *testing.T) {
 		t.Fatal(id, membership, e)
 	}
 	var v int
-	if e = db.QueryRow("PRAGMA user_version").Scan(&v); e != nil || v != 5 {
+	if e = db.QueryRow("PRAGMA user_version").Scan(&v); e != nil || v != 6 {
 		t.Fatal(v, e)
+	}
+}
+
+func TestV5MigrationPreservesPendingOperations(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	db, e := Open(ctx, root, true)
+	if e != nil {
+		t.Fatal(e)
+	}
+	_, e = db.Exec(`DROP TABLE sync_conflicts; DROP TABLE sync_objects; DROP TABLE sync_tombstones; DROP TABLE sync_blocked;
+ INSERT INTO sync_state(singleton,epoch,pending) VALUES(1,'epoch','pinned candidate');
+ INSERT INTO sync_outbox VALUES('record',x'62617365',x'6c6f63616c','operation','epoch'); PRAGMA user_version=5;`)
+	if e != nil {
+		t.Fatal(e)
+	}
+	db.Close()
+	db, e = Open(ctx, root, false)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer db.Close()
+	var base, local []byte
+	var pending string
+	if e = db.QueryRow("SELECT base,proposed FROM sync_outbox WHERE id='record'").Scan(&base, &local); e != nil || string(base) != "base" || string(local) != "local" {
+		t.Fatal(e, string(base), string(local))
+	}
+	if e = db.QueryRow("SELECT pending FROM sync_state").Scan(&pending); e != nil || pending != "pinned candidate" {
+		t.Fatal(e, pending)
 	}
 }

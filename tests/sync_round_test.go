@@ -56,7 +56,7 @@ func TestTwoDeviceSync(t *testing.T) {
 	originalHead := git(t, a, "--git-dir", remote, "rev-parse", "ctxferry-v1")
 	b.Run(t, "sync", "--format=json").Success(t)
 	if head := git(t, a, "--git-dir", remote, "rev-parse", "ctxferry-v1"); head != originalHead {
-		t.Fatal("no-op sync wrote a commit")
+		t.Fatal("no-op sync wrote a commit", git(t, a, "--git-dir", remote, "diff", originalHead, head))
 	}
 	// Queue while transport is unavailable. Reads remain local across CLI processes.
 	if err := os.Rename(remote, remote+".offline"); err != nil {
