@@ -507,6 +507,9 @@ func applyExplicit(ctx context.Context, c *sql.Conn, f map[string][]byte, r publ
 }
 
 func (a App) ChangeDeletion(ctx context.Context, id, revision, commit string) (SyncResult, error) {
+	if !validUUID(id) {
+		return SyncResult{}, Fail("usage", "document ID must be a canonical UUID")
+	}
 	out := SyncResult{Boundary: plaintextBoundary, State: "pending"}
 	release, e := a.syncOwner(ctx)
 	if e != nil {
@@ -602,4 +605,85 @@ func (a App) ChangeDeletion(ctx context.Context, id, revision, commit string) (S
 		return applyExplicit(ctx, c, f, r.publishedEnvelope, base[recordPath(id)], epoch)
 	})
 	return out, e
+}
+
+// A held local Project owns its working slug until the developer changes it.
+// Keep the remote envelope in the baseline, but defer its local projection and
+// dependent projections rather than violating local foreign-key/unique indexes.
+func installableRecords(ctx context.Context, c *sql.Conn, records map[string]remoteRecord) (map[string]remoteRecord, error) {
+	out := map[string]remoteRecord{}
+	held := map[string]bool{}
+	for id, r := range records {
+		out[id] = r
+		if r.Kind != "project" {
+			continue
+		}
+		var owner string
+		e := c.QueryRowContext(ctx, "SELECT p.id FROM projects p JOIN sync_outbox o ON o.id=p.id WHERE p.slug=? AND p.id<>?", r.Value.Slug, id).Scan(&owner)
+		if e != nil && e != sql.ErrNoRows {
+			return nil, e
+		}
+		if e == nil {
+			held[id] = true
+			delete(out, id)
+		}
+	}
+	for changed := true; changed; {
+		changed = false
+		for id, r := range out {
+			for _, dep := range dependencies(r) {
+				if held[dep] {
+					held[id] = true
+					delete(out, id)
+					changed = true
+					break
+				}
+			}
+		}
+	}
+	return out, nil
+}
+
+// Baseline records whose projections were deferred still belong to the published
+// catalog. Their absence from a typed table is not a local deletion/policy change.
+func retainDeferredRecords(ctx context.Context, c *sql.Conn, files map[string][]byte) error {
+	base, e := baselineFiles(ctx, c)
+	if e != nil {
+		return e
+	}
+	for path, b := range base {
+		if !strings.HasPrefix(path, "records/") || files[path] != nil {
+			continue
+		}
+		r, e := decodeRecord(b)
+		if e != nil {
+			return e
+		}
+		table := ""
+		switch r.Kind {
+		case "project":
+			table = "projects"
+		case "repository":
+			table = "repositories"
+		case "membership":
+			table = "memberships"
+		case "context":
+			table = "records"
+		}
+		if table == "" {
+			continue
+		}
+		var n int
+		if e = c.QueryRowContext(ctx, "SELECT count(*) FROM "+table+" WHERE id=?", r.ID).Scan(&n); e != nil {
+			return e
+		}
+		if n == 0 {
+			files[path] = b
+			if r.Value.Body != nil {
+				p := "objects/" + r.Value.Body.SHA256
+				files[p] = base[p]
+			}
+		}
+	}
+	return nil
 }

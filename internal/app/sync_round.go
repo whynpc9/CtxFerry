@@ -369,6 +369,11 @@ func saveBaseline(ctx context.Context, c *sql.Conn, files map[string][]byte, hea
 	return err
 }
 func installSnapshot(ctx context.Context, c *sql.Conn, files map[string][]byte, records map[string]remoteRecord) error {
+	var err error
+	records, err = installableRecords(ctx, c, records)
+	if err != nil {
+		return err
+	}
 	for _, kind := range []string{"project", "repository", "membership", "context"} {
 		for id, r := range records {
 			if r.Kind != kind {

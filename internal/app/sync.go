@@ -584,6 +584,9 @@ func exportConn(ctx context.Context, conn *sql.Conn, c SyncConfig) (map[string][
 	}()
 	if err == nil {
 		err = overlayTombstones(ctx, conn, files)
+		if err == nil {
+			err = retainDeferredRecords(ctx, conn, files)
+		}
 	}
 	return files, ops, err
 }

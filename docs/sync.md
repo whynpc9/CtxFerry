@@ -176,3 +176,9 @@ loads that record from a validated ancestor of confirmed history and queues a fr
 revision. Use Git history to find the tombstone's current revision when needed.
 Restoration appends through routine sync and never resets the branch. Deletion and
 restoration require configured sync; local-only record deletion is outside this command.
+
+When independently created Projects collide on slug, the local pending Project
+and its dependents remain in the working view. The incompatible remote projection
+is deferred while its records remain in the published baseline. Status retains the
+uniqueness blocker; unrelated records continue to upload and download on subsequent
+syncs without violating local database constraints.

@@ -206,3 +206,53 @@ func TestConflictEvidenceSurvivesRemoteAdvanceAndOffline(t *testing.T) {
 	b.Run(t, "sync", "--format=json").Success(t)
 	conflictToken(t, b, id)
 }
+
+func TestProjectSlugCollisionKeepsUnrelatedSyncFlowing(t *testing.T) {
+	var metadata atomic.Value
+	metadata.Store(privateMetadata)
+	a, remote := syncHarness(t, &metadata)
+	d := obj(t, putDoc(t, a, "shared", "base", "shared", "full").Success(t), "document")
+	enableSync(t, a)
+	a.Run(t, "sync", "init", "--preview", previewSync(t, a), "--format=json").Success(t)
+	b := joinDevice(t, a, true)
+	b.Run(t, "project", "bind", b.Dir, "--project", "checkout", "--format=json").Success(t)
+	ap := field(t, a.Run(t, "project", "bind", t.TempDir(), "--slug", "collision", "--format=json").Success(t), "project")
+	bp := field(t, b.Run(t, "project", "bind", t.TempDir(), "--slug", "collision", "--format=json").Success(t), "project")
+	incoming := obj(t, putDoc(t, a, "remote child", "remote collision child", "shared", "full", "--project", ap).Success(t), "document")
+	held := obj(t, putDoc(t, b, "held child", "local collision child", "shared", "full", "--project", bp).Success(t), "document")
+	a.Run(t, "sync", "--format=json").Success(t)
+	replaceShared(t, b, d, "independent upload")
+	for i := 0; i < 2; i++ {
+		b.Run(t, "sync", "--format=json").Success(t)
+	}
+	status := b.Run(t, "sync", "status", "--format=json").Success(t)
+	if !strings.Contains(string(status.Data["blocked"]), bp) || !strings.Contains(string(status.Data["blocked"]), held["id"].(string)) {
+		t.Fatal("collision not durable", status)
+	}
+	a.Run(t, "sync", "--format=json").Success(t)
+	if getShared(t, a, d["id"].(string))["body"] != "independent upload" {
+		t.Fatal("collision blocked independent publish")
+	}
+	if obj(t, b.Run(t, "context", "get", held["id"].(string), "--project", bp, "--format=json").Success(t), "document")["body"] != "local collision child" {
+		t.Fatal("lost held overlay")
+	}
+	// Only A's collision unit reaches Git; B's blocked objects never do.
+	tree := git(t, a, "--git-dir", remote, "ls-tree", "-r", "--name-only", "ctxferry-v1")
+	if strings.Contains(tree, bp) || strings.Contains(tree, held["id"].(string)) || !strings.Contains(tree, incoming["id"].(string)) {
+		t.Fatal(tree)
+	}
+}
+func TestMalformedDeletionIDsReturnStructuredErrors(t *testing.T) {
+	var metadata atomic.Value
+	metadata.Store(privateMetadata)
+	a, _ := syncHarness(t, &metadata)
+	enableSync(t, a)
+	a.Run(t, "sync", "init", "--preview", previewSync(t, a), "--format=json").Success(t)
+	for _, action := range []string{"delete", "restore"} {
+		args := []string{"context", action, "x", "--if-revision", "anything", "--format=json"}
+		if action == "restore" {
+			args = append(args, "--from-commit", strings.Repeat("0", 40))
+		}
+		failure(t, a.Run(t, args...), "usage")
+	}
+}
