@@ -134,8 +134,18 @@ func syncGitRaw(ctx context.Context, dir string, input []byte, args ...string) (
 				return "", Fail("unlock-required", "unlock the local Git credential helper or SSH agent")
 			}
 		}
-		if len(args) > 0 && args[0] == "push" && strings.Contains(out.String(), "[rejected]") && strings.Contains(out.String(), "(stale info)") {
+		// A lease may lose either before advertisement or during the server's
+		// atomic ref update. Do not treat hook/access rejection as contention.
+		staleAdvertisement := strings.Contains(out.String(), "[rejected]") && strings.Contains(out.String(), "(stale info)")
+		serverRace := strings.Contains(out.String(), "[remote rejected]") && strings.Contains(out.String(), "(failed to update ref)") && strings.Contains(message, "cannot lock ref") && (strings.Contains(message, "but expected") || strings.Contains(message, "reference already exists"))
+		if len(args) > 0 && args[0] == "push" && (staleAdvertisement || serverRace) {
 			return "", Fail("lease-rejected", "remote changed; fetch and reconcile before publication")
+		}
+
+		for _, marker := range []string{"is corrupt", "corrupt loose object", "is empty", "inflate: data stream error", "unable to unpack", "bad object", "missing blob", "did not send all necessary objects"} {
+			if strings.Contains(message, marker) {
+				return "", Fail("incomplete", "Git object data is missing or corrupt; local work retained")
+			}
 		}
 		for _, marker := range []string{"authentication failed", "permission denied", "could not read username", "terminal prompts disabled", "http 401", "http 403"} {
 			if strings.Contains(message, marker) {

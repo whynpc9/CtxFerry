@@ -119,7 +119,7 @@ Concurrent edits retain the original base, desired local envelope and current
 remote baseline. Independent records can proceed. A conflict reports `conflict`;
 explicit resolution follows in #9. A failed/ambiguous push retains its pinned
 candidate and operation IDs. The next round checks fetched history to acknowledge
-an accepted candidate or reconcile its operations against the current head. Lease rejection starts a fresh fetch and business-baseline comparison within the same bounded invocation.
+an accepted candidate or reconcile its operations against the current head. Lease rejection (including a server-side atomic ref race after advertisement) starts a fresh fetch and business-baseline comparison within the same bounded invocation.
 Published records cannot disappear or change kind. Tombstones and changing an
 already-published record to local-only require the explicit deletion flow in #9.
 
@@ -143,7 +143,7 @@ preview and candidate; it never silently adopts or replaces the winner. Invalid
 winners report the validation failure. Missing branches in routine sync or join,
 404s, permissions and failed listings never authorize initialization.
 
-Malformed JSON, missing or corrupt payloads, partial Git listings and short blob
+Malformed JSON, missing or corrupt payloads, partial Git listings, damaged Git objects and short blob
 reads report `incomplete`. Future record versions, kinds and unknown fields report
 `unsupported-schema` and refuse publication of the unfamiliar catalog. Neither
 failure advances the confirmed head, last successful sync time or visible data.

@@ -286,3 +286,91 @@ func TestPartialGitReadsAndAncestryFailure(t *testing.T) {
 		})
 	}
 }
+
+func TestServerSideLeaseRace(t *testing.T) {
+	if os.PathSeparator == '\\' {
+		t.Skip("POSIX receive hook fixture")
+	}
+	for _, initialization := range []bool{false, true} {
+		t.Run(map[bool]string{false: "routine", true: "init"}[initialization], func(t *testing.T) {
+			a, remote, first := recoveryDevice(t)
+			second := obj(t, putDoc(t, a, "second", "baseline two", "shared", "full").Success(t), "document")
+			var b *testcli.Harness
+			expected := strings.Repeat("0", 40)
+			if initialization {
+				b = contextHarness(t)
+				b.GitPath = a.GitPath
+				b.ExtraEnv = a.ExtraEnv
+				enableSync(t, b)
+			} else {
+				a.Run(t, "sync", "init", "--preview", previewSync(t, a), "--format=json").Success(t)
+				expected = git(t, a, "--git-dir", remote, "rev-parse", "ctxferry-v1")
+				b = joinDevice(t, a, true)
+				b.Run(t, "project", "bind", b.Dir, "--project", "checkout", "--format=json").Success(t)
+				replaceShared(t, a, first, "A queued")
+				replaceShared(t, b, second, "B server winner")
+			}
+			hook := filepath.Join(remote, "hooks", "pre-receive")
+			if err := os.WriteFile(hook, []byte("#!/bin/sh\nexit 1\n"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			args := []string{"sync", "--format=json"}
+			if initialization {
+				args = []string{"sync", "init", "--preview", previewSync(t, b), "--format=json"}
+			}
+			failure(t, b.Run(t, args...), "push-pending")
+			peer := filepath.Join(b.DataDir, "workspaces/default/sync.git")
+			candidate := git(t, b, "--git-dir", peer, "rev-parse", "refs/ctxferry/pending")
+			// Seed the winner's objects, then change the branch *inside receive-pack*,
+			// after advertisement and before its atomic ref update.
+			git(t, a, "--git-dir", remote, "fetch", peer, "refs/ctxferry/pending:refs/ctxferry/racer")
+			script := "#!/bin/sh\nunset GIT_QUARANTINE_PATH\ngit update-ref refs/heads/ctxferry-v1 " + candidate + " " + expected + "\nexit 0\n"
+			if err := os.WriteFile(hook, []byte(script), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if initialization {
+				failure(t, a.Run(t, "sync", "init", "--preview", previewSync(t, a), "--format=json"), "branch-exists")
+				if git(t, a, "--git-dir", remote, "rev-parse", "ctxferry-v1") != candidate {
+					t.Fatal("replaced initializer")
+				}
+			} else {
+				a.Run(t, "sync", "--format=json").Success(t)
+				got := obj(t, a.Run(t, "context", "get", second["id"].(string), "--format=json").Success(t), "document")
+				if got["body"] != "B server winner" {
+					t.Fatal(got)
+				}
+				got = obj(t, a.Run(t, "context", "get", first["id"].(string), "--format=json").Success(t), "document")
+				if got["body"] != "A queued" {
+					t.Fatal(got)
+				}
+			}
+		})
+	}
+}
+func TestCorruptLooseGitObjectIsIncomplete(t *testing.T) {
+	a, remote, d := recoveryDevice(t)
+	a.Run(t, "sync", "init", "--preview", previewSync(t, a), "--format=json").Success(t)
+	replaceShared(t, a, d, "pending safe work")
+	before := a.Run(t, "sync", "status", "--format=json").Success(t)
+	managed := filepath.Join(a.DataDir, "workspaces/default/sync.git")
+	paths := strings.Fields(git(t, a, "--git-dir", remote, "ls-tree", "-r", "--name-only", "ctxferry-v1", "objects/"))
+	head := git(t, a, "--git-dir", remote, "rev-parse", "ctxferry-v1")
+	blob := git(t, a, "--git-dir", managed, "rev-parse", head+":"+paths[0])
+	objectPath := filepath.Join(managed, "objects", blob[:2], blob[2:])
+	if err := os.Chmod(objectPath, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(objectPath, []byte("broken"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	failure(t, a.Run(t, "sync", "--format=json"), "incomplete")
+	assertSyncState(t, a, "incomplete")
+	after := a.Run(t, "sync", "status", "--format=json").Success(t)
+	if string(before.Data["head"]) != string(after.Data["head"]) || string(before.Data["lastSyncAt"]) != string(after.Data["lastSyncAt"]) || string(after.Data["pending"]) != "1" {
+		t.Fatal("corruption changed durable state", after)
+	}
+	got := obj(t, a.Run(t, "context", "get", d["id"].(string), "--format=json").Success(t), "document")
+	if got["body"] != "pending safe work" {
+		t.Fatal(got)
+	}
+}
