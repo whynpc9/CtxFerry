@@ -7,7 +7,7 @@ import (
 )
 
 func planRecord(id, kind, parent, revision string) []byte {
-	r := publishedEnvelope{ID: id, Kind: kind, Revision: revision, Scope: Scope{"workspace", "workspace"}, Payload: map[string]any{}}
+	r := publishedEnvelope{SchemaVersion: 1, ID: id, Kind: kind, Revision: revision, Scope: Scope{"workspace", "workspace"}, Payload: map[string]any{}}
 	if parent != "" {
 		r.Scope = Scope{"project", parent}
 	}

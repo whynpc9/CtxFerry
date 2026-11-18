@@ -202,13 +202,13 @@ func TestExistingBranchAndPending(t *testing.T) {
 	git(t, h, "commit", "--allow-empty", "-m", "other root")
 	winner := git(t, h, "rev-parse", "HEAD")
 	git(t, h, "push", remote, "HEAD:refs/heads/ctxferry-v1")
-	failure(t, h.Run(t, "sync", "init", "--preview", preview, "--format=json"), "branch-exists")
+	failure(t, h.Run(t, "sync", "init", "--preview", preview, "--format=json"), "incomplete")
 	if git(t, h, "--git-dir", remote, "rev-parse", "ctxferry-v1") != winner {
 		t.Fatal("overwrote winner")
 	}
 	status := h.Run(t, "sync", "status", "--format=json").Success(t)
-	if string(status.Data["state"]) != `"pending"` {
-		t.Fatal("pending not durable")
+	if string(status.Data["state"]) != `"incomplete"` {
+		t.Fatal("invalid competing catalog not reported")
 	}
 }
 func TestExportRejectsUnsupportedReferences(t *testing.T) {

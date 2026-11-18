@@ -126,6 +126,29 @@ func syncGitRaw(ctx context.Context, dir string, input []byte, args ...string) (
 	// Git diagnostics may include helper secrets or URLs: do not forward them.
 	if err := cmd.Run(); err != nil {
 		message := strings.ToLower(diagnostics.String())
+		if len(args) > 0 && args[0] == "merge-base" {
+			if exit, ok := err.(*exec.ExitError); ok && exit.ExitCode() == 1 {
+				return "", Fail("not-ancestor", "commit does not extend history")
+			}
+		}
+		for _, marker := range []string{"agent refused operation", "sign_and_send_pubkey: signing failed", "credential store is locked", "keychain is locked"} {
+			if strings.Contains(message, marker) {
+				return "", Fail("unlock-required", "unlock the local Git credential helper or SSH agent")
+			}
+		}
+		// A lease may lose either before advertisement or during the server's
+		// atomic ref update. Do not treat hook/access rejection as contention.
+		staleAdvertisement := strings.Contains(out.String(), "[rejected]") && strings.Contains(out.String(), "(stale info)")
+		serverRace := strings.Contains(out.String(), "[remote rejected]") && strings.Contains(out.String(), "(failed to update ref)") && strings.Contains(message, "cannot lock ref") && (strings.Contains(message, "but expected") || strings.Contains(message, "reference already exists"))
+		if len(args) > 0 && args[0] == "push" && (staleAdvertisement || serverRace) {
+			return "", Fail("lease-rejected", "remote changed; fetch and reconcile before publication")
+		}
+
+		for _, marker := range []string{"is corrupt", "corrupt loose object", "is empty", "inflate: data stream error", "unable to unpack", "bad object", "missing blob", "did not send all necessary objects"} {
+			if strings.Contains(message, marker) {
+				return "", Fail("incomplete", "Git object data is missing or corrupt; local work retained")
+			}
+		}
 		for _, marker := range []string{"authentication failed", "permission denied", "could not read username", "terminal prompts disabled", "http 401", "http 403"} {
 			if strings.Contains(message, marker) {
 				return "", Fail("auth-required", "system Git authentication or repository access is required")
@@ -136,7 +159,7 @@ func syncGitRaw(ctx context.Context, dir string, input []byte, args ...string) (
 		}
 		return "", Fail("git-error", "Git operation failed; check reachability and local Git authentication")
 	}
-	return out.String(), nil
+	return syncReadResult(args, out.String()), nil
 }
 func (a App) managedGit(ctx context.Context) (string, error) {
 	parent, err := canonical(filepath.Dir(store.Path(a.DataDir)))
@@ -286,6 +309,9 @@ func checkSync(ctx context.Context, dir string, c SyncConfig) SyncCheck {
 	_, remote := syncEndpoints(c.Remote)
 	_, err := syncGit(ctx, dir, nil, "ls-remote", "--", remote)
 	r.GitReachable = err == nil
+	if err != nil && r.Privacy == "private" {
+		r.Failure = Classify(err).Code
+	}
 	return r
 }
 func (a App) EnableSync(ctx context.Context, remote, branch string) (SyncResult, error) {
@@ -687,8 +713,8 @@ func candidateCommit(ctx context.Context, dir string, files map[string][]byte, p
 	}
 	return syncGit(ctx, dir, []byte("Publish CtxFerry plaintext workspace\n"), args...)
 }
-func (a App) InitSync(ctx context.Context, previewID string) (SyncResult, error) {
-	r := SyncResult{Boundary: plaintextBoundary, State: "pending"}
+func (a App) initSync(ctx context.Context, previewID string) (r SyncResult, err error) {
+	r = SyncResult{Boundary: plaintextBoundary, State: "pending"}
 	if previewID == "" {
 		return r, Fail("usage", "explicit sync init requires --preview <id>")
 	}
@@ -702,6 +728,11 @@ func (a App) InitSync(ctx context.Context, previewID string) (SyncResult, error)
 		return r, err
 	}
 	defer db.Close()
+	defer func() {
+		if err != nil {
+			persistSyncFailure(db, err)
+		}
+	}()
 	c, err := loadSync(ctx, db)
 	if err != nil {
 		return r, err
@@ -725,7 +756,11 @@ func (a App) InitSync(ctx context.Context, previewID string) (SyncResult, error)
 	check := checkSync(ctx, dir, c)
 	r.Check = &check
 	if !check.GitReachable || check.Privacy != "private" {
-		return r, &Error{Code: "privacy-unconfirmed", Message: "upload refused: Git reachability and authenticated private repository identity are required", Details: check}
+		code := check.Failure
+		if code == "" || code == "auth-required" {
+			code = "privacy-unconfirmed"
+		}
+		return r, &Error{Code: code, Message: "upload refused: Git reachability and authenticated private repository identity are required", Details: check}
 	}
 	var epoch, confirmed, raw string
 	if err = db.QueryRowContext(ctx, "SELECT epoch,confirmed_head,pending FROM sync_state WHERE singleton=1").Scan(&epoch, &confirmed, &raw); err != nil {
@@ -761,21 +796,22 @@ func (a App) InitSync(ctx context.Context, previewID string) (SyncResult, error)
 	if err != nil {
 		return r, err
 	}
-	if strings.Fields(parents)[0] != pending.Candidate || len(strings.Fields(parents)) != 1 {
+	if len(strings.Fields(parents)) != 1 || strings.Fields(parents)[0] != pending.Candidate {
 		return r, Fail("invalid-pending", "initial candidate must be a root commit")
 	}
-	_, remote := syncEndpoints(c.Remote)
-	ref := "refs/heads/" + c.Branch
-	head, err := syncGit(ctx, dir, nil, "ls-remote", "--refs", "--", remote, ref)
+	exists, err := inspectInitialization(ctx, dir, c, pending)
 	if err != nil {
 		return r, err
 	}
-	if head != "" && strings.Fields(head)[0] != pending.Candidate {
-		return r, Fail("branch-exists", "sync branch already exists; preserved remote workspace, explicit join/validation is required")
-	}
-	if head == "" {
-		if _, err = syncGit(ctx, dir, nil, "push", "--porcelain", "--force-with-lease="+ref+":", "--", remote, pending.Candidate+":"+ref); err != nil {
-			return r, Fail("push-pending", "publish did not return success; pending candidate retained for reconciliation, never overwritten")
+	if !exists {
+		if err = newSyncBackend().Publish(ctx, dir, c, pending); err != nil {
+			if Classify(err).Code == "lease-rejected" {
+				_, inspectErr := inspectInitialization(ctx, dir, c, pending)
+				if inspectErr != nil {
+					return r, inspectErr
+				}
+			}
+			return r, err
 		}
 	}
 	if err = store.Write(ctx, db, func(conn *sql.Conn) error { return saveBaseline(ctx, conn, files, pending.Candidate, true) }); err != nil {
@@ -826,7 +862,13 @@ func (a App) SyncStatus(ctx context.Context) (SyncResult, error) {
 		return r, err
 	}
 	if len(r.Conflicts) > 0 {
-		r.State = "conflict"
+		// Keep conflict evidence visible even offline, but do not hide a
+		// recovery barrier that stops safe validation or publication.
+		switch outcome {
+		case "history-rewritten", "incomplete", "unsupported-schema", "unlock-required", "auth-required":
+		default:
+			r.State = "conflict"
+		}
 	}
 	return r, nil
 }

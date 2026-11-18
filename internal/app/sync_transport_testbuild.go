@@ -3,6 +3,7 @@
 package app
 
 import (
+	"context"
 	"net/url"
 	"os"
 )
@@ -15,4 +16,62 @@ func syncEndpoints(remote string) (string, string) {
 		return api, os.Getenv("CTXFERRY_TEST_REMOTE")
 	}
 	return "https://api.github.com", remote
+}
+
+// Faults exist only in the scenario binary and wrap the real Git backend.
+type faultSyncBackend struct{ syncBackend }
+
+func newSyncBackend() syncBackend { return faultSyncBackend{gitSyncBackend{}} }
+func (b faultSyncBackend) Ancestor(ctx context.Context, dir, base, head string) (bool, error) {
+	if os.Getenv("CTXFERRY_TEST_ANCESTRY_FAILURE") == "1" {
+		return false, Fail("git-error", "injected ancestry failure")
+	}
+	return b.syncBackend.Ancestor(ctx, dir, base, head)
+}
+func (b faultSyncBackend) Publish(ctx context.Context, dir string, conf SyncConfig, p pendingPush) error {
+	if marker := os.Getenv("CTXFERRY_TEST_PUSH_FAULT"); marker != "" {
+		// Exclusive creation makes a fault happen once across command restarts.
+		f, err := os.OpenFile(marker, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if err == nil {
+			f.Close()
+			if peer := os.Getenv("CTXFERRY_TEST_RACE_GIT"); peer != "" {
+				candidate, err := syncGit(ctx, peer, nil, "rev-parse", "refs/ctxferry/pending")
+				if err != nil {
+					return err
+				}
+				race := p
+				race.Candidate = candidate
+				if err = b.syncBackend.Publish(ctx, peer, conf, race); err != nil {
+					return err
+				}
+			} else {
+				if err := b.syncBackend.Publish(ctx, dir, conf, p); err != nil {
+					return err
+				}
+				return Fail("push-pending", "injected lost push response")
+			}
+		}
+	}
+	return b.syncBackend.Publish(ctx, dir, conf, p)
+}
+
+func (b faultSyncBackend) Fetch(ctx context.Context, dir string, conf SyncConfig) (string, map[string][]byte, error) {
+	if path := os.Getenv("CTXFERRY_TEST_FETCH_LOG"); path != "" {
+		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
+		if err == nil {
+			f.WriteString("fetch\n")
+			f.Close()
+		}
+	}
+	if code := os.Getenv("CTXFERRY_TEST_FETCH_FAILURE"); code != "" {
+		return "", nil, Fail(code, "injected fetch failure")
+	}
+	return b.syncBackend.Fetch(ctx, dir, conf)
+}
+func syncReadResult(args []string, out string) string {
+	mode := os.Getenv("CTXFERRY_TEST_PARTIAL_READ")
+	if len(out) > 0 && len(args) > 0 && (mode == "tree" && args[0] == "ls-tree" || mode == "blob" && args[0] == "cat-file" && len(args) > 1 && args[1] == "blob") {
+		return out[:len(out)-1]
+	}
+	return out
 }
