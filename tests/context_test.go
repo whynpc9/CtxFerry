@@ -318,3 +318,32 @@ func TestContextEscapedSummaryPagination(t *testing.T) {
 		t.Fatal("lost entry", ids)
 	}
 }
+
+func TestContextUsesSharedGitResolver(t *testing.T) {
+	h := gitHarness(t)
+	root := h.Dir
+	project := bind(t, h, "--slug=context-project", "--remote=https://github.com/example/context.git")
+	d := obj(t, putDoc(t, h, "worktree notes", "sharedresolverbody", "local-only", "full").Success(t), "document")
+	id := d["id"].(string)
+	wt := filepath.Join(filepath.Dir(root), "context-worktree")
+	git(t, h, "worktree", "add", "-b", "context-worktree", wt)
+	h.Dir = wt
+	h.Run(t, "context", "show", "--format=json").Success(t)
+	h.Run(t, "context", "get", id, "--format=json").Success(t)
+	if len(documents(t, h.Run(t, "context", "search", "sharedresolverbody", "--format=json").Success(t))) != 1 {
+		t.Fatal("worktree context missing")
+	}
+	clone := filepath.Join(filepath.Dir(root), "context-clone")
+	git(t, h, "clone", root, clone)
+	h.Dir = clone
+	git(t, h, "remote", "set-url", "origin", "git@github.com:example/context.git")
+	for _, args := range [][]string{{"show"}, {"get", id}, {"search", "worktree"}} {
+		r := h.Run(t, append([]string{"context", "--format=json"}, args...)...)
+		failure(t, r, "project-unbound")
+		if !strings.Contains(r.Stdout, `"evidence":"remote"`) || !strings.Contains(r.Stdout, field(t, project, "project")) {
+			t.Fatal("context lost resolver candidates", r)
+		}
+	}
+	// The global selector must work before the command as well as after it.
+	h.Run(t, "--project", field(t, project, "project"), "context", "get", id, "--format=json").Success(t)
+}
