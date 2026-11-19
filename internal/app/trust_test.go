@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/whynpc9/CtxFerry/internal/provider"
 	"github.com/whynpc9/CtxFerry/internal/store"
@@ -127,12 +128,21 @@ func TestTrustLookupSeparatesCheckoutsFromChanges(t *testing.T) {
 	defer db.Close()
 	enabled := trustDefinition()
 	enabled.CheckoutRoot = "/src"
-	r := enabled.Reviewed()
-	raw, _ := json.Marshal(r)
-	if _, err := db.Exec(`INSERT INTO execution_trust SELECT id,?,?,?,?,?,?,? FROM device`, r.TaskID, r.ProfileID,
-		r.CheckoutRoot, r.MembershipRoot, r.Digest(), string(raw), "2026-01-01T00:00:00Z"); err != nil {
-		t.Fatal(err)
+	insert := func(d ExecutionDefinition, at time.Time) {
+		r := d.Reviewed()
+		raw, _ := json.Marshal(r)
+		if _, err := db.Exec(`INSERT INTO execution_trust SELECT id,?,?,?,?,?,?,? FROM device`, r.TaskID, r.ProfileID,
+			r.CheckoutRoot, r.MembershipRoot, r.Digest(), string(raw), trustStamp(at)); err != nil {
+			t.Fatal(err)
+		}
 	}
+	// Two approvals in one second, written .1 and .11 seconds past it: the
+	// later one is the baseline for a subsequent move.
+	second := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	earlier := enabled
+	earlier.MembershipRoot, earlier.Argv = "/src/old", []string{"old"}
+	insert(earlier, second.Add(100*time.Millisecond))
+	insert(enabled, second.Add(110*time.Millisecond))
 	lookup := func(edit func(*ExecutionDefinition)) *trustRecord {
 		d := enabled
 		edit(&d)
@@ -145,8 +155,9 @@ func TestTrustLookupSeparatesCheckoutsFromChanges(t *testing.T) {
 	if lookup(func(*ExecutionDefinition) {}) == nil {
 		t.Error("exact approval not found")
 	}
-	if lookup(func(d *ExecutionDefinition) { d.MembershipRoot, d.WorkingDirectory = "/src/moved", "/src/moved/work" }) == nil {
-		t.Error("in-place membership change lost its prior approval")
+	if r := lookup(func(d *ExecutionDefinition) { d.MembershipRoot, d.WorkingDirectory = "/src/moved", "/src/moved/work" }); r == nil ||
+		r.definition.MembershipRoot != enabled.MembershipRoot {
+		t.Error("in-place membership change did not compare with the latest prior approval", r)
 	}
 	if lookup(func(d *ExecutionDefinition) { d.MembershipID, d.MembershipRoot = "member2", "/src" }) == nil {
 		t.Error("membership move lost its prior approval")

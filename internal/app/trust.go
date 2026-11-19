@@ -9,6 +9,7 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/whynpc9/CtxFerry/internal/provider"
 	"github.com/whynpc9/CtxFerry/internal/store"
@@ -175,6 +176,10 @@ func loadTrust(ctx context.Context, q rowQuerier, r ReviewedDefinition) (*trustR
 		ORDER BY t.enabled_at DESC, t.checkout_root, t.membership_root LIMIT 1`, r.TaskID, r.ProfileID, r.CheckoutRoot, r.RepositoryID))
 }
 
+// trustStamp uses a fixed-width UTC timestamp so that approvals order
+// correctly as text, including several within one second.
+func trustStamp(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000000000Z") }
+
 func scanTrust(row *sql.Row) (*trustRecord, error) {
 	var out trustRecord
 	var raw string
@@ -327,7 +332,7 @@ func (a App) EnableExecution(ctx context.Context, project, cwd, task, checkout, 
 		if err != nil {
 			return err
 		}
-		stamp := now()
+		stamp := trustStamp(time.Now())
 		if _, err := c.ExecContext(ctx, `INSERT INTO execution_trust SELECT id,?,?,?,?,?,?,? FROM device WHERE singleton=1
 			ON CONFLICT(device_id,task_id,profile_id,checkout_root,membership_root) DO UPDATE SET digest=excluded.digest,definition=excluded.definition,enabled_at=excluded.enabled_at`,
 			current.TaskID, current.ProfileID, current.CheckoutRoot, current.MembershipRoot, preview, string(raw), stamp); err != nil {
