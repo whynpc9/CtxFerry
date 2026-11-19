@@ -64,6 +64,12 @@ func TestFirstPrivatePublish(t *testing.T) {
 	h, remote := syncHarness(t, &metadata)
 	shared := obj(t, putDoc(t, h, "shared notes", "approvedbody", "shared", "summary").Success(t), "document")
 	local := obj(t, putDoc(t, h, "localsentinel", "localbodysecret", "local-only", "full").Success(t), "document")
+	const artifactName = "local-artifact-sentinel.json"
+	const artifactContent = "local-artifact-payload-sentinel"
+	writeArtifactFile(t, filepath.Join(h.Dir, artifactName), artifactContent)
+	artifact := h.Run(t, artifactAddArgs(artifactName)...).Success(t)
+	artifactID := string(artifact.Data["id"])
+	artifactHash := obj(t, artifact, "payload")["sha256"].(string)
 	v := enableSync(t, h)
 	check := obj(t, v, "check")
 	if check["gitReachable"] != true || check["privacy"] != "private" {
@@ -93,7 +99,7 @@ func TestFirstPrivatePublish(t *testing.T) {
 	hasDoc, hasObject := false, false
 	for _, path := range paths {
 		raw := git(t, h, "--git-dir", remote, "show", "ctxferry-v1:"+path)
-		for _, sentinel := range []string{"credential-sentinel", "localsentinel", "localbodysecret", local["id"].(string), h.Dir, h.Home, "catalog.sqlite"} {
+		for _, sentinel := range []string{"credential-sentinel", "localsentinel", "localbodysecret", local["id"].(string), h.Dir, h.Home, "catalog.sqlite", artifactName, artifactContent, artifactID, artifactHash} {
 			if strings.Contains(raw, sentinel) {
 				t.Fatal("private value published", path, sentinel)
 			}

@@ -62,7 +62,7 @@ func TestV1MigrationPreservesBindings(t *testing.T) {
 		t.Fatal(id, membership, e)
 	}
 	var v int
-	if e = db.QueryRow("PRAGMA user_version").Scan(&v); e != nil || v != 10 {
+	if e = db.QueryRow("PRAGMA user_version").Scan(&v); e != nil || v != schemaVersion {
 		t.Fatal(v, e)
 	}
 }
@@ -118,7 +118,7 @@ func TestV8MigrationStartsWithoutApprovals(t *testing.T) {
 	defer db.Close()
 	var v, approvals int
 	var local []byte
-	if e = db.QueryRow("PRAGMA user_version").Scan(&v); e != nil || v != 10 {
+	if e = db.QueryRow("PRAGMA user_version").Scan(&v); e != nil || v != schemaVersion {
 		t.Fatal(v, e)
 	}
 	if e = db.QueryRow("SELECT count(*) FROM execution_trust").Scan(&approvals); e != nil || approvals != 0 {
