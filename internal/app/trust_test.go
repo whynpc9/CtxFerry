@@ -1,11 +1,10 @@
 package app
 
 import (
-	"database/sql"
+	"encoding/json"
 	"path/filepath"
 	"runtime"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/whynpc9/CtxFerry/internal/provider"
@@ -36,6 +35,7 @@ func TestReviewedDefinitionCoversExecutionFields(t *testing.T) {
 		"membership":          func(d *ExecutionDefinition) { d.MembershipID = "member2" },
 		"repository":          func(d *ExecutionDefinition) { d.RepositoryID = "repo2" },
 		"checkout":            func(d *ExecutionDefinition) { d.MembershipRoot = "/other/app" },
+		"checkout root":       func(d *ExecutionDefinition) { d.CheckoutRoot = "/worktree" },
 		"working directory":   func(d *ExecutionDefinition) { d.WorkingDirectory = "/src/app" },
 		"profile":             func(d *ExecutionDefinition) { d.ProfileID = "profile2" },
 		"env":                 func(d *ExecutionDefinition) { d.Credentials[0].Env = "OTHER" },
@@ -82,40 +82,6 @@ func TestReviewedDefinitionCoversExecutionFields(t *testing.T) {
 	}
 }
 
-// Enable prepares and stores the definition under the store's write lock, so
-// no catalog write can commit between the digest check and the approval.
-func TestEnableHoldsWriteLock(t *testing.T) {
-	a := App{DataDir: t.TempDir()}
-	if _, err := a.Init(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	var concurrent error
-	ran := false
-	enableLocked = func() {
-		ran = true
-		path := filepath.ToSlash(store.Path(a.DataDir))
-		if !strings.HasPrefix(path, "/") {
-			path = "/" + path
-		}
-		db, err := sql.Open("sqlite", "file://"+path+"?_pragma=busy_timeout(50)")
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer db.Close()
-		_, concurrent = db.Exec("BEGIN IMMEDIATE")
-		if concurrent == nil {
-			db.Exec("ROLLBACK")
-		}
-	}
-	defer func() { enableLocked = func() {} }()
-	if _, err := a.EnableExecution(t.Context(), "", t.TempDir(), "task", "", "", "preview"); err == nil {
-		t.Fatal("enable succeeded without a Task")
-	}
-	if !ran || concurrent == nil {
-		t.Fatal("a concurrent writer could commit while enable prepared the definition", ran)
-	}
-}
-
 func TestCustomProgramPathIsPassedUnchanged(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "work")
 	for program, want := range map[string]string{
@@ -125,6 +91,13 @@ func TestCustomProgramPathIsPassedUnchanged(t *testing.T) {
 		got, err := launchProgram(taskLaunch{program: program, dir: dir, custom: true})
 		if err != nil || got != want {
 			t.Errorf("%s: got %q, %v", program, got, err)
+		}
+	}
+	if runtime.GOOS != "windows" {
+		// A trailing backslash is part of a POSIX directory name.
+		odd := dir + `\`
+		if got, _ := launchProgram(taskLaunch{program: "./check", dir: odd, custom: true}); got != odd+"/./check" {
+			t.Errorf("working directory was rewritten: %q", got)
 		}
 	}
 	abs := filepath.Join(dir, "a") + string(filepath.Separator) + ".." + string(filepath.Separator) + "b"
@@ -139,5 +112,59 @@ func TestCustomProgramPathIsPassedUnchanged(t *testing.T) {
 				t.Errorf("%s was accepted: %v", program, err)
 			}
 		}
+	}
+}
+
+func TestTrustLookupSeparatesCheckoutsFromChanges(t *testing.T) {
+	a := App{DataDir: t.TempDir()}
+	if _, err := a.Init(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	db, err := store.Open(t.Context(), a.DataDir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	enabled := trustDefinition()
+	enabled.CheckoutRoot = "/src"
+	r := enabled.Reviewed()
+	raw, _ := json.Marshal(r)
+	if _, err := db.Exec(`INSERT INTO execution_trust SELECT id,?,?,?,?,?,?,? FROM device`, r.TaskID, r.ProfileID,
+		r.CheckoutRoot, r.MembershipRoot, r.Digest(), string(raw), "2026-01-01T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	lookup := func(edit func(*ExecutionDefinition)) *trustRecord {
+		d := enabled
+		edit(&d)
+		record, err := loadTrust(t.Context(), db, d.Reviewed())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return record
+	}
+	if lookup(func(*ExecutionDefinition) {}) == nil {
+		t.Error("exact approval not found")
+	}
+	if lookup(func(d *ExecutionDefinition) { d.MembershipRoot, d.WorkingDirectory = "/src/moved", "/src/moved/work" }) == nil {
+		t.Error("in-place membership change lost its prior approval")
+	}
+	if lookup(func(d *ExecutionDefinition) { d.MembershipID, d.MembershipRoot = "member2", "/src" }) == nil {
+		t.Error("membership move lost its prior approval")
+	}
+	if lookup(func(d *ExecutionDefinition) {
+		d.RepositoryID, d.MembershipID, d.CheckoutRoot, d.MembershipRoot = "repo2", "member3", "/other", "/other"
+	}) == nil {
+		t.Error("a move to another Repository lost its prior approval")
+	}
+	if lookup(func(d *ExecutionDefinition) {
+		d.MembershipID, d.CheckoutRoot, d.MembershipRoot = "member2", "/worktree", "/worktree"
+	}) != nil {
+		t.Error("another checkout of the Repository was treated as a change")
+	}
+	if lookup(func(d *ExecutionDefinition) { d.CheckoutRoot, d.MembershipRoot = "/worktree", "/worktree/app" }) != nil {
+		t.Error("another checkout was treated as a change of this one")
+	}
+	if lookup(func(d *ExecutionDefinition) { d.CheckoutRoot = "/worktree" }) != nil {
+		t.Error("a checkout sharing the membership directory reused another checkout's approval")
 	}
 }

@@ -22,8 +22,15 @@ type TaskExecution struct {
 	// The private snapshot is the only input to authorization and launch, so
 	// changes to the exported fields cannot redirect delivered credentials.
 	launch      *taskLaunch
+	checkout    checkoutPin
 	definition  ExecutionDefinition
 	credentials []plannedCredential
+}
+
+// checkoutPin is the Git checkout selected for a Task: its root and common
+// directory. A pinned checkout is revalidated from the catalog alone.
+type checkoutPin struct {
+	root, commonDir string
 }
 
 type taskLaunch struct {
@@ -48,7 +55,7 @@ func (p TaskExecution) Definition() ExecutionDefinition {
 
 // PrepareTask resolves the Task's registered command for run.
 func (a App) PrepareTask(ctx context.Context, project, cwd, name, checkout, profile string) (TaskExecution, error) {
-	return a.prepareTask(ctx, project, cwd, name, checkout, profile, nil)
+	return a.prepareTask(ctx, project, cwd, name, checkout, profile, nil, nil)
 }
 
 // PrepareCustomTask resolves a caller-chosen command for exec. It resolves the
@@ -73,10 +80,13 @@ func (a App) PrepareCustomTask(ctx context.Context, project, cwd, name, checkout
 	if command.Argv == nil {
 		command.Argv = []string{}
 	}
-	return a.prepareTask(ctx, project, cwd, name, checkout, profile, &command)
+	return a.prepareTask(ctx, project, cwd, name, checkout, profile, &command, nil)
 }
 
-func (a App) prepareTask(ctx context.Context, project, cwd, name, checkout, profile string, custom *ExecutionCommand) (TaskExecution, error) {
+// prepareTask resolves a Task from one catalog snapshot. With a pinned
+// checkout it runs no Git command: the checkout must still be bound to the
+// Task's Repository on this device, and the membership root is recomputed.
+func (a App) prepareTask(ctx context.Context, project, cwd, name, checkout, profile string, custom *ExecutionCommand, pin *checkoutPin) (TaskExecution, error) {
 	var out TaskExecution
 	db, err := store.Open(ctx, a.DataDir, false)
 	if err != nil {
@@ -116,10 +126,17 @@ func (a App) prepareTask(ctx context.Context, project, cwd, name, checkout, prof
 			return out, err
 		}
 	}
-	root, err := taskCheckout(ctx, tx, r.Device.ID, repository, subdir, checkout)
+	var selectedCheckout checkoutPin
+	var root string
+	if pin != nil {
+		selectedCheckout, root, err = pinnedCheckout(ctx, tx, r.Device.ID, repository, subdir, *pin)
+	} else {
+		selectedCheckout, root, err = taskCheckout(ctx, tx, r.Device.ID, repository, subdir, checkout)
+	}
 	if err != nil {
 		return out, err
 	}
+	out.checkout = selectedCheckout
 	rel, err := filepath.Localize(task.WorkingDirectory)
 	if err != nil {
 		return out, Fail("invalid-working-directory", "Task working directory is invalid on this platform")
@@ -187,7 +204,7 @@ func (a App) prepareTask(ctx context.Context, project, cwd, name, checkout, prof
 			return out, err
 		}
 		out.definition = ExecutionDefinition{TaskID: task.ID, TaskRevision: task.Revision, MembershipID: task.MembershipID,
-			RepositoryID: repository, Program: task.Program, Argv: slices.Clone(task.Argv), AllowCustomCommand: task.AllowCustomCommand,
+			RepositoryID: repository, CheckoutRoot: selectedCheckout.root, Program: task.Program, Argv: slices.Clone(task.Argv), AllowCustomCommand: task.AllowCustomCommand,
 			MembershipRoot: root, WorkingDirectory: dir, ProfileID: selected.ID, Profile: selected.Name,
 			Credentials: make([]ExecutionCredential, 0, len(out.credentials))}
 		for _, c := range out.credentials {
@@ -209,38 +226,26 @@ func (a App) prepareTask(ctx context.Context, project, cwd, name, checkout, prof
 
 // Checkout bindings identify Git common directories. A locally registered clone
 // contributes every usable worktree, even if the caller is in another repository.
-func taskCheckout(ctx context.Context, q taskReader, device, repository, subdir, explicit string) (string, error) {
-	rows, err := q.QueryContext(ctx, `SELECT DISTINCT b.git_common_dir FROM checkout_bindings b
-		JOIN memberships m ON m.id=b.membership_id
-		WHERE b.device_id=? AND m.repository_id=? AND coalesce(b.git_common_dir,'')<>''
-		AND NOT EXISTS(SELECT 1 FROM sync_tombstones t WHERE t.id IN (m.id,m.project_id)) ORDER BY 1`, device, repository)
+func taskCheckout(ctx context.Context, q taskReader, device, repository, subdir, explicit string) (checkoutPin, string, error) {
+	commonDirs, err := boundCommonDirs(ctx, q, device, repository)
 	if err != nil {
-		return "", err
+		return checkoutPin{}, "", err
 	}
-	defer rows.Close()
-	var commonDirs []string
-	for rows.Next() {
-		var common string
-		if err := rows.Scan(&common); err != nil {
-			return "", err
-		}
-		commonDirs = append(commonDirs, common)
-	}
-	if err := rows.Err(); err != nil {
-		return "", err
-	}
-	rows.Close()
 	rel, err := filepath.Localize(subdir)
 	if err != nil {
-		return "", Fail("invalid-reference", "membership directory is invalid on this platform")
+		return checkoutPin{}, "", Fail("invalid-reference", "membership directory is invalid on this platform")
 	}
 	if explicit != "" {
 		explicit, err = canonical(explicit)
 		if err != nil {
-			return "", Fail("checkout-not-found", "--checkout must name a usable Git checkout root")
+			return checkoutPin{}, "", Fail("checkout-not-found", "--checkout must name a usable Git checkout root")
 		}
 	}
-	candidates := map[string]string{}
+	type candidate struct {
+		pin        checkoutPin
+		memberRoot string
+	}
+	candidates := map[string]candidate{}
 	for _, common := range commonDirs {
 		gitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		raw, err := discoveryGit(gitCtx, common, "worktree", "list", "--porcelain", "-z").Output()
@@ -263,19 +268,19 @@ func taskCheckout(ctx context.Context, q taskReader, device, repository, subdir,
 			}
 			memberRoot, err := canonical(filepath.Join(root, rel))
 			if err == nil && contains(root, memberRoot) {
-				candidates[root] = memberRoot
+				candidates[root] = candidate{checkoutPin{root, common}, memberRoot}
 			}
 		}
 	}
 	if err := ctx.Err(); err != nil {
-		return "", err
+		return checkoutPin{}, "", err
 	}
 	switch len(candidates) {
 	case 0:
-		return "", Fail("checkout-not-found", "bind a local checkout of the Task's Repository membership or choose a usable root with --checkout")
+		return checkoutPin{}, "", Fail("checkout-not-found", "bind a local checkout of the Task's Repository membership or choose a usable root with --checkout")
 	case 1:
-		for _, root := range candidates {
-			return root, nil
+		for _, c := range candidates {
+			return c.pin, c.memberRoot, nil
 		}
 	}
 	paths := make([]string, 0, len(candidates))
@@ -283,7 +288,48 @@ func taskCheckout(ctx context.Context, q taskReader, device, repository, subdir,
 		paths = append(paths, path)
 	}
 	slices.Sort(paths)
-	return "", &Error{Code: "ambiguous-checkout", Message: "multiple local checkouts match the Task; choose a Git checkout root with --checkout", Details: paths}
+	return checkoutPin{}, "", &Error{Code: "ambiguous-checkout", Message: "multiple local checkouts match the Task; choose a Git checkout root with --checkout", Details: paths}
+}
+
+// pinnedCheckout revalidates a checkout chosen by an earlier taskCheckout
+// against the current catalog without running Git.
+func pinnedCheckout(ctx context.Context, q taskReader, device, repository, subdir string, pin checkoutPin) (checkoutPin, string, error) {
+	commonDirs, err := boundCommonDirs(ctx, q, device, repository)
+	if err != nil {
+		return checkoutPin{}, "", err
+	}
+	rel, err := filepath.Localize(subdir)
+	if err != nil {
+		return checkoutPin{}, "", Fail("invalid-reference", "membership directory is invalid on this platform")
+	}
+	if !slices.Contains(commonDirs, pin.commonDir) {
+		return checkoutPin{}, "", Fail("checkout-not-found", "the selected checkout is no longer bound to the Task's Repository")
+	}
+	memberRoot, err := canonical(filepath.Join(pin.root, rel))
+	if err != nil || !contains(pin.root, memberRoot) {
+		return checkoutPin{}, "", Fail("checkout-not-found", "the Task's membership directory is not usable in the selected checkout")
+	}
+	return pin, memberRoot, nil
+}
+
+func boundCommonDirs(ctx context.Context, q taskReader, device, repository string) ([]string, error) {
+	rows, err := q.QueryContext(ctx, `SELECT DISTINCT b.git_common_dir FROM checkout_bindings b
+		JOIN memberships m ON m.id=b.membership_id
+		WHERE b.device_id=? AND m.repository_id=? AND coalesce(b.git_common_dir,'')<>''
+		AND NOT EXISTS(SELECT 1 FROM sync_tombstones t WHERE t.id IN (m.id,m.project_id)) ORDER BY 1`, device, repository)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var commonDirs []string
+	for rows.Next() {
+		var common string
+		if err := rows.Scan(&common); err != nil {
+			return nil, err
+		}
+		commonDirs = append(commonDirs, common)
+	}
+	return commonDirs, rows.Err()
 }
 
 // ExecuteTask runs a prepared Task and forwards byte streams. A Task with
@@ -389,7 +435,8 @@ func launchProgram(launch taskLaunch) (string, error) {
 		case filepath.IsAbs(launch.program):
 			return launch.program, nil
 		case strings.ContainsAny(launch.program, "/"+string(filepath.Separator)):
-			return strings.TrimRight(launch.dir, `/\`) + string(filepath.Separator) + launch.program, nil
+			sep := string(filepath.Separator)
+			return strings.TrimSuffix(launch.dir, sep) + sep + launch.program, nil
 		}
 		return launch.program, nil
 	}

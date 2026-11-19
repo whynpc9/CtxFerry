@@ -38,6 +38,8 @@ type ExecutionDefinition struct {
 	TaskRevision string `json:"taskRevision"`
 	MembershipID string `json:"membershipId"`
 	RepositoryID string `json:"repositoryId"`
+	// CheckoutRoot is the selected local Git checkout or worktree root.
+	CheckoutRoot string `json:"checkoutRoot"`
 	// Program and Argv are the Task's registered command.
 	Program            string                `json:"program"`
 	Argv               []string              `json:"argv"`

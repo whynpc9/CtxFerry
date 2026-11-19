@@ -379,6 +379,32 @@ func TestExecutionTrustAcrossDevices(t *testing.T) {
 	enableTask(t, b, "integration", "--profile=dev")
 	assertChildEnvironment(t, reportedEnvironment(t, movedRun()), "DATABASE_URL", otherSecretValue)
 
+	// Approval is per checkout: another worktree of the same Repository needs
+	// its own review, and enabling it leaves the first checkout's approval intact.
+	bRoot, err := filepath.EvalSymlinks(filepath.Dir(b.Dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	git(t, b, "add", "-A")
+	git(t, b, "commit", "-q", "-m", "fixture")
+	worktree := filepath.Join(t.TempDir(), "worktree")
+	git(t, b, "worktree", "add", "-q", worktree)
+	if worktree, err = filepath.EvalSymlinks(worktree); err != nil {
+		t.Fatal(err)
+	}
+	checkoutRun := func(root string) testcli.Result {
+		return credentialRun(t, b, local, "integration", "--profile=dev", "--checkout", root, "--format=jsonl")
+	}
+	refusedTask(t, credentialRun(t, b, local, "integration", "--profile=dev", "--format=jsonl"), "ambiguous-checkout")
+	refusedChange(t, checkoutRun(worktree), "not-enabled")
+	if review := reviewTask(t, b, "integration", "--profile=dev", "--checkout", worktree); review.State != "not-enabled" {
+		t.Fatalf("another checkout was previewed as a change: %+v", review)
+	}
+	enableTask(t, b, "integration", "--profile=dev", "--checkout", worktree)
+	for _, root := range []string{worktree, bRoot} {
+		assertChildEnvironment(t, reportedEnvironment(t, checkoutRun(root)), "DATABASE_URL", otherSecretValue)
+	}
+
 	// A credential-free Task needs no trust decision.
 	addTask(t, a, "plain", mid, program, "shared", "--working-directory=working", "--arg=marker").Success(t)
 	if plain := reviewTask(t, a, "plain"); plain.State != "not-required" || plain.Preview != "" {

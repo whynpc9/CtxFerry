@@ -198,10 +198,12 @@ details name the changed fields, until this device enables the new version.
 Editing a Task's purpose or inputs, aliases or other descriptive text keeps the
 enabled state. Trust records stay in this device's local store and are never
 synchronized; every device, including the one that made a change, reviews it.
-Approval is per checkout. When a synchronized edit moves the Task to another
-membership, the preview compares it with the latest approval for the old
-membership. `enable` prepares and stores the definition under the local store's
-write lock, so nothing can change it between the check and the approval.
+Approval is per Git checkout or worktree and membership directory. When a
+synchronized edit moves the Task's membership directory within the same
+checkout, or to another Repository, the preview compares it with the latest
+earlier approval. `enable` resolves the checkout first, then prepares and
+stores the definition under the local store's write lock without running Git,
+so nothing can change it between the check and the approval.
 
 Change a Task at its current revision with `task update`; only the given fields
 are replaced. An edit that would leave a Profile mapping pointing at a removed or

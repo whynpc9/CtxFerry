@@ -243,10 +243,11 @@ CREATE TABLE IF NOT EXISTS execution_trust (
   device_id TEXT NOT NULL,
   task_id TEXT NOT NULL,
   profile_id TEXT NOT NULL,
+  checkout_root TEXT NOT NULL,
   membership_root TEXT NOT NULL,
   digest TEXT NOT NULL,
   definition TEXT NOT NULL,
   enabled_at TEXT NOT NULL,
-  PRIMARY KEY(device_id,task_id,profile_id,membership_root)
+  PRIMARY KEY(device_id,task_id,profile_id,checkout_root,membership_root)
 );
 PRAGMA user_version=9;`
