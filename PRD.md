@@ -620,7 +620,7 @@ Windows 与 WSL 分别完成本地绑定。UI 可以将它们显示为同一物�
 
 # 技术设计
 
-本地存储采用 SQLite，CLI 与 GUI 共用 Go 应用核心，桌面界面采用 mygo WebView 与 React。数据库使用 WAL、短事务和明确的 busy timeout。文件投影先暂存并记录恢复状态，再切换目标；磁盘写入失败不得记为成功安装。
+本地存储采用 SQLite，CLI 与 GUI 共用 Go 应用核心，桌面界面采用 MyGo Native UI，以 Go 构建视图和控件，并在进程内调用共享应用核心。数据库使用 WAL、短事务和明确的 busy timeout。文件投影先暂存并记录恢复状态，再切换目标；磁盘写入失败不得记为成功安装。
 
 首版不发布 Hub HTTP 服务。CLI 与 GUI 共用 Go app 层；同步进程只做数据同步，不接收远程命令或代替 CLI 执行凭据任务。系统 Git 用参数数组调用；managed repository 不执行远端内容提供的 hooks / filters，也不递归 stage 任意目录。Git 和 agent 业务子进程使用分开的环境构建策略。
 
@@ -644,4 +644,4 @@ SecretProvider 的能力要按认证方式返回：`machine_auth`、`offline_rea
 
 CLI 不直接依赖 GUI 生命周期或 GUI 初始化。可使用同服务名的 OS credential adapter，或 provider 自己的认证存储；headless 的受保护注入、交互解锁或系统已有 credentials 机制需在 doctor 中明确说明。没有可用安全存储时，不得静默降级为明文 token 文件。headless 可以使用用户明确配置的既有受保护 credentials 注入机制；这些认证材料不进入资料同步、应用导出或诊断包。
 
-GUI 仅加载本应用资产，外部链接走系统浏览器；不向远程网页开放可信 IPC。核心 CLI 在无 DISPLAY、无 DBus、无 WebKitGTK 的 Linux 上仍可运行，provider 不可用要返回明确的认证或能力状态。
+GUI 使用应用自带的原生界面资产，将资料正文和差异作为数据展示，外部链接由系统浏览器打开。核心 CLI 在无 DISPLAY、无 DBus、无 WebKitGTK 的 Linux 上仍可运行，provider 不可用要返回明确的认证或能力状态。

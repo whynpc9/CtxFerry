@@ -13,3 +13,7 @@ The five canonical triage labels are used unchanged: `needs-triage`, `needs-info
 ### Domain docs
 
 Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root, created lazily. See `docs/agents/domain.md`.
+
+### Desktop UI council
+
+For independent, scored reviews of the MyGo Native UI design, use the project [council skill](.agents/skills/council/SKILL.md).
