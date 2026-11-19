@@ -45,8 +45,9 @@ func (p *SkillPlan) problem(code, message string, paths ...string) {
 
 type skillProjection struct {
 	SkillPlan
-	root, source, receiptPath string
-	receipt                   skillReceipt
+	root, local, source, receiptPath string
+	version                          string
+	receipt                          skillReceipt
 }
 
 func skillTarget(target string) (string, error) {
@@ -121,67 +122,39 @@ func (a App) PlanSkill(name, target string, symlink bool) (SkillPlan, error) {
 }
 
 func (a App) planSkill(name, target string, symlink bool) (skillProjection, error) {
-	var p skillProjection
-	if !validSkillName(name) {
-		return p, Fail("usage", "a valid Skill name is required")
-	}
-	root, err := skillTarget(target)
+	p, err := a.openSkillProjection(name, target)
 	if err != nil {
 		return p, err
 	}
-	local, err := resolveSkillDirectory(a.skillDir())
-	if err != nil {
-		return p, err
-	}
-	if contains(root, local) || contains(local, root) {
-		return p, Fail("invalid-path", "Skill target and local package store must be separate")
-	}
-	packageDir := filepath.Join(local, "packages", name)
-	p.root = root
-	p.source = filepath.Join(packageDir, "files")
-	p.receiptPath = filepath.Join(local, "installs", digest([]byte(filepath.Join(root, name)))+".json")
-	p.SkillPlan = SkillPlan{
-		Target: target, Path: filepath.Join(root, name), Mode: "copy",
-		Status: "ready", Writes: []SkillWrite{}, Issues: []SkillProblem{},
-	}
-	if symlink {
-		p.Mode, p.LinkSource = "symlink", p.source
-	}
-	for _, dir := range []string{filepath.Dir(packageDir), packageDir} {
-		info, err := os.Lstat(dir)
-		if os.IsNotExist(err) {
-			return p, Fail("skill-not-found", fmt.Sprintf("Skill %q has not been added", name))
-		}
-		if err != nil {
-			return p, err
-		}
-		if !info.IsDir() {
-			return p, Fail("invalid-skill-state", "the Skill package path must be a directory")
-		}
-	}
-	if err := readSkillJSON(filepath.Join(packageDir, "manifest.json"), &p.Package); err != nil {
-		if os.IsNotExist(err) {
-			return p, Fail("skill-not-found", fmt.Sprintf("Skill %q has not been added", name))
-		}
-		return p, err
-	}
-	if err := p.Package.validate(name); err != nil {
-		return p, err
-	}
-	changes, err := compareSkillTree(p.source, p.Package.Files)
-	if err != nil {
-		return p, err
-	}
-	if len(changes) != 0 {
-		p.problem("skill-package-changed", "local Skill package differs from its manifest", changes...)
-	}
+	err = p.planInstalled(name, symlink)
+	return p, err
+}
 
-	if err := readSkillJSON(p.receiptPath, &p.receipt); err != nil && !os.IsNotExist(err) {
-		return p, err
+func (p *skillProjection) planInstalled(name string, symlink bool) error {
+	if old := p.receipt.Replaces; old != nil {
+		if err := p.receipt.validateTarget(p.Path); err != nil {
+			return err
+		}
+		if err := old.validateTarget(p.Path); err != nil {
+			return err
+		}
+		if err := p.loadPackage(name, old.Version, symlink); err != nil {
+			return err
+		}
+		if requested := p.Mode; requested != old.Mode {
+			p.problem("skill-mode-conflict", fmt.Sprintf("existing recovery uses %s", old.Mode), p.Path)
+		}
+		if p.Status == "ready" {
+			p.Status = "recovery-pending"
+		}
+		return nil
+	}
+	if err := p.loadPackage(name, p.receipt.Version, symlink); err != nil {
+		return err
 	}
 	installed, err := p.inspectTarget()
 	if err != nil {
-		return p, err
+		return err
 	}
 	if installed && p.receipt.State == "installed" && len(p.Issues) == 0 {
 		p.Status = "installed"
@@ -204,7 +177,87 @@ func (a App) planSkill(name, target string, symlink bool) (skillProjection, erro
 			}
 		}
 	}
+	return nil
+}
+
+func (a App) openSkillProjection(name, target string) (skillProjection, error) {
+	var p skillProjection
+	if !validSkillName(name) {
+		return p, Fail("usage", "a valid Skill name is required")
+	}
+	root, err := skillTarget(target)
+	if err != nil {
+		return p, err
+	}
+	local, err := resolveSkillDirectory(a.skillDir())
+	if err != nil {
+		return p, err
+	}
+	if contains(root, local) || contains(local, root) {
+		return p, Fail("invalid-path", "Skill target and local package store must be separate")
+	}
+	p.root, p.local = root, local
+	p.SkillPlan = SkillPlan{
+		Target: target, Path: filepath.Join(root, name), Mode: "copy",
+		Status: "ready", Writes: []SkillWrite{}, Issues: []SkillProblem{},
+	}
+	p.receiptPath = filepath.Join(local, "installs", digest([]byte(p.Path))+".json")
+	if err := readSkillJSON(p.receiptPath, &p.receipt); err != nil && !os.IsNotExist(err) {
+		return p, err
+	}
 	return p, nil
+}
+
+func (p *skillProjection) packageDir(name, version string) string {
+	if version == "" {
+		return filepath.Join(p.local, "packages", name)
+	}
+	return filepath.Join(p.local, "versions", version)
+}
+
+func (p *skillProjection) loadPackage(name, version string, symlink bool) error {
+	if version != "" && !validSkillVersion(version) {
+		return Fail("invalid-skill-state", "invalid local Skill version")
+	}
+	packageDir := p.packageDir(name, version)
+	p.version = version
+	p.source = filepath.Join(packageDir, "files")
+	if symlink {
+		p.Mode, p.LinkSource = "symlink", p.source
+	}
+	for _, dir := range []string{filepath.Dir(packageDir), packageDir} {
+		info, err := os.Lstat(dir)
+		if os.IsNotExist(err) {
+			return Fail("skill-not-found", fmt.Sprintf("Skill %q has not been added", name))
+		}
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			return Fail("invalid-skill-state", "the Skill package path must be a directory")
+		}
+	}
+	p.Package = SkillPackage{}
+	if err := readSkillJSON(filepath.Join(packageDir, "manifest.json"), &p.Package); err != nil {
+		if os.IsNotExist(err) {
+			return Fail("skill-not-found", fmt.Sprintf("Skill %q has not been added", name))
+		}
+		return err
+	}
+	if err := p.Package.validate(name); err != nil {
+		return err
+	}
+	if version != "" && skillVersion(p.Package) != version {
+		return Fail("invalid-skill-state", "the local Skill version does not match its manifest")
+	}
+	changes, err := compareSkillTree(p.source, p.Package.Files)
+	if err != nil {
+		return err
+	}
+	if len(changes) != 0 {
+		p.problem("skill-package-changed", "local Skill package differs from its manifest", changes...)
+	}
+	return nil
 }
 
 func (pkg SkillPackage) validate(name string) error {

@@ -258,6 +258,8 @@ func render(w io.Writer, result any) error {
 		return renderAgentEntry(w, r)
 	case app.SkillPlan:
 		return renderSkillPlan(w, r)
+	case app.SkillChangePlan:
+		return renderSkillChange(w, r)
 	case app.DoctorReport:
 		return renderDoctor(w, r)
 	case app.InitResult:
