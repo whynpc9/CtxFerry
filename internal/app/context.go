@@ -159,97 +159,107 @@ func (a App) PutContext(ctx context.Context, selector, cwd string, in PutContext
 		return r, e
 	}
 	e = store.Write(ctx, db, func(c *sql.Conn) error {
-		id := in.ID
-		previous := ""
-		if id != "" {
-			var raw string
-			err := c.QueryRowContext(ctx, "SELECT metadata FROM records WHERE id=? AND project_id=? AND kind='context'", id, r.Project.ID).Scan(&raw)
-			if errors.Is(err, sql.ErrNoRows) {
-				return Fail("document-not-found", "document not found in this project")
-			}
-			if err != nil {
-				return err
-			}
-			var old ContextDoc
-			if err = decodeContext(raw, &old); err != nil {
-				return err
-			}
-			if _, err = projectDoc(old, false); err != nil {
-				return err
-			}
-			if old.Deleted {
-				return Fail("record-deleted", "use context restore to restore a tombstone")
-			}
-			if err = requireNoConflict(ctx, c, id); err != nil {
-				return err
-			}
-			previous = old.Revision
-			if previous != in.IfRevision {
-				return Fail("revision-conflict", "document changed; read its current revision before replacing")
-			}
-		} else {
-			var err error
-			id, err = newID()
-			if err != nil {
-				return err
-			}
-		}
-		revision, err := newID()
-		if err != nil {
+		var doc ContextDoc
+		if err := writeContext(ctx, c, r.Project.ID, in, &doc); err != nil {
 			return err
 		}
-		operation, err := newID()
-		if err != nil {
+		if err := queueChanges(ctx, c); err != nil {
 			return err
 		}
-		d := ContextDoc{SchemaVersion: 1, ID: id, Kind: "context", Scope: Scope{"project", r.Project.ID}, Revision: revision, PreviousRevision: previous, OperationID: operation, Title: in.Title, Purpose: in.Purpose, Source: in.Source, UpdatedAt: now(), ValidUntil: in.ValidUntil, Freshness: "unknown", Policy: Policy{in.Storage, in.Disclosure}, Summary: &in.Summary}
-		if err = c.QueryRowContext(ctx, "SELECT id FROM workspace WHERE singleton=1").Scan(&d.WorkspaceID); err != nil {
-			return err
-		}
-		if err = c.QueryRowContext(ctx, "SELECT id FROM device WHERE singleton=1").Scan(&d.DeviceID); err != nil {
-			return err
-		}
-		raw, err := json.Marshal(d)
-		if err != nil {
-			return err
-		}
-		if len(raw) > MetadataLimit {
-			return Fail("size-limit", fmt.Sprintf("structured context record exceeds %d bytes (excluding Markdown body)", MetadataLimit))
-		}
-		if in.Purpose == "project-summary" {
-			var count int
-			if err = c.QueryRowContext(ctx, `SELECT count(*) FROM records WHERE project_id=? AND kind='context' AND id<>? AND coalesce(json_extract(metadata,'$.deleted'),0)=0 AND json_extract(metadata,'$.purpose')='project-summary'`, r.Project.ID, id).Scan(&count); err != nil {
-				return err
-			}
-			if count > 0 {
-				return Fail("summary-conflict", "project already has a project-summary document")
-			}
-		}
-		if _, err = c.ExecContext(ctx, `INSERT INTO records VALUES(?,?,'context',?) ON CONFLICT(id) DO UPDATE SET metadata=excluded.metadata`, id, r.Project.ID, string(raw)); err != nil {
-			return err
-		}
-		if _, err = c.ExecContext(ctx, `INSERT INTO context_bodies VALUES(?,?) ON CONFLICT(record_id) DO UPDATE SET body=excluded.body`, id, in.Body); err != nil {
-			return err
-		}
-		d.Body = &in.Body
-		visible, err := projectDoc(d, true)
-		if err != nil {
-			return err
-		}
-		if err = indexDoc(ctx, c, d); err != nil {
-			return err
-		}
-		if err = queueChanges(ctx, c); err != nil {
-			return err
-		}
-		// Receipts contain metadata only, even for full disclosure.
-		visible.Body = nil
-		visible.Summary = nil
-		r.Document = &visible
-		r.UpdatedAt = d.UpdatedAt
+		r.Document = &doc
+		r.UpdatedAt = doc.UpdatedAt
 		return nil
 	})
 	return r, e
+}
+
+// writeContext persists a validated document and projects a metadata-only receipt.
+func writeContext(ctx context.Context, c *sql.Conn, projectID string, in PutContext, receipt *ContextDoc) error {
+	id := in.ID
+	previous := ""
+	if id != "" {
+		var raw string
+		err := c.QueryRowContext(ctx, "SELECT metadata FROM records WHERE id=? AND project_id=? AND kind='context'", id, projectID).Scan(&raw)
+		if errors.Is(err, sql.ErrNoRows) {
+			return Fail("document-not-found", "document not found in this project")
+		}
+		if err != nil {
+			return err
+		}
+		var old ContextDoc
+		if err = decodeContext(raw, &old); err != nil {
+			return err
+		}
+		if _, err = projectDoc(old, false); err != nil {
+			return err
+		}
+		if old.Deleted {
+			return Fail("record-deleted", "use context restore to restore a tombstone")
+		}
+		if err = requireNoConflict(ctx, c, id); err != nil {
+			return err
+		}
+		previous = old.Revision
+		if previous != in.IfRevision {
+			return Fail("revision-conflict", "document changed; read its current revision before replacing")
+		}
+	} else {
+		var err error
+		id, err = newID()
+		if err != nil {
+			return err
+		}
+	}
+	revision, err := newID()
+	if err != nil {
+		return err
+	}
+	operation, err := newID()
+	if err != nil {
+		return err
+	}
+	d := ContextDoc{SchemaVersion: 1, ID: id, Kind: "context", Scope: Scope{"project", projectID}, Revision: revision, PreviousRevision: previous, OperationID: operation, Title: in.Title, Purpose: in.Purpose, Source: in.Source, UpdatedAt: now(), ValidUntil: in.ValidUntil, Freshness: "unknown", Policy: Policy{in.Storage, in.Disclosure}, Summary: &in.Summary}
+	if err = c.QueryRowContext(ctx, "SELECT id FROM workspace WHERE singleton=1").Scan(&d.WorkspaceID); err != nil {
+		return err
+	}
+	if err = c.QueryRowContext(ctx, "SELECT id FROM device WHERE singleton=1").Scan(&d.DeviceID); err != nil {
+		return err
+	}
+	raw, err := json.Marshal(d)
+	if err != nil {
+		return err
+	}
+	if len(raw) > MetadataLimit {
+		return Fail("size-limit", fmt.Sprintf("structured context record exceeds %d bytes (excluding Markdown body)", MetadataLimit))
+	}
+	if in.Purpose == "project-summary" {
+		var count int
+		if err = c.QueryRowContext(ctx, `SELECT count(*) FROM records WHERE project_id=? AND kind='context' AND id<>? AND coalesce(json_extract(metadata,'$.deleted'),0)=0 AND json_extract(metadata,'$.purpose')='project-summary'`, projectID, id).Scan(&count); err != nil {
+			return err
+		}
+		if count > 0 {
+			return Fail("summary-conflict", "project already has a project-summary document")
+		}
+	}
+	if _, err = c.ExecContext(ctx, `INSERT INTO records VALUES(?,?,'context',?) ON CONFLICT(id) DO UPDATE SET metadata=excluded.metadata`, id, projectID, string(raw)); err != nil {
+		return err
+	}
+	if _, err = c.ExecContext(ctx, `INSERT INTO context_bodies VALUES(?,?) ON CONFLICT(record_id) DO UPDATE SET body=excluded.body`, id, in.Body); err != nil {
+		return err
+	}
+	d.Body = &in.Body
+	visible, err := projectDoc(d, true)
+	if err != nil {
+		return err
+	}
+	if err = indexDoc(ctx, c, d); err != nil {
+		return err
+	}
+	// Receipts contain metadata only, even for full disclosure.
+	visible.Body = nil
+	visible.Summary = nil
+	*receipt = visible
+	return nil
 }
 
 func (a App) QueryContext(ctx context.Context, selector, cwd, mode, arg, cursor string) (ContextResult, error) {
