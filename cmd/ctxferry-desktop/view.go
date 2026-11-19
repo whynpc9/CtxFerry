@@ -89,11 +89,13 @@ func (d *desktop) overview(c *ui.Context) {
 	section(c, "本机同步状态")
 	if s.Config == nil {
 		ui.Text(c, "尚未配置同步仓库")
-	} else {
-		detail(c, "待发布记录", strconv.Itoa(s.Pending))
-		detail(c, "未解决冲突", strconv.Itoa(len(s.Conflicts)))
 	}
-	git := "尚未验证"
+	detail(c, "本机队列记录", strconv.Itoa(s.Pending))
+	detail(c, "本机未解决冲突", strconv.Itoa(len(s.Conflicts)))
+	git := "本次刷新未检查远端认证"
+	if s.Config == nil {
+		git = "不适用（尚未配置远端）"
+	}
 	switch s.State {
 	case "auth-required":
 		git = "上次同步需要认证"
@@ -101,15 +103,25 @@ func (d *desktop) overview(c *ui.Context) {
 		git = "上次同步需要解锁"
 	}
 	detail(c, "Git 认证", git)
-	detail(c, "凭据服务认证", "当前快照未验证")
+	detail(c, "凭据服务认证", "桌面快照未查询 Infisical 或 Bitwarden 登录状态")
 }
 func (d *desktop) syncPage(c *ui.Context) {
 	s := d.data.Sync
-	ui.Text(c, "共享正文以明文保存在私有 Git 历史中。").TextColor(ink)
 	if s.Config == nil {
-		section(c, "尚未配置同步仓库")
+		ui.Column(c).FillWidth().Gap(7).Padding(16).Radius(6).Background(panel).Children(func() {
+			section(c, "尚未配置同步仓库")
+			ui.Text(c, "首次发布前需核验仓库为私有。发布后，共享正文将以明文写入 Git 历史。")
+			detail(c, "远端确认", "不适用（无目标分支、确认版本或时间）")
+		})
+		d.queue(c)
+		ui.Divider(c)
+		section(c, "连接私有仓库")
+		ui.Text(c, "准备好专用的私有 GitHub 仓库后，在终端替换仓库地址并运行：")
+		ui.Text(c, "ctxferry sync enable --remote git@github.com:OWNER/REPO.git").Font("monospace").TextColor(ink)
+		ui.Text(c, "配置成功后刷新本地视图。首次发布需要单独确认。").TextColor(muted)
 		return
 	}
+	ui.Text(c, "发布后，共享正文将以明文保留在远端 Git 历史中。").TextColor(ink)
 	section(c, "仓库与备份")
 	detail(c, "仓库", s.Config.Remote)
 	detail(c, "分支", s.Config.Branch)
@@ -131,8 +143,13 @@ func (d *desktop) syncPage(c *ui.Context) {
 	detail(c, "Git 历史体积", size)
 	detail(c, "最近备份", "本机目录未提供备份回执")
 	ui.Divider(c)
-	section(c, "记录队列")
-	detail(c, "待发布记录", strconv.Itoa(s.Pending))
+	d.queue(c)
+}
+
+func (d *desktop) queue(c *ui.Context) {
+	s := d.data.Sync
+	section(c, "本机记录队列")
+	detail(c, "队列记录", strconv.Itoa(s.Pending))
 	for _, id := range d.data.PendingIDs {
 		detail(c, "待发布", id)
 	}

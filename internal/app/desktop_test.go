@@ -66,6 +66,13 @@ func TestDesktopLocalSnapshot(t *testing.T) {
 			found = true
 		}
 	}
+	if _, err := db.ExecContext(ctx, "DELETE FROM sync_config"); err != nil {
+		t.Fatal(err)
+	}
+	offline, err := a.ReadDesktopSnapshot(ctx)
+	if err != nil || offline.Sync.Config != nil || offline.Sync.Pending != s.Sync.Pending || len(offline.Sync.Conflicts) != 1 {
+		t.Fatalf("local evidence without a remote: %+v, %v", offline, err)
+	}
 	if !found {
 		t.Fatal("missing pending record")
 	}

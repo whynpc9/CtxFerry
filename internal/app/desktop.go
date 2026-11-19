@@ -54,10 +54,14 @@ func (a App) ReadDesktopSnapshot(ctx context.Context) (DesktopSnapshot, error) {
 	}
 	result.Sync, err = readSyncStatus(ctx, tx)
 	if err != nil {
-		if Classify(err).Code == "sync-disabled" {
-			return result, tx.Commit()
+		if Classify(err).Code != "sync-disabled" {
+			return result, err
 		}
-		return result, err
+		// The device can have local queue evidence before a remote is configured.
+		result.Sync.Conflicts, result.Sync.Blocked, err = conflictStatus(ctx, tx)
+		if err != nil {
+			return result, err
+		}
 	}
 	rows, err = tx.QueryContext(ctx, "SELECT id FROM sync_outbox ORDER BY id")
 	if err != nil {
@@ -74,5 +78,6 @@ func (a App) ReadDesktopSnapshot(ctx context.Context) (DesktopSnapshot, error) {
 	if err := rows.Err(); err != nil {
 		return result, err
 	}
+	result.Sync.Pending = len(result.PendingIDs)
 	return result, tx.Commit()
 }

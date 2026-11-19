@@ -30,3 +30,16 @@ func TestNavigateOverviewAndSync(t *testing.T) {
 		t.Fatal("return navigation lost overview")
 	}
 }
+
+func TestSyncWithoutRemoteShowsLocalEvidence(t *testing.T) {
+	d := desktop{page: "同步", data: app.DesktopSnapshot{
+		Sync:       app.SyncResult{State: "disabled", Pending: 1},
+		PendingIDs: []string{"local-pending-record"},
+	}}
+	window := ui.NewTester(d.view, 1180, 750)
+	for _, label := range []string{"尚未配置同步仓库", "local-pending-record", "连接私有仓库"} {
+		if _, ok := window.Access(label); !ok {
+			t.Errorf("missing %q", label)
+		}
+	}
+}
