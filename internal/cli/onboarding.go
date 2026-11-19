@@ -10,7 +10,7 @@ import (
 )
 
 func onboardingCommand(ctx context.Context, invoke func(func(app.App) (any, error)) func(*cobra.Command, []string) error, selector *string) *cobra.Command {
-	group := &cobra.Command{Use: "onboard", Short: "Set up the first Project and import selected notes"}
+	group := &cobra.Command{Use: "onboard", Short: "Set up the first Project and import selected files"}
 	var repository string
 	selection := func() app.OnboardingSelection {
 		return app.OnboardingSelection{Project: *selector, Repository: repository}
@@ -52,7 +52,39 @@ func onboardingCommand(ctx context.Context, invoke func(func(app.App) (any, erro
 	finish := &cobra.Command{Use: "finish", Short: "Run doctor and complete onboarding", Args: cobra.NoArgs,
 		RunE: invoke(func(a app.App) (any, error) { return a.FinishOnboarding(ctx) }),
 	}
-	group.AddCommand(start, status, bind, scan, importNote, finish)
+	scanEnv := &cobra.Command{Use: "scan-env <file>", Short: "List field names and matching Task requirements for one selected env file", Args: cobra.ExactArgs(1)}
+	scanEnv.RunE = func(cmd *cobra.Command, args []string) error {
+		return invoke(func(a app.App) (any, error) {
+			return a.ScanOnboardingEnv(ctx, *selector, args[0])
+		})(cmd, args)
+	}
+	var env app.EnvImport
+	importEnv := &cobra.Command{Use: "import-env <file>", Short: "Preview or confirm one env field's provider import and Profile mapping", Args: cobra.ExactArgs(1)}
+	flags := importEnv.Flags()
+	flags.StringVar(&env.Profile, "profile", "", "Existing Project Profile name")
+	flags.StringVar(&env.Task, "task", "", "Existing Task name or UUID")
+	flags.StringVar(&env.Requirement, "requirement", "", "Task credential requirement name")
+	flags.StringVar(&env.Field, "field", "", "Source variable name")
+	flags.StringVar(&env.ResourceID, "resource", "", "Shared Resource UUID for the requirement's slot")
+	flags.StringVar(&env.Alias, "alias", "", "New SecretBinding alias")
+	flags.StringVar(&env.ProviderProfile.Provider, "provider", "", "Secret provider name")
+	flags.StringVar(&env.ProviderProfile.Name, "provider-profile", "", "Device provider profile name")
+	flags.StringVar(&env.ProviderProfile.Method, "method", "", "Provider authentication method")
+	flags.StringVar(&env.Locator.ProjectID, "backend-project", "", "Exact backend project ID")
+	flags.StringVar(&env.Locator.Environment, "environment", "", "Exact backend environment")
+	flags.StringVar(&env.Locator.Path, "path", "", "Exact backend folder path (use / for root)")
+	flags.StringVar(&env.Locator.Key, "key", "", "Exact backend entry key")
+	flags.BoolVar(&env.Recover, "recover", false, "Verify an existing entry against the source before mapping it")
+	flags.StringVar(&env.Confirm, "confirm", "", "Preview ID from the same command without --confirm")
+	importEnv.RunE = func(cmd *cobra.Command, args []string) error {
+		if flags.Changed("confirm") && env.Confirm == "" {
+			return app.Fail("usage", "pass a nonempty --confirm preview ID")
+		}
+		return invoke(func(a app.App) (any, error) {
+			return a.ImportOnboardingEnv(ctx, *selector, args[0], env)
+		})(cmd, args)
+	}
+	group.AddCommand(start, status, bind, scan, importNote, scanEnv, importEnv, finish)
 	return group
 }
 

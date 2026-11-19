@@ -57,6 +57,54 @@ disclosure modes you selected. Shared notes are eligible for plaintext sync.
 Use `--summary` to supply the text for summary disclosure. You can finish with
 zero imports. Finish runs the regular doctor checks for the saved directory.
 
+### Import a selected env file
+
+Run `ctxferry onboard scan-env ./.env --project api` to list variable names and
+candidate Tasks in that Project. Candidates are shared Tasks with a credential
+requirement whose delivery variable matches a field in the file. Use `task add`
+or `task update` to declare requirements for Tasks that do not have them yet.
+Each field is a hint. You choose the requirement and its backend key independently.
+
+Choose an existing Profile, shared Task and compatible shared Resource. Log in to
+the selected device provider profile before confirming. Run the following command
+to preview the exact mapping, then repeat it with `--confirm <preview-id>`.
+
+```sh
+ctxferry onboard import-env ./.env --project api --profile dev --task integration \
+  --requirement login --field DATABASE_URL --resource <resource-uuid> --alias db \
+  --provider infisical --provider-profile team --method universal-auth \
+  --backend-project <infisical-project-id> --environment dev --path /api --key API_DB_URL
+```
+
+The parser accepts UTF-8 single-line `NAME=value` assignments, optional `export`,
+blank lines, comments and matching single or double quotes. It rejects duplicate
+names (including case variants), multiline values, shell syntax and expansions.
+Single quotes can contain shell characters as literal data. The commands read
+only the specified regular file and leave it unchanged. The preview ID confirms
+the file path and mapping metadata. The import rereads and validates the
+selected file at confirmation.
+
+Import supports Infisical US Cloud with Universal Auth, an exact folder and key,
+and permission to create a shared secret there. It uses the
+[v4 create endpoint](https://infisical.com/docs/api-reference/endpoints/secrets/create).
+Values with leading or trailing whitespace or Infisical reference syntax are
+rejected because the endpoint could transform them. Other providers and
+authentication methods require an adapter that advertises create import.
+
+Confirm one field at a time. A successful invocation commits the Project's
+SecretBinding and both Profile mappings together. An existing backend key or
+credential mapping blocks normal import. Previously completed fields keep their
+mappings if a later field fails. The catalog, sync records and receipt carry only
+approved metadata and references.
+
+If the provider result is uncertain, an approval is pending, or the local
+catalog commit fails after creation, check the mapping with `secret status`.
+For a missing mapping, run the same import command with `--recover` to get a
+fresh preview, then confirm it. Recovery requires read-value permission and
+compares the exact existing entry with the source field in memory before saving
+the mapping. A missing or different entry leaves the catalog untouched. Normal
+import and recovery both leave existing provider entries unchanged.
+
 Project identification uses this order: explicit `--project`, longest local path binding,
 locally bound Git common directory and membership scope, then remote candidates.
 A new worktree inherits the deepest containing repository-relative scope. Equal

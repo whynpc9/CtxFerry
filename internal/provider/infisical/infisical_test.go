@@ -41,7 +41,7 @@ func writeSecret(w http.ResponseWriter, l provider.Locator, id, value string, hi
 func TestProviderContract(t *testing.T) {
 	methods := []provider.MethodCapabilities{
 		{Method: personal, SessionExpiry: true},
-		{Method: universalAuth, MachineAuth: true, SessionExpiry: true},
+		{Method: universalAuth, MachineAuth: true, SessionExpiry: true, CreateImport: true},
 	}
 	for _, method := range methods {
 		t.Run(method.Method, func(t *testing.T) {

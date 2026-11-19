@@ -272,18 +272,10 @@ func (a App) changeSecretMapping(ctx context.Context, selector, cwd string, chan
 					return nil
 				}
 			}
-			env := publishedEnvelope{SchemaVersion: 1, ID: uuid.NewString(), Kind: secretBindingKind,
-				WorkspaceID: loc.workspace, Scope: scope, Policy: Policy{"shared", "reference"},
-				Revision: uuid.NewString(), OperationID: uuid.NewString(), Payload: spec}
-			env.Provenance.DeviceID, env.Provenance.UpdatedAt = loc.device, now()
-			raw, err := json.Marshal(env)
+			binding, err = insertSecretBinding(ctx, c, loc, spec)
 			if err != nil {
 				return err
 			}
-			if _, err := c.ExecContext(ctx, "INSERT INTO records VALUES(?,?,?,?)", env.ID, scope.ID, env.Kind, string(raw)); err != nil {
-				return err
-			}
-			binding = secretBindingFromRecord(remoteRecord{publishedEnvelope: env, SecretBinding: spec})
 		}
 
 		mapping := SecretMapping{task.ID, req.Name, binding.ID}
@@ -301,6 +293,22 @@ func (a App) changeSecretMapping(ctx context.Context, selector, cwd string, chan
 		return saveSecretMappings(ctx, c, p.ID, scope, cfg)
 	})
 	return out, err
+}
+
+func insertSecretBinding(ctx context.Context, c *sql.Conn, loc configurationLocation, spec SecretBindingSpec) (SecretBinding, error) {
+	scope := Scope{"project", loc.project.ID}
+	env := publishedEnvelope{SchemaVersion: 1, ID: uuid.NewString(), Kind: secretBindingKind,
+		WorkspaceID: loc.workspace, Scope: scope, Policy: Policy{"shared", "reference"},
+		Revision: uuid.NewString(), OperationID: uuid.NewString(), Payload: spec}
+	env.Provenance.DeviceID, env.Provenance.UpdatedAt = loc.device, now()
+	raw, err := json.Marshal(env)
+	if err != nil {
+		return SecretBinding{}, err
+	}
+	if _, err := c.ExecContext(ctx, "INSERT INTO records VALUES(?,?,?,?)", env.ID, scope.ID, env.Kind, string(raw)); err != nil {
+		return SecretBinding{}, err
+	}
+	return secretBindingFromRecord(remoteRecord{publishedEnvelope: env, SecretBinding: spec}), nil
 }
 
 func saveSecretMappings(ctx context.Context, c *sql.Conn, profileID string, scope Scope, cfg configuration) error {
