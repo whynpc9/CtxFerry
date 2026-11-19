@@ -76,3 +76,37 @@ bindings. `records` stores structured document metadata and `context_bodies`
 stores Markdown separately in the same database transaction. FTS is a derived
 agent-visible index. Unknown newer database schemas fail without replacement.
 No source-checkout files are written.
+
+## Ordinary configuration and Profiles
+
+```sh
+ctxferry config set parallelism 2 --layer global
+ctxferry config set timeoutSeconds 60 --layer project
+ctxferry profile create development
+ctxferry config set parallelism 4 --layer profile --profile development
+ctxferry profile select development
+ctxferry config set workingDirectory '"tools"' --layer checkout
+ctxferry context explain --format json
+ctxferry config unset workingDirectory --layer checkout
+ctxferry profile clear
+```
+
+The field names are exact. Values supplied to `config set` are JSON.
+
+| Field | Value |
+| --- | --- |
+| `parallelism` | Integer from 1 through 1024 |
+| `timeoutSeconds` | Integer from 1 through 86400 |
+| `workingDirectory` | Checkout-relative slash path, or a device-local absolute path at the device or checkout layer |
+
+Each field inherits independently in this order: global, Project, selected Profile,
+device, checkout. `config unset` restores inheritance for one field.
+`context explain` resolves the effective working directory on the current device.
+The directory must exist, and a shared path must resolve inside the current checkout.
+`context explain --profile <name>` selects a Profile for that invocation.
+`context show` reports the locally saved selection when present.
+
+Global, Project and Profile inputs participate in the shared catalog. The device
+and checkout overrides and saved Profile selection stay in the local store.
+The explanation is computed on demand. Concurrent edits to the same shared
+configuration record use `sync conflicts` and `sync resolve --take local|remote`.

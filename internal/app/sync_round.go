@@ -43,8 +43,9 @@ type objectManifest struct {
 }
 type remoteRecord struct {
 	publishedEnvelope
-	Data  json.RawMessage `json:"-"`
-	Value recordPayload   `json:"-"`
+	Data   json.RawMessage `json:"-"`
+	Value  recordPayload   `json:"-"`
+	Config configuration   `json:"-"`
 }
 
 func strictJSON(b []byte, v any) error {
@@ -67,17 +68,39 @@ func recordPath(id string) string {
 func validUUID(id string) bool { u, e := uuid.Parse(id); return e == nil && u.String() == id }
 func decodeRecord(b []byte) (remoteRecord, error) {
 	var r remoteRecord
-	if err := strictJSON(b, &r.publishedEnvelope); err != nil {
+	wire := struct {
+		*publishedEnvelope
+		Payload json.RawMessage `json:"payload"`
+	}{publishedEnvelope: &r.publishedEnvelope}
+	if err := strictJSON(b, &wire); err != nil {
 		return r, err
 	}
 	if r.SchemaVersion != 1 {
 		return r, Fail("unsupported-schema", "unsupported record schema")
+	}
+	if wire.Payload != nil {
+		if err := json.Unmarshal(wire.Payload, &r.Payload); err != nil {
+			return r, err
+		}
+	}
+	if r.Kind == "configuration" {
+		if _, err := configurationFields(b); err != nil {
+			return r, err
+		}
+		config, err := decodeConfiguration(wire.Payload, false)
+		if err != nil {
+			return r, err
+		}
+		r.Config = config
 	}
 	raw, err := json.Marshal(r.Payload)
 	if err != nil {
 		return r, err
 	}
 	r.Data = raw
+	if r.Kind == "configuration" {
+		return r, nil
+	}
 	if err = strictJSON(raw, &r.Value); err != nil {
 		return r, err
 	}
@@ -118,6 +141,9 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 		}
 		r, err := decodeRecord(b)
 		if err != nil {
+			if r.Kind == "configuration" && Classify(err).Code != "unsupported-schema" {
+				return w, nil, Fail("incomplete", "invalid configuration record: "+Classify(err).Message)
+			}
 			return w, nil, err
 		}
 		if r.SchemaVersion != 1 {
@@ -170,6 +196,10 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 				return w, nil, err
 			}
 			if r.Scope.Kind != "project" || !validUUID(v.RepositoryID) || v.Subdirectory == "" || filepath.IsAbs(v.Subdirectory) || strings.Contains(v.Subdirectory, "..") || strings.Contains(v.Subdirectory, "\\") {
+				return invalid()
+			}
+		case "configuration":
+			if !validConfigurationScope(r.ID, w.WorkspaceID, r.Scope, r.Config.Profile) || r.Policy.AgentDisclosure != "full" {
 				return invalid()
 			}
 		case "context":
@@ -404,7 +434,7 @@ func installSnapshot(ctx context.Context, c *sql.Conn, files map[string][]byte, 
 	if err != nil {
 		return err
 	}
-	for _, kind := range []string{"project", "repository", "membership", "context"} {
+	for _, kind := range []string{"project", "repository", "membership", "context", "configuration"} {
 		for id, r := range records {
 			if r.Kind != kind {
 				continue
@@ -439,6 +469,12 @@ func installSnapshot(ctx context.Context, c *sql.Conn, files map[string][]byte, 
 				}
 			case "membership":
 				_, err = c.ExecContext(ctx, "INSERT INTO memberships VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id,repository_id=excluded.repository_id,subdirectory=excluded.subdirectory", id, r.Scope.ID, v.RepositoryID, v.Subdirectory)
+			case "configuration":
+				if r.Deleted {
+					_, err = c.ExecContext(ctx, "DELETE FROM configurations WHERE id=?", id)
+				} else {
+					err = saveConfiguration(ctx, c, id, r.Scope, r.Config)
+				}
 			case "context":
 				d := ContextDoc{Deleted: r.Deleted, SchemaVersion: 1, ID: id, Kind: kind, WorkspaceID: r.WorkspaceID, Scope: r.Scope, Revision: r.Revision, PreviousRevision: r.PreviousRevision, OperationID: r.OperationID, DeviceID: r.Provenance.DeviceID, UpdatedAt: r.Provenance.UpdatedAt, Title: v.Title, Purpose: v.Purpose, Source: v.Source, Summary: v.Summary, ObservedAt: v.ObservedAt, ValidUntil: v.ValidUntil, Policy: r.Policy, Freshness: "unknown"}
 				b, _ := json.Marshal(d)

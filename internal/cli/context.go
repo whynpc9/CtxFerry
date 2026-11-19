@@ -139,7 +139,19 @@ func contextCommand(ctx context.Context, invoke func(func(app.App) (any, error))
 		}
 		group.AddCommand(cmd)
 	}
-	group.AddCommand(put, show, get, search)
+	var profiles []string
+	explain := &cobra.Command{Use: "explain", Short: "Show effective ordinary configuration and each field's origin", Args: cobra.NoArgs}
+	explain.Flags().StringArrayVar(&profiles, "profile", nil, "Explicit Profile for this invocation")
+	explain.RunE = func(cmd *cobra.Command, args []string) error {
+		return run(cmd, args, func(a app.App, cwd string) (any, error) {
+			name, err := explicitProfile(profiles)
+			if err != nil {
+				return nil, err
+			}
+			return a.ExplainConfiguration(ctx, *selector, cwd, name)
+		})
+	}
+	group.AddCommand(put, show, get, search, explain)
 	return group
 }
 

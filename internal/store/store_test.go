@@ -62,7 +62,7 @@ func TestV1MigrationPreservesBindings(t *testing.T) {
 		t.Fatal(id, membership, e)
 	}
 	var v int
-	if e = db.QueryRow("PRAGMA user_version").Scan(&v); e != nil || v != 6 {
+	if e = db.QueryRow("PRAGMA user_version").Scan(&v); e != nil || v != 7 {
 		t.Fatal(v, e)
 	}
 }

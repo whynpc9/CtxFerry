@@ -54,19 +54,21 @@ type PutContext struct {
 	ID, IfRevision, Title, Purpose, Source, Summary, Body, Storage, Disclosure, ValidUntil string
 }
 type ContextResult struct {
-	Project     Project      `json:"project"`
-	Source      string       `json:"source"`
-	UpdatedAt   string       `json:"updatedAt"`
-	ObservedAt  *string      `json:"observedAt"`
-	Revision    *string      `json:"revision"`
-	Freshness   string       `json:"freshness"`
-	LastSyncAt  *string      `json:"lastSyncAt"`
-	Document    *ContextDoc  `json:"document,omitempty"`
-	Documents   []ContextDoc `json:"documents"`
-	Summary     *string      `json:"summary"`
-	Environment *Environment `json:"environment,omitempty"`
-	Truncated   bool         `json:"truncated"`
-	NextCursor  string       `json:"nextCursor,omitempty"`
+	Project     Project          `json:"project"`
+	Source      string           `json:"source"`
+	UpdatedAt   string           `json:"updatedAt"`
+	ObservedAt  *string          `json:"observedAt"`
+	Revision    *string          `json:"revision"`
+	Freshness   string           `json:"freshness"`
+	LastSyncAt  *string          `json:"lastSyncAt"`
+	Document    *ContextDoc      `json:"document,omitempty"`
+	Documents   []ContextDoc     `json:"documents"`
+	Summary     *string          `json:"summary"`
+	Environment *Environment     `json:"environment,omitempty"`
+	Profile     *SelectedProfile `json:"profile,omitempty"`
+	resolution  *Resolution
+	Truncated   bool   `json:"truncated"`
+	NextCursor  string `json:"nextCursor,omitempty"`
 }
 type Environment struct {
 	DeviceID string `json:"deviceId"`
@@ -78,7 +80,7 @@ type Environment struct {
 // project inspect and context operations use the same resolution seam.
 func (a App) contextProject(ctx context.Context, selector, cwd string) (ContextResult, error) {
 	p, e := a.InspectProject(ctx, selector, cwd)
-	return ContextResult{Project: p.Project, Source: "local-store", UpdatedAt: p.Project.CreatedAt, Freshness: "unknown"}, e
+	return ContextResult{Project: p.Project, Source: "local-store", UpdatedAt: p.Project.CreatedAt, Freshness: "unknown", resolution: p.Resolution}, e
 }
 func validPolicy(p Policy) bool {
 	return (p.Storage == "local-only" || p.Storage == "shared") && (p.AgentDisclosure == "full" || p.AgentDisclosure == "summary" || p.AgentDisclosure == "reference" || p.AgentDisclosure == "local-tool")
@@ -277,6 +279,14 @@ func (a App) QueryContext(ctx context.Context, selector, cwd, mode, arg, cursor 
 			return r, e
 		}
 		r.Environment = &Environment{did, runtime.GOOS, runtime.GOARCH, cwd}
+		loc, err := configurationAt(ctx, db, *r.resolution)
+		if err != nil {
+			return r, err
+		}
+		r.Profile, err = selectedProfile(ctx, db, loc)
+		if err != nil {
+			return r, err
+		}
 	}
 	bodyColumn := "''"
 	if mode == "get" {
