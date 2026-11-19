@@ -18,7 +18,7 @@ var ErrNotInitialized = errors.New("workspace is not initialized; run ctxferry i
 var ErrUnsupportedSchema = errors.New("unsupported local schema")
 var ErrMigrationRequired = errors.New("local schema requires migration")
 
-const schemaVersion = 11
+const schemaVersion = 12
 
 func Path(root string) string { return filepath.Join(root, "workspaces", "default", "catalog.sqlite") }
 
@@ -130,7 +130,13 @@ func OpenCatalog(ctx context.Context, path string, create bool) (*sql.DB, error)
 				v = 10
 			}
 			if v == 10 {
-				_, err := c.ExecContext(ctx, artifactSchema)
+				if _, err := c.ExecContext(ctx, artifactSchema); err != nil {
+					return err
+				}
+				v = 11
+			}
+			if v == 11 {
+				_, err := c.ExecContext(ctx, onboardingSchema)
 				return err
 			}
 			return nil
@@ -339,3 +345,17 @@ CREATE TABLE IF NOT EXISTS artifacts (
 CREATE INDEX IF NOT EXISTS artifacts_run ON artifacts(run_id);
 CREATE INDEX IF NOT EXISTS artifacts_hash ON artifacts(sha256);
 PRAGMA user_version=11;`
+
+const onboardingSchema = `
+CREATE TABLE IF NOT EXISTS onboarding (
+ singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+ directory TEXT NOT NULL,
+ project_id TEXT NOT NULL DEFAULT '',
+ completed INTEGER NOT NULL DEFAULT 0 CHECK(completed IN (0,1))
+);
+CREATE TABLE IF NOT EXISTS onboarding_notes (
+ path TEXT PRIMARY KEY,
+ fingerprint TEXT NOT NULL,
+ document_id TEXT NOT NULL UNIQUE
+);
+PRAGMA user_version=12;`

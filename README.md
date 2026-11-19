@@ -15,7 +15,7 @@ ctxferry project inspect <uuid-or-slug> --format json
 
 Set `--data-dir <root>` or `CTXFERRY_DATA_DIR` to isolate an installation. The flag takes precedence. Defaults are `$XDG_DATA_HOME/ctxferry` (or `~/.local/share/ctxferry`) on Linux/WSL, `~/Library/Application Support/ctxferry` on macOS, and `%LOCALAPPDATA%\ctxferry` on Windows. Windows and WSL have separate installations. Keep the root outside bound directories and on a local filesystem: it contains an active WAL-mode SQLite database, not a shareable sync folder.
 
-Each application root currently holds one Workspace and one Device at `workspaces/default/catalog.sqlite`. UUIDs are stable across process restarts. Local schema version 4 uses short immediate write transactions, foreign keys, FULL synchronous writes, and a 5-second busy timeout on every connection. Unsupported newer schemas and damaged databases fail without replacement. Future workspace switching must preserve the Device identity.
+Each application root currently holds one Workspace and one Device at `workspaces/default/catalog.sqlite`. UUIDs are stable across process restarts. The local catalog uses short immediate write transactions, foreign keys, FULL synchronous writes, and a 5-second busy timeout on every connection. Unsupported newer schemas and damaged databases fail without replacement. Future workspace switching must preserve the Device identity.
 
 Every command supports `--format json`, emitting one object (including failures and help):
 
@@ -32,6 +32,30 @@ Doctor works offline. Git authentication uses historical sync evidence and local
 The CLI parses and renders; `internal/app` owns operations and validation, and `internal/store` owns persistence. Git is optional for discovery. Normal context queries run without a secret provider or desktop dependencies. Queries do not initialize a missing store.
 
 Run `go test -count=1 ./...` and `go vet ./...`. The reusable `internal/testcli` harness exercises the real binary with isolated data/home directories, sanitized environment, deadlines, separate streams and exact JSON decoding. CI checks Linux, macOS and Windows with CGO disabled and runs an offline Linux container smoke test.
+
+## First-device onboarding
+
+```sh
+ctxferry onboard start .
+ctxferry onboard status
+ctxferry onboard bind --preview <preview-id>
+ctxferry onboard scan ./private-notes.md
+ctxferry onboard import ./private-notes.md --title "Private notes" \
+  --storage local-only --disclosure reference
+ctxferry onboard finish
+```
+
+Start saves the selected directory in the device's local catalog. Status previews
+the Project using the local directory, Git metadata and catalog. If the preview
+lists candidates, use `onboard status --project <uuid-or-slug>` and pass the same
+selector to `onboard bind`. Binding requires the current preview ID. Run
+`onboard status` to resume after closing the CLI.
+
+Choose each Markdown or UTF-8 text note explicitly. Scan findings show field names
+and finding types. The import rescans the bytes it saves and uses the storage and
+disclosure modes you selected. Shared notes are eligible for plaintext sync.
+Use `--summary` to supply the text for summary disclosure. You can finish with
+zero imports. Finish runs the regular doctor checks for the saved directory.
 
 Project identification uses this order: explicit `--project`, longest local path binding,
 locally bound Git common directory and membership scope, then remote candidates.
