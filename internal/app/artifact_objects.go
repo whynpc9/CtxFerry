@@ -204,6 +204,10 @@ func (a App) fetchArtifactObject(p ArtifactPayload, output string) error {
 	if size != p.Size {
 		return Fail("artifact-hash-mismatch", "cached artifact payload size does not match")
 	}
+	return a.writeArtifactOutput(in, p, output)
+}
+
+func (a App) writeArtifactOutput(in io.Reader, p ArtifactPayload, output string) error {
 	dir, err := canonical(filepath.Dir(output))
 	if err != nil {
 		return err

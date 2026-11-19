@@ -6,6 +6,7 @@ import (
 	"context"
 	"net/url"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -101,8 +102,15 @@ func waitForTestGate(ctx context.Context, key string) error {
 }
 func syncReadResult(args []string, out string) string {
 	mode := os.Getenv("CTXFERRY_TEST_PARTIAL_READ")
-	if len(out) > 0 && len(args) > 0 && (mode == "tree" && args[0] == "ls-tree" || mode == "blob" && args[0] == "cat-file" && len(args) > 1 && args[1] == "blob") {
+	if len(out) > 0 && len(args) > 0 && (mode == "tree" && args[0] == "ls-tree" || mode == "blob" && args[0] == "cat-file" && len(args) > 1 && args[1] == "--batch") {
 		return out[:len(out)-1]
 	}
 	return out
+}
+
+func syncHistorySize(measured int64) int64 {
+	if n, err := strconv.ParseInt(os.Getenv("CTXFERRY_TEST_HISTORY_BYTES"), 10, 64); err == nil && n >= 0 {
+		return n
+	}
+	return measured
 }
