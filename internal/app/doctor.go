@@ -114,6 +114,7 @@ func (a App) Doctor(ctx context.Context, selector, cwd string) DoctorReport {
 			doctorDependency("git", "Git checkout discovery and sync"),
 			doctorDependency("gh", "Optional GitHub metadata authentication via GitHub CLI"),
 			doctorDependency("infisical", "Optional adoption of a personal Infisical CLI session"),
+			doctorDependency("bw", "Bitwarden Password Manager vault status and reads"),
 		},
 		BackgroundSync: a.backgroundSyncStatus(ctx),
 		Resources:      DoctorResources{DoctorCheck: unknown, Items: []DoctorResource{}},

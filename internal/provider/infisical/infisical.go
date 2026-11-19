@@ -62,32 +62,16 @@ func newAdapter(baseURL string) *adapter {
 	}
 }
 
-// InjectedSession reads an access token provisioned by a headless host's
-// existing credential mechanism. The scope must match this workspace, device
-// and machine profile before the token can be used.
+var runtimeSession = provider.EnvironmentSession{
+	Provider: Name, Method: universalAuth, ScopePrefix: "CTXFERRY_INFISICAL_", Variable: "CTXFERRY_INFISICAL_ACCESS_TOKEN",
+}
+
 func InjectedSession(key provider.SessionKey) []byte {
-	if !matchesInjectionScope(key) {
-		return nil
-	}
-	return []byte(os.Getenv("CTXFERRY_INFISICAL_ACCESS_TOKEN"))
+	return runtimeSession.Load(key)
 }
 
-// HasInjectedSession checks the exact scope and only the presence of the
-// access token environment entry. Session contents and validity are unknown.
 func HasInjectedSession(key provider.SessionKey) bool {
-	if !matchesInjectionScope(key) {
-		return false
-	}
-	_, present := os.LookupEnv("CTXFERRY_INFISICAL_ACCESS_TOKEN")
-	return present
-}
-
-func matchesInjectionScope(key provider.SessionKey) bool {
-	return key.Profile.Provider == Name && key.Profile.Method == universalAuth &&
-		key.WorkspaceID != "" && key.DeviceID != "" && key.Profile.Name != "" &&
-		key.WorkspaceID == os.Getenv("CTXFERRY_INFISICAL_WORKSPACE_ID") &&
-		key.DeviceID == os.Getenv("CTXFERRY_INFISICAL_DEVICE_ID") &&
-		key.Profile.Name == os.Getenv("CTXFERRY_INFISICAL_PROFILE")
+	return runtimeSession.Present(key)
 }
 
 func (*adapter) Capabilities() []provider.MethodCapabilities {

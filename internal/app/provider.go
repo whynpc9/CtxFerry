@@ -54,11 +54,14 @@ func (a App) loadProviderSession(ctx context.Context, key provider.SessionKey) (
 		return nil, Fail("authentication-required", "secure device credential storage is unavailable")
 	}
 	session, err := credentials.Load(ctx, key)
-	if err != nil && !errors.Is(err, provider.ErrNoSession) {
+	if err != nil {
 		clear(session)
-		return nil, Fail("authentication-required", "could not read the secure device session")
+		if !errors.Is(err, provider.ErrNoSession) {
+			return nil, Fail("authentication-required", "could not read the secure device session")
+		}
+		return nil, err
 	}
-	return session, err
+	return session, nil
 }
 
 func providerAuthentication(ctx context.Context, adapter provider.Adapter, p provider.Profile, session []byte) (provider.Authentication, error) {
@@ -88,6 +91,35 @@ func providerAuthentication(ctx context.Context, adapter provider.Adapter, p pro
 	return auth, nil
 }
 
+func sessionAuthentication(ctx context.Context, adapter provider.Adapter, p provider.Profile, session []byte, loadErr error) (provider.Authentication, error) {
+	auth, err := providerAuthentication(ctx, adapter, p, session)
+	if loadErr != nil && !errors.Is(loadErr, provider.ErrNoSession) && auth.LoggedIn == nil {
+		return auth, loadErr
+	}
+	if err == nil && len(session) == 0 && auth.State == provider.Authenticated {
+		return provider.Authentication{}, Fail("authentication-required", "log in to the provider on this device")
+	}
+	return auth, err
+}
+
+func authenticationFailure(auth provider.Authentication) *Error {
+	message := "provider session requires login or unlock"
+	if auth.LoggedIn != nil && *auth.LoggedIn {
+		message = "unlock the provider on this device and supply a current session. Headless hosts need an externally provisioned unlock session"
+	} else if auth.State == provider.SignedOut {
+		message = "log in to the provider on this device"
+	}
+	return &Error{Code: "authentication-required", Message: message}
+}
+
+func providerLoginAuthenticationFailure(out ProviderLoginResult) error {
+	failure := authenticationFailure(out.Authentication)
+	if out.Authentication.LoggedIn != nil {
+		failure.Details = out
+	}
+	return failure
+}
+
 func (a App) LoginProvider(ctx context.Context, p provider.Profile) (ProviderLoginResult, error) {
 	out := ProviderLoginResult{Profile: p}
 	if !validProviderProfile(p) {
@@ -113,6 +145,13 @@ func (a App) LoginProvider(ctx context.Context, p provider.Profile) (ProviderLog
 	out.Capabilities = capabilities
 	session, err := adapter.Login(ctx, p)
 	defer clear(session)
+	if errors.Is(err, provider.ErrNoSession) {
+		out.Authentication, err = providerAuthentication(ctx, adapter, p, nil)
+		if err != nil {
+			return out, err
+		}
+		return out, providerLoginAuthenticationFailure(out)
+	}
 	if err != nil || len(session) == 0 {
 		return out, Fail("authentication-required", "provider login did not establish a session")
 	}
@@ -121,7 +160,7 @@ func (a App) LoginProvider(ctx context.Context, p provider.Profile) (ProviderLog
 		return out, err
 	}
 	if out.Authentication.State != provider.Authenticated {
-		return out, Fail("authentication-required", "provider did not confirm a usable session")
+		return out, providerLoginAuthenticationFailure(out)
 	}
 	if credentials.Save(ctx, key, session) != nil {
 		return out, Fail("credential-storage-unavailable", "could not save the session in secure device credential storage")

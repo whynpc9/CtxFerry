@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"strings"
 	"time"
 
 	"github.com/whynpc9/CtxFerry/internal/provider"
@@ -29,7 +28,7 @@ func cliPersonalToken(ctx context.Context, profile string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "infisical", args...)
 	cmd.Dir = dir
 	cmd.Stderr = io.Discard
-	cmd.Env = personalEnvironment()
+	cmd.Env = provider.CLIEnvironment()
 	output, err := cmd.Output()
 	defer clear(output)
 	token := bytes.TrimSpace(output)
@@ -37,18 +36,4 @@ func cliPersonalToken(ctx context.Context, profile string) ([]byte, error) {
 		return nil, provider.ErrAuthenticationRequired
 	}
 	return bytes.Clone(token), nil
-}
-
-func personalEnvironment() []string {
-	env := []string{}
-	for _, entry := range os.Environ() {
-		name, _, _ := strings.Cut(entry, "=")
-		switch strings.ToUpper(name) {
-		case "PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA",
-			"XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS",
-			"TMPDIR", "TMP", "TEMP":
-			env = append(env, entry)
-		}
-	}
-	return env
 }
