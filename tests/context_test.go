@@ -239,7 +239,7 @@ func TestContextMigratesV2(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	_, e = db.Exec(`DROP TABLE sync_baselines; DROP TABLE sync_outbox; DROP TABLE project_subscriptions; DROP TABLE sync_config; DROP TABLE sync_state; DROP TABLE sync_previews; DROP TABLE export_identities; DROP TABLE context_fts; DROP TABLE context_bodies; DROP TABLE records; PRAGMA user_version=2;`)
+	_, e = db.Exec(`DROP TABLE resource_observations; DROP TABLE resource_routes; DROP TABLE sync_baselines; DROP TABLE sync_outbox; DROP TABLE project_subscriptions; DROP TABLE sync_config; DROP TABLE sync_state; DROP TABLE sync_previews; DROP TABLE export_identities; DROP TABLE context_fts; DROP TABLE context_bodies; DROP TABLE records; PRAGMA user_version=2;`)
 	db.Close()
 	if e != nil {
 		t.Fatal(e)

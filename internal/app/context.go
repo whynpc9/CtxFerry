@@ -54,18 +54,19 @@ type PutContext struct {
 	ID, IfRevision, Title, Purpose, Source, Summary, Body, Storage, Disclosure, ValidUntil string
 }
 type ContextResult struct {
-	Project     Project          `json:"project"`
-	Source      string           `json:"source"`
-	UpdatedAt   string           `json:"updatedAt"`
-	ObservedAt  *string          `json:"observedAt"`
-	Revision    *string          `json:"revision"`
-	Freshness   string           `json:"freshness"`
-	LastSyncAt  *string          `json:"lastSyncAt"`
-	Document    *ContextDoc      `json:"document,omitempty"`
-	Documents   []ContextDoc     `json:"documents"`
-	Summary     *string          `json:"summary"`
-	Environment *Environment     `json:"environment,omitempty"`
-	Profile     *SelectedProfile `json:"profile,omitempty"`
+	Project     Project           `json:"project"`
+	Source      string            `json:"source"`
+	UpdatedAt   string            `json:"updatedAt"`
+	ObservedAt  *string           `json:"observedAt"`
+	Revision    *string           `json:"revision"`
+	Freshness   string            `json:"freshness"`
+	LastSyncAt  *string           `json:"lastSyncAt"`
+	Document    *ContextDoc       `json:"document,omitempty"`
+	Documents   []ContextDoc      `json:"documents"`
+	Resources   []ResourcePurpose `json:"resources,omitempty"`
+	Summary     *string           `json:"summary"`
+	Environment *Environment      `json:"environment,omitempty"`
+	Profile     *SelectedProfile  `json:"profile,omitempty"`
 	resolution  *Resolution
 	Truncated   bool   `json:"truncated"`
 	NextCursor  string `json:"nextCursor,omitempty"`
@@ -216,7 +217,7 @@ func (a App) PutContext(ctx context.Context, selector, cwd string, in PutContext
 		}
 		if in.Purpose == "project-summary" {
 			var count int
-			if err = c.QueryRowContext(ctx, `SELECT count(*) FROM records WHERE project_id=? AND id<>? AND coalesce(json_extract(metadata,'$.deleted'),0)=0 AND json_extract(metadata,'$.purpose')='project-summary'`, r.Project.ID, id).Scan(&count); err != nil {
+			if err = c.QueryRowContext(ctx, `SELECT count(*) FROM records WHERE project_id=? AND kind='context' AND id<>? AND coalesce(json_extract(metadata,'$.deleted'),0)=0 AND json_extract(metadata,'$.purpose')='project-summary'`, r.Project.ID, id).Scan(&count); err != nil {
 				return err
 			}
 			if count > 0 {
@@ -267,10 +268,7 @@ func (a App) QueryContext(ctx context.Context, selector, cwd, mode, arg, cursor 
 	if stamp != "" {
 		r.LastSyncAt = &stamp
 	}
-	var subscribed int
-	if err := db.QueryRowContext(ctx, "SELECT subscribed FROM project_subscriptions WHERE project_id=?", r.Project.ID).Scan(&subscribed); err == nil && subscribed == 0 {
-		return r, Fail("not-subscribed", "subscribe to this Project to query its context")
-	} else if err != nil && err != sql.ErrNoRows {
+	if err := requireSubscription(ctx, db, r.Project.ID); err != nil {
 		return r, err
 	}
 	if mode == "show" {
@@ -292,7 +290,12 @@ func (a App) QueryContext(ctx context.Context, selector, cwd, mode, arg, cursor 
 	if mode == "get" {
 		bodyColumn = "b.body"
 	}
-	query := `SELECT r.metadata,` + bodyColumn + ` FROM records r JOIN context_bodies b ON b.record_id=r.id WHERE r.project_id=? AND r.kind='context' AND coalesce(json_extract(r.metadata,'$.deleted'),0)=0`
+	query := `SELECT r.kind,r.metadata,` + bodyColumn + ` FROM records r LEFT JOIN context_bodies b ON b.record_id=r.id WHERE r.project_id=? AND coalesce(json_extract(r.metadata,'$.deleted'),0)=0`
+	if mode == "show" {
+		query += " AND (r.kind='resource' OR (r.kind='context' AND b.record_id IS NOT NULL))"
+	} else {
+		query += " AND r.kind='context' AND b.record_id IS NOT NULL"
+	}
 	args := []any{r.Project.ID}
 	switch mode {
 	case "get":
@@ -321,10 +324,27 @@ func (a App) QueryContext(ctx context.Context, selector, cwd, mode, arg, cursor 
 	}
 	defer rows.Close()
 	r.Documents = []ContextDoc{}
+	lastID := ""
 	for rows.Next() {
-		var raw, body string
-		if e = rows.Scan(&raw, &body); e != nil {
+		if len(r.Documents)+len(r.Resources) == 100 {
+			r.Truncated = true
+			r.NextCursor = lastID
+			break
+		}
+		var kind, raw, body string
+		if e = rows.Scan(&kind, &raw, &body); e != nil {
 			return r, e
+		}
+		if kind == "resource" {
+			record, err := resourceRecord([]byte(raw))
+			if err != nil {
+				return r, err
+			}
+			r.Resources = append(r.Resources, ResourcePurpose{
+				ID: record.ID, Identity: shortText(record.Resource.Identity, 160), Purpose: shortText(record.Resource.Purpose, 160),
+			})
+			lastID = record.ID
+			continue
 		}
 		var d ContextDoc
 		if e = decodeContext(raw, &d); e != nil {
@@ -341,10 +361,6 @@ func (a App) QueryContext(ctx context.Context, selector, cwd, mode, arg, cursor 
 			r.UpdatedAt = d.UpdatedAt
 			continue
 		}
-		if len(r.Documents) == 100 {
-			r.Truncated = true
-			break
-		}
 		// Index entries are bounded metadata; get retrieves full approved fields.
 		d.Title = shortText(d.Title, 160)
 		d.Purpose = shortText(d.Purpose, 160)
@@ -354,6 +370,7 @@ func (a App) QueryContext(ctx context.Context, selector, cwd, mode, arg, cursor 
 			d.Summary = &s
 		}
 		r.Documents = append(r.Documents, d)
+		lastID = d.ID
 	}
 	if e = rows.Err(); e != nil {
 		return r, e
@@ -361,9 +378,6 @@ func (a App) QueryContext(ctx context.Context, selector, cwd, mode, arg, cursor 
 	rows.Close()
 	if mode == "get" && r.Document == nil {
 		return r, Fail("document-not-found", "document not found in this project")
-	}
-	if r.Truncated && len(r.Documents) > 0 {
-		r.NextCursor = r.Documents[len(r.Documents)-1].ID
 	}
 	if mode == "show" {
 		var raw string
@@ -410,4 +424,16 @@ func decodeContext(raw string, d *ContextDoc) error {
 		return Fail("invalid-record", "context record is not a single object")
 	}
 	return nil
+}
+
+func requireSubscription(ctx context.Context, db *sql.DB, projectID string) error {
+	var subscribed int
+	err := db.QueryRowContext(ctx, "SELECT subscribed FROM project_subscriptions WHERE project_id=?", projectID).Scan(&subscribed)
+	if err == sql.ErrNoRows {
+		return nil
+	}
+	if err == nil && subscribed == 0 {
+		return Fail("not-subscribed", "subscribe to this Project to query its context")
+	}
+	return err
 }

@@ -59,7 +59,7 @@ func Open(ctx context.Context, root string, create bool) (*sql.DB, error) {
 	if err = db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		return fail(err)
 	}
-	if version > 7 {
+	if version > 8 {
 		return fail(ErrUnsupportedSchema)
 	}
 	if version == 0 && !create {
@@ -72,13 +72,13 @@ func Open(ctx context.Context, root string, create bool) (*sql.DB, error) {
 	if mode != "wal" {
 		return fail(fmt.Errorf("WAL unavailable: %s", mode))
 	}
-	if version < 7 {
+	if version < 8 {
 		err = Write(ctx, db, func(c *sql.Conn) error {
 			var v int
 			if err := c.QueryRowContext(ctx, "PRAGMA user_version").Scan(&v); err != nil {
 				return err
 			}
-			if v > 7 {
+			if v > 8 {
 				return ErrUnsupportedSchema
 			}
 			if v == 0 {
@@ -118,7 +118,13 @@ func Open(ctx context.Context, root string, create bool) (*sql.DB, error) {
 				v = 6
 			}
 			if v == 6 {
-				_, err := c.ExecContext(ctx, configurationSchema)
+				if _, err := c.ExecContext(ctx, configurationSchema); err != nil {
+					return err
+				}
+				v = 7
+			}
+			if v == 7 {
+				_, err := c.ExecContext(ctx, resourceSchema)
 				return err
 			}
 			return nil
@@ -206,3 +212,21 @@ CREATE TABLE IF NOT EXISTS profile_selections (
     profile TEXT NOT NULL, selected_at TEXT NOT NULL, PRIMARY KEY(device_id,project_id,checkout)
 );
 PRAGMA user_version=7;`
+
+const resourceSchema = `
+CREATE TABLE resource_routes (
+  resource_id TEXT NOT NULL REFERENCES records(id),
+  device_id TEXT NOT NULL,
+  endpoint TEXT NOT NULL,
+  proxy TEXT NOT NULL,
+  network TEXT NOT NULL,
+  PRIMARY KEY(resource_id,device_id)
+);
+CREATE TABLE resource_observations (
+  seq INTEGER PRIMARY KEY,
+  resource_id TEXT NOT NULL REFERENCES records(id),
+  device_id TEXT NOT NULL,
+  data TEXT NOT NULL
+);
+CREATE INDEX resource_observation_history ON resource_observations(resource_id,device_id,seq);
+PRAGMA user_version=8;`

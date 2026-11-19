@@ -53,7 +53,7 @@ type SyncResult struct {
 	Pending    int             `json:"pending"`
 }
 
-const plaintextBoundary = "Shared records and their bodies are uploaded in plaintext. Local-only records, checkout bindings, credential stores and authentication are excluded. Shared prose can contain pasted secrets; inspect it before publishing."
+const plaintextBoundary = "Shared records and their bodies are uploaded in plaintext. Local-only records, checkout bindings, route facts, TCP observations, credential stores and authentication are excluded. Shared prose can contain pasted secrets; inspect it before publishing."
 
 type publishedEnvelope struct {
 	SchemaVersion    int    `json:"schemaVersion"`
@@ -589,6 +589,26 @@ func exportConn(ctx context.Context, conn *sql.Conn, c SyncConfig) (map[string][
 			var body sql.NullString
 			if err = rows.Scan(&id, &pid, &kind, &raw, &body); err != nil {
 				return err
+			}
+			if kind == "resource" {
+				r, err := resourceRecord([]byte(raw))
+				if err != nil {
+					return err
+				}
+				if r.Policy.Storage == "local-only" {
+					continue
+				}
+				if !validUUID(r.ID) || r.ID != id || r.Scope.ID != pid || !projects[pid] || r.WorkspaceID != c.WorkspaceID || body.Valid {
+					return Fail("invalid-reference", "shared Resource has an invalid Project dependency")
+				}
+				if _, exists := files[recordPath(id)]; exists {
+					return Fail("record-collision", "shared Resource ID collides with another record")
+				}
+				if err = addJSON(recordPath(id), r.publishedEnvelope); err != nil {
+					return err
+				}
+				ops = append(ops, r.OperationID)
+				continue
 			}
 			if kind != "context" {
 				return Fail("unsupported-schema", "unknown record kind blocks export")

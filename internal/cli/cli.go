@@ -107,7 +107,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 	project.AddCommand(bind, list, inspect, remote)
 	config, profile := configurationCommands(ctx, invoke, &projectSelector)
-	root.AddCommand(initCmd, project, config, profile, contextCommand(ctx, invoke, &projectSelector), syncCommand(ctx, invoke), joinCommand(ctx, invoke))
+	root.AddCommand(initCmd, project, config, profile, contextCommand(ctx, invoke, &projectSelector), resourceCommand(ctx, invoke, &projectSelector), syncCommand(ctx, invoke), joinCommand(ctx, invoke))
 
 	// Detect format before parsing so usage errors also obey the JSON contract.
 	requestedJSON := false
@@ -213,7 +213,7 @@ func render(w io.Writer, result any) error {
 			return e
 		}
 		_, err = fmt.Fprintln(w, string(b))
-	case app.ContextResult, app.ConfigurationExplanation, app.ConfigurationReceipt, app.ProfileSelection:
+	case app.ContextResult, app.ConfigurationExplanation, app.ConfigurationReceipt, app.ProfileSelection, app.Resource, app.ResourceList, app.ResourceDetail, app.Observation:
 		b, e := json.MarshalIndent(r, "", "  ")
 		if e != nil {
 			return e

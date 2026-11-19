@@ -65,7 +65,11 @@ it is never overwritten. Routine sync and join use the same validated record for
   export revisions are persisted and change only when their payload changes.
 - Existing Projects, Repositories and memberships are workspace-shared structural
   records. Their local bindings and discovery evidence remain local. ContextDocs
-  retain their explicit storage policy. Scope/reference closure must be valid;
+  and Resources retain their explicit storage policy. A shared Resource depends on
+  its Project and carries non-secret configuration in its v1 envelope. Device
+  route facts and TCP Observations stay in the local SQLite store, in tables
+  added by migration 8.
+  Scope/reference closure must be valid;
   unknown kinds/fields/policies and missing or invalid references block export.
 - Markdown bodies are immutable `objects/<sha256>` bytes, deduplicated by hash.
   Payload manifests carry type, size and SHA-256. Shared summary/reference bodies
@@ -190,7 +194,7 @@ A replacement file describes context content, never identity or revision:
 Every choice creates fresh revision and operation UUIDs, including choosing remote
 or identical content. It is queued against the observed remote revision. A later
 remote edit produces another conflict. Ordinary edits to conflicted records are
-refused until resolved. Future secret-reference/resource/task/Skill record schemas
+refused until resolved. Future secret-reference/task/Skill record schemas
 remain unsupported; no field or clock based merge grants execution authority.
 
 Pending records connected by Project/Repository references form one publication
