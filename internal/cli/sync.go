@@ -2,10 +2,13 @@ package cli
 
 import (
 	"context"
-	"github.com/spf13/cobra"
-	"github.com/whynpc9/CtxFerry/internal/app"
 	"io"
 	"os"
+
+	"github.com/spf13/cobra"
+	"github.com/whynpc9/CtxFerry/internal/app"
+	"github.com/whynpc9/CtxFerry/internal/platform"
+	"github.com/whynpc9/CtxFerry/internal/store"
 )
 
 func syncCommand(ctx context.Context, invoke func(func(app.App) (any, error)) func(*cobra.Command, []string) error) *cobra.Command {
@@ -43,7 +46,19 @@ func syncCommand(ctx context.Context, invoke func(func(app.App) (any, error)) fu
 	resolve.Flags().StringVar(&take, "take", "", "Explicit choice: local or remote")
 	resolve.Flags().StringVar(&token, "if-conflict", "", "Required conflict ID from sync status")
 	resolve.Flags().StringVar(&file, "file", "", "Strict context replacement JSON with inline body")
-	group.AddCommand(enable, plan, init, status, check, detail, resolve)
+	serve := &cobra.Command{Use: "serve", Short: "Run the sync service in the foreground", Args: cobra.NoArgs, RunE: invoke(func(a app.App) (any, error) {
+		return nil, a.ServeSync(ctx)
+	})}
+	install := &cobra.Command{Use: "install-service", Short: "Start background sync with the user session", Args: cobra.NoArgs, RunE: invoke(func(a app.App) (any, error) {
+		if _, err := os.Stat(store.Path(a.DataDir)); err != nil {
+			if os.IsNotExist(err) {
+				return nil, store.ErrNotInitialized
+			}
+			return nil, err
+		}
+		return platform.InstallSyncService(ctx, a.DataDir)
+	})}
+	group.AddCommand(serve, install, enable, plan, init, status, check, detail, resolve)
 	return group
 }
 

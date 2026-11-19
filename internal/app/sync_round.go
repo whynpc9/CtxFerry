@@ -733,18 +733,9 @@ func reindex(ctx context.Context, c *sql.Conn) error {
 	return nil
 }
 
-func (a App) syncRound(ctx context.Context) (result SyncResult, err error) {
+func (a App) syncRound(ctx context.Context, db *sql.DB) (result SyncResult, err error) {
 	result = SyncResult{Boundary: plaintextBoundary, State: "pending"}
-	release, err := a.syncOwner(ctx)
-	if err != nil {
-		return result, err
-	}
-	defer release()
-	db, err := store.Open(ctx, a.DataDir, false)
-	if err != nil {
-		return result, err
-	}
-	defer db.Close()
+
 	defer func() {
 		if err != nil {
 			persistSyncFailure(db, err)

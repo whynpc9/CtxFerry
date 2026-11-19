@@ -46,17 +46,7 @@ func (h *Harness) Run(t *testing.T, args ...string) Result {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, h.Binary, append([]string{"--data-dir", h.DataDir}, args...)...)
-	cmd.Dir = h.Dir
-	// Deliberately exclude credentials and GUI/session variables.
-	cmd.Env = []string{"HOME=" + h.Home, "USERPROFILE=" + h.Home, "LOCALAPPDATA=" + h.Home, "PATH=" + filepath.Dir(h.Binary), "GOPROXY=off"}
-	if runtime.GOOS == "windows" {
-		cmd.Env = append(cmd.Env, "SystemRoot="+os.Getenv("SystemRoot"))
-	}
-	if h.GitPath != "" {
-		cmd.Env = append(cmd.Env, "PATH="+filepath.Dir(h.Binary)+string(os.PathListSeparator)+h.GitPath)
-	}
-	cmd.Env = append(cmd.Env, h.ExtraEnv...)
+	cmd := h.Command(ctx, args...)
 	var out, diagnostics bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &diagnostics
@@ -70,6 +60,21 @@ func (h *Harness) Run(t *testing.T, args ...string) Result {
 		code = exit.ExitCode()
 	}
 	return Result{out.String(), diagnostics.String(), code}
+}
+
+func (h *Harness) Command(ctx context.Context, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, h.Binary, append([]string{"--data-dir", h.DataDir}, args...)...)
+	cmd.Dir = h.Dir
+	// Deliberately exclude credentials and GUI/session variables.
+	cmd.Env = []string{"HOME=" + h.Home, "USERPROFILE=" + h.Home, "LOCALAPPDATA=" + h.Home, "PATH=" + filepath.Dir(h.Binary), "GOPROXY=off"}
+	if runtime.GOOS == "windows" {
+		cmd.Env = append(cmd.Env, "SystemRoot="+os.Getenv("SystemRoot"))
+	}
+	if h.GitPath != "" {
+		cmd.Env = append(cmd.Env, "PATH="+filepath.Dir(h.Binary)+string(os.PathListSeparator)+h.GitPath)
+	}
+	cmd.Env = append(cmd.Env, h.ExtraEnv...)
+	return cmd
 }
 func (r Result) JSON(t *testing.T) Response {
 	t.Helper()

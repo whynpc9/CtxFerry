@@ -54,7 +54,6 @@ func (gitSyncBackend) Publish(ctx context.Context, dir string, conf SyncConfig, 
 
 // A command has a bounded retry budget. A rejected lease starts a whole fresh
 // round, so history and business baselines are checked before another publish.
-func (a App) Sync(ctx context.Context) (SyncResult, error) { return retrySync(ctx, a.syncRound) }
 func (a App) InitSync(ctx context.Context, preview string) (SyncResult, error) {
 	return retrySync(ctx, func(ctx context.Context) (SyncResult, error) { return a.initSync(ctx, preview) })
 }
@@ -153,11 +152,4 @@ func readRemoteRef(ctx context.Context, dir string, conf SyncConfig) (string, er
 		return "", Fail("incomplete", "invalid remote ref listing")
 	}
 	return fields[0], nil
-}
-
-// backgroundSyncStatus is the sync subsystem's capability check. A sync
-// service implementation can supply evidence of an installed, identified
-// service here without making doctor start or install it.
-func backgroundSyncStatus() DoctorCheck {
-	return DoctorCheck{"unavailable", "This build supports foreground sync only"}
 }

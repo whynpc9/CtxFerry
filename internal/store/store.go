@@ -18,7 +18,7 @@ var ErrNotInitialized = errors.New("workspace is not initialized; run ctxferry i
 var ErrUnsupportedSchema = errors.New("unsupported local schema")
 var ErrMigrationRequired = errors.New("local schema requires migration")
 
-const schemaVersion = 9
+const schemaVersion = 10
 
 func Path(root string) string { return filepath.Join(root, "workspaces", "default", "catalog.sqlite") }
 
@@ -114,7 +114,13 @@ func Open(ctx context.Context, root string, create bool) (*sql.DB, error) {
 				v = 8
 			}
 			if v == 8 {
-				_, err := c.ExecContext(ctx, trustSchema)
+				if _, err := c.ExecContext(ctx, trustSchema); err != nil {
+					return err
+				}
+				v = 9
+			}
+			if v == 9 {
+				_, err := c.ExecContext(ctx, syncProgressSchema)
 				return err
 			}
 			return nil
@@ -286,3 +292,13 @@ CREATE TABLE IF NOT EXISTS execution_trust (
   PRIMARY KEY(device_id,task_id,profile_id,checkout_root,membership_root)
 );
 PRAGMA user_version=9;`
+
+const syncProgressSchema = `
+CREATE TABLE IF NOT EXISTS sync_progress (
+    singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+    requested INTEGER NOT NULL DEFAULT 0,
+    completed INTEGER NOT NULL DEFAULT 0,
+    receipt TEXT NOT NULL DEFAULT ''
+);
+INSERT OR IGNORE INTO sync_progress(singleton) VALUES (1);
+PRAGMA user_version=10;`

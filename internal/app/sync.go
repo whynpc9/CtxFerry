@@ -88,18 +88,25 @@ func (a App) syncOwner(ctx context.Context) (func(), error) {
 	if _, err := os.Stat(store.Path(a.DataDir)); err != nil {
 		return nil, store.ErrNotInitialized
 	}
-	p := filepath.Join(filepath.Dir(store.Path(a.DataDir)), "sync-owner.sqlite")
+	return a.syncLock(ctx, "sync-owner.sqlite", "5000")
+}
+
+func (a App) syncLock(ctx context.Context, name, timeout string) (func(), error) {
+	p := filepath.Join(filepath.Dir(store.Path(a.DataDir)), name)
 	db, err := sql.Open("sqlite", p)
 	if err != nil {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	if _, err = db.ExecContext(ctx, "PRAGMA busy_timeout=5000"); err == nil {
+	if _, err = db.ExecContext(ctx, "PRAGMA busy_timeout="+timeout); err == nil {
 		_, err = db.ExecContext(ctx, "BEGIN IMMEDIATE")
 	}
 	if err != nil {
 		db.Close()
-		return nil, Fail("sync-busy", "another local writer or sync owner is active; retry")
+		if Classify(err).Code == "store-busy" {
+			return nil, Fail("sync-busy", "another local writer or sync owner is active; retry")
+		}
+		return nil, err
 	}
 	return func() { db.ExecContext(context.Background(), "ROLLBACK"); db.Close() }, nil
 }
