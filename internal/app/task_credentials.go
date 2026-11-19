@@ -34,16 +34,31 @@ type ExecutionCredential struct {
 // the Task's execution fields, the membership root in the resolved local
 // checkout, the working directory, and the Profile's credential mapping chain.
 type ExecutionDefinition struct {
-	TaskID           string                `json:"taskId"`
-	TaskRevision     string                `json:"taskRevision"`
-	MembershipID     string                `json:"membershipId"`
-	Program          string                `json:"program"`
-	Argv             []string              `json:"argv"`
-	MembershipRoot   string                `json:"membershipRoot"`
-	WorkingDirectory string                `json:"workingDirectory"`
-	ProfileID        string                `json:"profileId"`
-	Profile          string                `json:"profile"`
-	Credentials      []ExecutionCredential `json:"credentials"`
+	TaskID       string `json:"taskId"`
+	TaskRevision string `json:"taskRevision"`
+	MembershipID string `json:"membershipId"`
+	RepositoryID string `json:"repositoryId"`
+	// CheckoutRoot is the selected local Git checkout or worktree root.
+	CheckoutRoot string `json:"checkoutRoot"`
+	// Program and Argv are the Task's registered command.
+	Program            string                `json:"program"`
+	Argv               []string              `json:"argv"`
+	AllowCustomCommand bool                  `json:"allowCustomCommand"`
+	MembershipRoot     string                `json:"membershipRoot"`
+	WorkingDirectory   string                `json:"workingDirectory"`
+	ProfileID          string                `json:"profileId"`
+	Profile            string                `json:"profile"`
+	Credentials        []ExecutionCredential `json:"credentials"`
+	// CustomCommand is the caller-chosen command exec launches instead of
+	// Program and Argv. It is nil for run. A trust decision may allow it only
+	// when the enabled definition allows custom commands.
+	CustomCommand *ExecutionCommand `json:"customCommand,omitempty"`
+}
+
+// ExecutionCommand is a program and its argument array, never a shell string.
+type ExecutionCommand struct {
+	Program string   `json:"program"`
+	Argv    []string `json:"argv"`
 }
 
 // ExecutionTrust is the device-local decision that a credentialed execution

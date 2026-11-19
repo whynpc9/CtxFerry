@@ -26,6 +26,9 @@ type TaskSpec struct {
 	Program                string                  `json:"program"`
 	Argv                   []string                `json:"argv"`
 	Platforms              []string                `json:"platforms"`
+	// AllowCustomCommand opts the Task into exec: a caller-chosen command
+	// receives the Task's credentials in its working directory.
+	AllowCustomCommand bool `json:"allowCustomCommand,omitempty"`
 }
 
 type TaskResourceSlot struct {
@@ -281,4 +284,186 @@ func taskMembership(ctx context.Context, q rowQuerier, projectID, id string) (re
 		err = Fail("invalid-reference", "Task must reference a live Repository membership in its Project")
 	}
 	return
+}
+
+// TaskChange replaces the given execution and descriptive fields of a Task.
+// Nil fields keep their current values.
+type TaskChange struct {
+	IfRevision             string
+	Purpose                *string
+	Inputs                 *[]string
+	ResourceSlots          *[]TaskResourceSlot
+	CredentialRequirements *[]CredentialRequirement
+	MembershipID           *string
+	WorkingDirectory       *string
+	Program                *string
+	Argv                   *[]string
+	Platforms              *[]string
+	AllowCustomCommand     *bool
+}
+
+func (c TaskChange) apply(spec TaskSpec) TaskSpec {
+	set := func(dst *[]string, src *[]string) {
+		if src != nil {
+			*dst = append([]string{}, (*src)...)
+		}
+	}
+	if c.Purpose != nil {
+		spec.Purpose = *c.Purpose
+	}
+	set(&spec.Inputs, c.Inputs)
+	set(&spec.Argv, c.Argv)
+	set(&spec.Platforms, c.Platforms)
+	if c.ResourceSlots != nil {
+		spec.ResourceSlots = append([]TaskResourceSlot{}, (*c.ResourceSlots)...)
+	}
+	if c.CredentialRequirements != nil {
+		spec.CredentialRequirements = append([]CredentialRequirement{}, (*c.CredentialRequirements)...)
+	}
+	if c.MembershipID != nil {
+		spec.MembershipID = *c.MembershipID
+	}
+	if c.WorkingDirectory != nil {
+		spec.WorkingDirectory = *c.WorkingDirectory
+	}
+	if c.Program != nil {
+		spec.Program = *c.Program
+	}
+	if c.AllowCustomCommand != nil {
+		spec.AllowCustomCommand = *c.AllowCustomCommand
+	}
+	return spec
+}
+
+// UpdateTask writes a new revision of a Task. It requires the current
+// revision, so a concurrent local or synced change is never overwritten.
+// Changes to execution fields take effect with credentials on each device
+// only after that device enables the new execution definition.
+func (a App) UpdateTask(ctx context.Context, selector, cwd, name string, change TaskChange) (Task, error) {
+	var out Task
+	if !validUUID(change.IfRevision) {
+		return out, Fail("usage", "task update requires the current --if-revision from task inspect")
+	}
+	release, err := a.syncOwner(ctx)
+	if err != nil {
+		return out, err
+	}
+	defer release()
+	db, project, err := a.openSubscribedProject(ctx, selector, cwd)
+	if err != nil {
+		return out, err
+	}
+	defer db.Close()
+	if err := a.prepareBaseline(ctx, db); err != nil {
+		return out, err
+	}
+	err = store.Write(ctx, db, func(c *sql.Conn) error {
+		old, err := loadTask(ctx, c, project.ID, name)
+		if err != nil {
+			return err
+		}
+		if err := requireNoConflict(ctx, c, old.ID); err != nil {
+			return err
+		}
+		if old.Revision != change.IfRevision {
+			return Fail("revision-conflict", "Task changed; read its current revision before updating")
+		}
+		spec := change.apply(old.TaskSpec)
+		if err := validateTask(spec); err != nil {
+			return err
+		}
+		if _, _, err := taskMembership(ctx, c, project.ID, spec.MembershipID); err != nil {
+			return err
+		}
+		if err := requireMappableTask(ctx, c, old.ID, old.TaskSpec, spec); err != nil {
+			return err
+		}
+		env := publishedEnvelope{SchemaVersion: 1, ID: old.ID, Kind: "task", Scope: old.Scope, Policy: old.Policy,
+			Revision: uuid.NewString(), PreviousRevision: old.Revision, OperationID: uuid.NewString(), Payload: spec}
+		env.Provenance.UpdatedAt = now()
+		if err := c.QueryRowContext(ctx, "SELECT workspace.id, device.id FROM workspace CROSS JOIN device").Scan(&env.WorkspaceID, &env.Provenance.DeviceID); err != nil {
+			return err
+		}
+		raw, err := json.Marshal(env)
+		if err != nil {
+			return err
+		}
+		if len(raw)+1 > MetadataLimit {
+			return Fail("size-limit", "Task record envelope exceeds 256 KiB")
+		}
+		if _, err = c.ExecContext(ctx, "UPDATE records SET metadata=? WHERE id=? AND kind='task'", string(raw), old.ID); err != nil {
+			return err
+		}
+		out = taskFromRecord(remoteRecord{publishedEnvelope: env, Task: spec})
+		if old.Policy.Storage == "shared" {
+			return queueChanges(ctx, c)
+		}
+		return nil
+	})
+	return out, err
+}
+
+// requireMappableTask refuses a Task change that breaks a Profile mapping
+// which was valid before it: a removed or incompatible slot or requirement.
+// Sync would block publishing such a Task, and unmapping needs the old names,
+// so the mapping is changed first. Mappings that were already broken do not
+// block an edit, so a repair is never refused.
+func requireMappableTask(ctx context.Context, c *sql.Conn, taskID string, before, after TaskSpec) error {
+	rows, err := c.QueryContext(ctx, "SELECT id FROM configurations ORDER BY id")
+	if err != nil {
+		return err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	stranded := func(profile, kind, name string) error {
+		return &Error{Code: "invalid-task-dependency", Message: "Profile " + profile + " maps " + kind + " " + name +
+			", which this change removes or makes incompatible; change or unmap it first",
+			Details: map[string]string{"profile": profile, kind: name}}
+	}
+	for _, id := range ids {
+		cfg, exists, err := readConfiguration(c.QueryRowContext(ctx, "SELECT payload FROM configurations WHERE id=?", id), false)
+		if err != nil || !exists {
+			return err
+		}
+		resources := map[string]string{}
+		for _, m := range cfg.ResourceMappings {
+			if m.TaskID != taskID {
+				continue
+			}
+			resources[m.Slot] = m.ResourceID
+			resource, err := loadMappedResource(ctx, c, m.ResourceID)
+			if err == nil && compatibleResource(before, m.Slot, resource.ResourceSpec) && !compatibleResource(after, m.Slot, resource.ResourceSpec) {
+				return stranded(cfg.Profile, "slot", m.Slot)
+			}
+		}
+		for _, m := range cfg.SecretMappings {
+			if m.TaskID != taskID {
+				continue
+			}
+			binding, err := loadSecretBinding(ctx, c, m.BindingID)
+			if err != nil {
+				continue
+			}
+			valid := func(spec TaskSpec) bool {
+				req, ok := spec.requirement(m.Requirement)
+				return ok && compatibleSecret(req, resources[req.ResourceSlot], binding.SecretBindingSpec)
+			}
+			if valid(before) && !valid(after) {
+				return stranded(cfg.Profile, "requirement", m.Requirement)
+			}
+		}
+	}
+	return nil
 }

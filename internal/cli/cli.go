@@ -35,8 +35,8 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 // Services are the device-local seams behind the CLI.
 type Services struct {
 	Providers provider.Services
-	// Trust is the pre-execution decision for credentialed runs. Nil refuses
-	// them with execution-definition-changed.
+	// Trust is the pre-execution decision for credentialed runs. Nil uses the
+	// device-local trust records in the data directory.
 	Trust app.ExecutionTrust
 }
 
@@ -56,7 +56,7 @@ func RunWithServices(ctx context.Context, args []string, stdout, stderr io.Write
 	root.SetErr(stderr)
 	root.SetArgs(args)
 	root.PersistentFlags().StringVar(&projectSelector, "project", "", "Explicit Project UUID or slug")
-	root.PersistentFlags().StringVar(&format, "format", "text", "Output format: text, json for queries, or jsonl for run")
+	root.PersistentFlags().StringVar(&format, "format", "text", "Output format: text, json for queries, or jsonl for run and exec")
 	root.PersistentFlags().StringVar(&dataDir, "data-dir", "", "Application data root (or CTXFERRY_DATA_DIR)")
 	invoke := func(fn func(app.App) (any, error)) func(*cobra.Command, []string) error {
 		return func(cmd *cobra.Command, _ []string) error {
@@ -64,14 +64,18 @@ func RunWithServices(ctx context.Context, args []string, stdout, stderr io.Write
 			if cmd.Flags().Changed("project") && projectSelector == "" {
 				return app.Fail("usage", "project must not be empty")
 			}
-			if format != "text" && format != "json" && !(cmd.Name() == "run" && format == "jsonl") {
+			if format != "text" && format != "json" && !((cmd.Name() == "run" || cmd.Name() == "exec") && format == "jsonl") {
 				return app.Fail("usage", "format must be text or json")
 			}
 			dir, e := platform.DataDir(dataDir, cmd.Flags().Changed("data-dir"))
 			if e != nil {
 				return app.Fail("usage", e.Error())
 			}
-			result, e = fn(app.App{DataDir: dir, Providers: services.Providers, Trust: services.Trust})
+			trust := services.Trust
+			if trust == nil {
+				trust = app.LocalTrust(dir)
+			}
+			result, e = fn(app.App{DataDir: dir, Providers: services.Providers, Trust: trust})
 			return e
 		}
 	}
@@ -134,8 +138,10 @@ func RunWithServices(ctx context.Context, args []string, stdout, stderr io.Write
 	secrets, providerCommands := secretCommands(ctx, invoke, &projectSelector)
 	var taskExit int
 	taskRan := false
-	runTask := runCommand(ctx, invoke, &projectSelector, &format, func(code int) { taskExit, taskRan = code, true })
-	root.AddCommand(secrets, providerCommands, runTask, taskCommand(ctx, invoke, &projectSelector), initCmd, project, config, profile, contextCommand(ctx, invoke, &projectSelector), resourceCommand(ctx, invoke, &projectSelector), syncCommand(ctx, invoke), joinCommand(ctx, invoke))
+	onExit := func(code int) { taskExit, taskRan = code, true }
+	runTask := runCommand(ctx, invoke, &projectSelector, &format, onExit)
+	execTask := execCommand(ctx, invoke, &projectSelector, &format, onExit)
+	root.AddCommand(secrets, providerCommands, runTask, execTask, taskCommand(ctx, invoke, &projectSelector), initCmd, project, config, profile, contextCommand(ctx, invoke, &projectSelector), resourceCommand(ctx, invoke, &projectSelector), syncCommand(ctx, invoke), joinCommand(ctx, invoke))
 
 	// Detect format before parsing so usage errors also obey the JSON contract.
 	requestedFormat := ""
@@ -183,7 +189,8 @@ func RunWithServices(ctx context.Context, args []string, stdout, stderr io.Write
 		if failure.Code == "usage" {
 			code = 2
 		}
-		if command == runTask {
+		executing := command == runTask || command == execTask
+		if executing {
 			f := *failure
 			f.Origin = "control-plane"
 			failure = &f
@@ -205,7 +212,7 @@ func RunWithServices(ctx context.Context, args []string, stdout, stderr io.Write
 				return code
 			}
 		}
-		if command == runTask && requestedFormat != "json" && format != "json" {
+		if executing && requestedFormat != "json" && format != "json" {
 			fmt.Fprintf(stderr, "%s (%s): %s\n", failure.Code, failure.Origin, failure.Message)
 			if paths, ok := failure.Details.([]string); ok {
 				for _, path := range paths {
@@ -280,7 +287,7 @@ func render(w io.Writer, result any) error {
 			return e
 		}
 		_, err = fmt.Fprintln(w, string(b))
-	case app.ContextResult, app.ConfigurationExplanation, app.ConfigurationReceipt, app.ProfileSelection, app.Resource, app.ResourceList, app.ResourceDetail, app.Observation, app.Task, app.TaskList, app.ResourceMapping, app.SecretList, app.SecretStatus, app.SecretBindResult, app.ProviderLoginResult:
+	case app.ContextResult, app.ConfigurationExplanation, app.ConfigurationReceipt, app.ProfileSelection, app.Resource, app.ResourceList, app.ResourceDetail, app.Observation, app.Task, app.TaskList, app.ResourceMapping, app.SecretList, app.SecretStatus, app.SecretBindResult, app.ProviderLoginResult, app.ExecutionReview:
 		b, e := json.MarshalIndent(r, "", "  ")
 		if e != nil {
 			return e

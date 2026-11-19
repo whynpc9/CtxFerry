@@ -44,7 +44,7 @@ func TestV1MigrationPreservesBindings(t *testing.T) {
 		t.Fatal(e)
 	}
 	// Recreate precisely the old schema rather than merely changing its version.
-	_, e = db.Exec(`DROP TABLE resource_observations; DROP TABLE resource_routes; DROP TABLE sync_baselines; DROP TABLE sync_outbox; DROP TABLE project_subscriptions; DROP TABLE sync_config; DROP TABLE sync_state; DROP TABLE sync_previews; DROP TABLE export_identities; DROP TABLE context_fts; DROP TABLE context_bodies; DROP TABLE records; DROP TABLE checkout_bindings; DROP TABLE memberships; DROP TABLE repository_aliases; DROP TABLE repositories;` + schema + `
+	_, e = db.Exec(`DROP TABLE execution_trust; DROP TABLE resource_observations; DROP TABLE resource_routes; DROP TABLE sync_baselines; DROP TABLE sync_outbox; DROP TABLE project_subscriptions; DROP TABLE sync_config; DROP TABLE sync_state; DROP TABLE sync_previews; DROP TABLE export_identities; DROP TABLE context_fts; DROP TABLE context_bodies; DROP TABLE records; DROP TABLE checkout_bindings; DROP TABLE memberships; DROP TABLE repository_aliases; DROP TABLE repositories;` + schema + `
  INSERT INTO projects VALUES('project','old','time');
  INSERT INTO checkout_bindings VALUES('binding','project','device','/old/path','time');`)
 	if e != nil {
@@ -62,7 +62,7 @@ func TestV1MigrationPreservesBindings(t *testing.T) {
 		t.Fatal(id, membership, e)
 	}
 	var v int
-	if e = db.QueryRow("PRAGMA user_version").Scan(&v); e != nil || v != 8 {
+	if e = db.QueryRow("PRAGMA user_version").Scan(&v); e != nil || v != 9 {
 		t.Fatal(v, e)
 	}
 }
@@ -93,5 +93,38 @@ func TestV5MigrationPreservesPendingOperations(t *testing.T) {
 	}
 	if e = db.QueryRow("SELECT pending FROM sync_state").Scan(&pending); e != nil || pending != "pinned candidate" {
 		t.Fatal(e, pending)
+	}
+}
+
+// A v8 store gains an empty device-local trust table and keeps pending work.
+func TestV8MigrationStartsWithoutApprovals(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	db, e := Open(ctx, root, true)
+	if e != nil {
+		t.Fatal(e)
+	}
+	_, e = db.Exec(`DROP TABLE execution_trust;
+ INSERT INTO sync_state(singleton,epoch,pending) VALUES(1,'epoch','');
+ INSERT INTO sync_outbox VALUES('record',x'62617365',x'6c6f63616c','operation','epoch'); PRAGMA user_version=8;`)
+	if e != nil {
+		t.Fatal(e)
+	}
+	db.Close()
+	db, e = Open(ctx, root, false)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer db.Close()
+	var v, approvals int
+	var local []byte
+	if e = db.QueryRow("PRAGMA user_version").Scan(&v); e != nil || v != 9 {
+		t.Fatal(v, e)
+	}
+	if e = db.QueryRow("SELECT count(*) FROM execution_trust").Scan(&approvals); e != nil || approvals != 0 {
+		t.Fatal(approvals, e)
+	}
+	if e = db.QueryRow("SELECT proposed FROM sync_outbox WHERE id='record'").Scan(&local); e != nil || string(local) != "local" {
+		t.Fatal(e, string(local))
 	}
 }
