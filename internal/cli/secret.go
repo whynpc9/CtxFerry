@@ -78,7 +78,24 @@ func secretCommands(ctx context.Context, invoke func(func(app.App) (any, error))
 			return a.BindSecret(ctx, *project, cwd, change)
 		})(cmd, args)
 	}
-	secret.AddCommand(list, status, bind)
+	unmap := &cobra.Command{Use: "unmap <task> <requirement>", Short: "Remove an explicit credential mapping from a Profile", Args: cobra.ExactArgs(2)}
+	var unmapProfiles []string
+	unmap.Flags().StringArrayVar(&unmapProfiles, "profile", nil, "Profile (defaults to this checkout's selected Profile)")
+	unmap.RunE = func(cmd *cobra.Command, args []string) error {
+		return invoke(func(a app.App) (any, error) {
+			profile, err := explicitProfile(unmapProfiles)
+			if err != nil {
+				return nil, err
+			}
+			cwd, err := os.Getwd()
+			if err != nil {
+				return nil, err
+			}
+			target := app.SecretTarget{Profile: profile, Task: args[0], Requirement: args[1]}
+			return a.UnmapSecret(ctx, *project, cwd, target)
+		})(cmd, args)
+	}
+	secret.AddCommand(list, status, bind, unmap)
 
 	providers := &cobra.Command{Use: "provider", Short: "Manage device-local provider authentication"}
 	var p provider.Profile

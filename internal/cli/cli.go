@@ -24,7 +24,7 @@ type envelope struct {
 }
 
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
-	return RunWithProviders(ctx, args, stdout, stderr, provider.Services{})
+	return RunWithProviders(ctx, args, stdout, stderr, provider.Services{Credentials: platform.SystemCredentials()})
 }
 
 func RunWithProviders(ctx context.Context, args []string, stdout, stderr io.Writer, providers provider.Services) int {

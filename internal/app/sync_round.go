@@ -71,6 +71,18 @@ func recordPath(id string) string {
 func validUUID(id string) bool { u, e := uuid.Parse(id); return e == nil && u.String() == id }
 func decodeRecord(b []byte) (remoteRecord, error) {
 	var r remoteRecord
+	fields, err := configurationFields(b)
+	if err != nil {
+		return r, Fail("incomplete", "invalid catalog record envelope")
+	}
+	seen := make(map[string]bool, len(fields))
+	for field := range fields {
+		key := strings.ToLower(field)
+		if seen[key] {
+			return r, Fail("incomplete", "duplicate catalog record envelope field")
+		}
+		seen[key] = true
+	}
 	wire := struct {
 		*publishedEnvelope
 		Payload json.RawMessage `json:"payload"`
@@ -87,9 +99,6 @@ func decodeRecord(b []byte) (remoteRecord, error) {
 		}
 	}
 	if r.Kind == "configuration" {
-		if _, err := configurationFields(b); err != nil {
-			return r, err
-		}
 		config, err := decodeConfiguration(wire.Payload, false)
 		if err != nil {
 			return r, err
@@ -107,6 +116,15 @@ func decodeRecord(b []byte) (remoteRecord, error) {
 	case "resource":
 		err = strictJSON(raw, &r.Resource)
 	case secretBindingKind:
+		for field, keys := range map[string][]string{
+			"scope":      {"kind", "id"},
+			"provenance": {"deviceId", "updatedAt"},
+			"policy":     {"storage", "agentDisclosure"},
+		} {
+			if err := exactSecretFields(fields[field], keys...); err != nil {
+				return r, err
+			}
+		}
 		err = decodeSecretBinding(wire.Payload, &r.SecretBinding)
 	case "task":
 		if _, err = configurationFields(wire.Payload); err == nil {

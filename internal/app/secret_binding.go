@@ -53,9 +53,9 @@ type SecretBindingChange struct {
 }
 
 type SecretBindResult struct {
-	Profile string        `json:"profile"`
-	Binding SecretBinding `json:"binding"`
-	Mapping SecretMapping `json:"mapping"`
+	Profile string         `json:"profile"`
+	Binding *SecretBinding `json:"binding,omitempty"`
+	Mapping SecretMapping  `json:"mapping"`
 }
 
 func validProviderProfile(p provider.Profile) bool {
@@ -178,6 +178,14 @@ func secretResource(ctx context.Context, q rowQuerier, cfg configuration, task T
 }
 
 func (a App) BindSecret(ctx context.Context, selector, cwd string, change SecretBindingChange) (SecretBindResult, error) {
+	return a.changeSecretMapping(ctx, selector, cwd, change, false)
+}
+
+func (a App) UnmapSecret(ctx context.Context, selector, cwd string, target SecretTarget) (SecretBindResult, error) {
+	return a.changeSecretMapping(ctx, selector, cwd, SecretBindingChange{SecretTarget: target}, true)
+}
+
+func (a App) changeSecretMapping(ctx context.Context, selector, cwd string, change SecretBindingChange, unmap bool) (SecretBindResult, error) {
 	var out SecretBindResult
 	reuse := change.BindingID != ""
 	if reuse && (!validUUID(change.BindingID) || change.Alias != "" || change.ProviderProfile != (provider.Profile{}) || change.Locator != (provider.Locator{})) {
@@ -216,12 +224,21 @@ func (a App) BindSecret(ctx context.Context, selector, cwd string, change Secret
 		if err := requireNoBindingConflict(ctx, c, task.ID); err != nil {
 			return err
 		}
+		scope := Scope{"project", loc.project.ID}
+		i := slices.IndexFunc(cfg.SecretMappings, func(m SecretMapping) bool { return m.TaskID == task.ID && m.Requirement == req.Name })
+		if unmap {
+			if i < 0 {
+				return Fail("binding-missing", "Profile has no SecretBinding mapping for Task "+task.Name+" requirement "+req.Name)
+			}
+			out = SecretBindResult{Profile: p.Name, Mapping: cfg.SecretMappings[i]}
+			cfg.SecretMappings = slices.Delete(cfg.SecretMappings, i, i+1)
+			return saveSecretMappings(ctx, c, p.ID, scope, cfg)
+		}
+
 		resource, err := secretResource(ctx, c, cfg, task, req)
 		if err != nil {
 			return err
 		}
-		scope := Scope{"project", loc.project.ID}
-		i := slices.IndexFunc(cfg.SecretMappings, func(m SecretMapping) bool { return m.TaskID == task.ID && m.Requirement == req.Name })
 		var binding SecretBinding
 		if reuse {
 			if err := requireNoBindingConflict(ctx, c, change.BindingID); err != nil {
@@ -244,14 +261,14 @@ func (a App) BindSecret(ctx context.Context, selector, cwd string, change Secret
 			}
 			if i >= 0 {
 				current, err := loadSecretBinding(ctx, c, cfg.SecretMappings[i].BindingID)
-				if err != nil {
+				if err != nil && Classify(err).Code != "binding-missing" {
 					return err
 				}
-				if current.Scope == scope && current.SecretBindingSpec == spec {
+				if err == nil && current.Scope == scope && current.SecretBindingSpec == spec {
 					if err := requireNoBindingConflict(ctx, c, current.ID); err != nil {
 						return err
 					}
-					out = SecretBindResult{p.Name, current, cfg.SecretMappings[i]}
+					out = SecretBindResult{p.Name, &current, cfg.SecretMappings[i]}
 					return nil
 				}
 			}
@@ -270,7 +287,7 @@ func (a App) BindSecret(ctx context.Context, selector, cwd string, change Secret
 		}
 
 		mapping := SecretMapping{task.ID, req.Name, binding.ID}
-		out = SecretBindResult{p.Name, binding, mapping}
+		out = SecretBindResult{p.Name, &binding, mapping}
 		if i < 0 {
 			cfg.SecretMappings = append(cfg.SecretMappings, mapping)
 		} else if cfg.SecretMappings[i] == mapping {
@@ -281,13 +298,17 @@ func (a App) BindSecret(ctx context.Context, selector, cwd string, change Secret
 		if len(cfg.SecretMappings) > 512 {
 			return Fail("size-limit", "a Profile supports at most 512 credential mappings")
 		}
-		cfg.UpdatedAt, cfg.Revision = now(), uuid.NewString()
-		if err := saveConfiguration(ctx, c, p.ID, scope, cfg); err != nil {
-			return err
-		}
-		return queueChanges(ctx, c)
+		return saveSecretMappings(ctx, c, p.ID, scope, cfg)
 	})
 	return out, err
+}
+
+func saveSecretMappings(ctx context.Context, c *sql.Conn, profileID string, scope Scope, cfg configuration) error {
+	cfg.UpdatedAt, cfg.Revision = now(), uuid.NewString()
+	if err := saveConfiguration(ctx, c, profileID, scope, cfg); err != nil {
+		return err
+	}
+	return queueChanges(ctx, c)
 }
 
 func exactSecretFields(raw []byte, allowed ...string) error {

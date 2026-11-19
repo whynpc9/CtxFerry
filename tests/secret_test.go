@@ -88,8 +88,11 @@ func TestSecretBindingsAcrossDevices(t *testing.T) {
 	ref := provider.Locator{ProjectID: "backend", Environment: "sandbox", Path: "/apps", Key: "BACKEND_DB"}
 	near := ref
 	near.Path = "/other"
+	stable := provider.Locator{EntryID: "backend-stable-id"}
 	fake := &providertest.Fake{
-		Entries: map[providertest.Reference]string{{Profile: p, Locator: ref}: secretValue},
+		Entries: map[providertest.Reference]string{
+			{Profile: p, Locator: ref}: secretValue, {Profile: p, Locator: stable}: secretValue,
+		},
 		Methods: []provider.MethodCapabilities{
 			{Method: "machine", MachineAuth: true, SessionExpiry: true},
 			{Method: "interactive", OfflineRead: true},
@@ -125,7 +128,6 @@ func TestSecretBindingsAcrossDevices(t *testing.T) {
 	login := []string{"provider", "login", "fake", "--provider-profile=team", "--method=machine"}
 	unavailable := provider.Services{Adapters: services.Adapters, Credentials: &providertest.MemoryStore{Unavailable: true}}
 	failure(t, providerCommand(t, a, unavailable, login...), "credential-storage-unavailable")
-	failure(t, a.Run(t, append(login, "--format=json")...), "credential-storage-unavailable")
 	if fake.LoginCount() != 0 || len(fake.Lookups()) != 0 {
 		t.Fatal("provider called before secure storage and explicit status")
 	}
@@ -187,6 +189,22 @@ func TestSecretBindingsAcrossDevices(t *testing.T) {
 		t.Fatal("reuse created a different SecretBinding", r)
 	}
 	failure(t, mapResource(a, peerTask, otherResource), "incompatible")
+	unmap := func() {
+		t.Helper()
+		a.Run(t, "secret", "unmap", peerTask, "login", "--profile=dev", "--format=json").Success(t)
+	}
+	unmap()
+	mapResource(a, peerTask, otherResource).Success(t)
+	stableBinding := a.Run(t, "secret", "bind", peerTask, "login", "--profile=dev", "--alias=stable", "--provider=fake",
+		"--provider-profile=team", "--method=machine", "--entry-id="+stable.EntryID, "--format=json").Success(t)
+	facts = secretFacts(t, status(a, "peer", peerTask, "--profile=dev"), "")
+	if facts["binding"].(map[string]any)["id"] != field(t, stableBinding, "binding") ||
+		facts["entryRetrievable"] != true || facts["resourceReachable"] != nil || fake.Lookups()[len(fake.Lookups())-1].Locator != stable {
+		t.Fatal("Resource move did not resolve the new exact stable ID", facts)
+	}
+	unmap()
+	mapResource(a, peerTask, resourceID).Success(t)
+	reuse(a, peerTask, bindingID).Success(t)
 	a.Dir = root
 	otherBinding := field(t, newBinding(a, taskID, "near-match", near).Success(t), "binding")
 	facts = secretFacts(t, status(a, "checkout", taskID), "secret-unavailable")
@@ -239,12 +257,19 @@ func TestSecretBindingsAcrossDevices(t *testing.T) {
 
 	// Two explicit edits to the same Profile produce a conflict before lookup.
 	a.Run(t, "secret", "bind", taskID, "login", "--profile=dev", "--binding="+otherBinding, "--format=json").Success(t)
-	newBinding(b, taskID, "peer-edit", near, "--project=checkout").Success(t)
+	chosen := field(t, newBinding(b, taskID, "peer-edit", near, "--project=checkout").Success(t), "binding")
 	a.Run(t, "sync", "--format=json").Success(t)
 	b.Run(t, "sync", "--format=json").Success(t)
 	secretFacts(t, status(b, "checkout", taskID, "--profile=dev"), "binding-conflict")
 	if len(fake.Lookups()) != before {
 		t.Fatal("conflicted binding must never call Resolve")
+	}
+	b.Run(t, "sync", "resolve", cfgID, "--take=local", "--if-conflict="+conflictToken(t, b, cfgID), "--format=json").Success(t)
+	b.Run(t, "sync", "--format=json").Success(t)
+	a.Run(t, "sync", "--format=json").Success(t)
+	facts = secretFacts(t, status(a, "checkout", taskID), "secret-unavailable")
+	if facts["binding"].(map[string]any)["id"] != chosen || facts["bound"] != true {
+		t.Fatal("the chosen Profile and its new binding did not publish together", facts)
 	}
 
 	// An additional device with a valid baseline must reject remote records
@@ -261,6 +286,7 @@ func testInvalidSecretSnapshots(t *testing.T, a *testcli.Harness, remote, cfgID,
 		name, id, code string
 		edit           func(map[string]any)
 	}{
+		{"duplicate payload", bindingID, "incomplete", nil},
 		{"unknown auth field", bindingID, "unsupported-schema", func(p map[string]any) {
 			p["providerProfile"].(map[string]any)["session"] = providertest.SyntheticSession
 		}},
@@ -281,10 +307,16 @@ func testInvalidSecretSnapshots(t *testing.T, a *testcli.Harness, remote, cfgID,
 			if err := json.Unmarshal([]byte(git(t, a, "-C", catalog, "show", head+":"+path)), &record); err != nil {
 				t.Fatal(err)
 			}
-			tc.edit(record["payload"].(map[string]any))
+			if tc.edit != nil {
+				tc.edit(record["payload"].(map[string]any))
+			}
 			data, err := json.Marshal(record)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if tc.edit == nil {
+				duplicate := `{"payload":{"session":"` + providertest.SyntheticSession + `"},`
+				data = append([]byte(duplicate), data[1:]...)
 			}
 			git(t, a, "-C", catalog, "checkout", head, "--", "records")
 			if err := os.WriteFile(filepath.Join(catalog, filepath.FromSlash(path)), data, 0600); err != nil {

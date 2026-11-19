@@ -503,6 +503,11 @@ func (a App) Resolve(ctx context.Context, id, token, take string, input []byte) 
 		if e = c.QueryRowContext(ctx, "SELECT id FROM device").Scan(&r.Provenance.DeviceID); e != nil {
 			return e
 		}
+		if take == "local" && !r.Deleted {
+			if e = includePendingDependencies(ctx, c, f, r); e != nil {
+				return e
+			}
+		}
 		if e = applyExplicit(ctx, c, f, r.publishedEnvelope, remote, epoch); e != nil {
 			return e
 		}
@@ -517,6 +522,48 @@ func (a App) Resolve(ctx context.Context, id, token, take string, input []byte) 
 	})
 	return out, e
 }
+
+// Pending dependencies already have outbox entries. Validate the chosen record
+// against those revisions here, then the regular planner publishes the closed
+// set together. Resolving one conflict must never choose another by implication.
+func includePendingDependencies(ctx context.Context, c *sql.Conn, files map[string][]byte, root remoteRecord) error {
+	seen := map[string]bool{root.ID: true}
+	queue := dependencies(root)
+	for len(queue) > 0 {
+		id := queue[0]
+		queue = queue[1:]
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		path := recordPath(id)
+		var base, proposed []byte
+		err := c.QueryRowContext(ctx, "SELECT base,proposed FROM sync_outbox WHERE id=?", id).Scan(&base, &proposed)
+		if err != nil && err != sql.ErrNoRows {
+			return err
+		}
+		if err == nil {
+			if err := requireNoConflict(ctx, c, id); err != nil {
+				return err
+			}
+			if !bytes.Equal(base, files[path]) && !bytes.Equal(proposed, files[path]) {
+				return Fail("conflict-unresolved", "sync and resolve the changed dependency before choosing this record")
+			}
+			files[path] = proposed
+		}
+		if raw := files[path]; raw != nil {
+			record, err := decodeRecord(raw)
+			if err != nil {
+				return err
+			}
+			if !record.Deleted {
+				queue = append(queue, dependencies(record)...)
+			}
+		}
+	}
+	return nil
+}
+
 func applyExplicit(ctx context.Context, c *sql.Conn, f map[string][]byte, r publishedEnvelope, base []byte, epoch string) error {
 	b, e := json.Marshal(r)
 	if e != nil {
