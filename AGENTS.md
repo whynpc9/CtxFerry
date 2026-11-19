@@ -17,3 +17,5 @@ Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root, created lazi
 ### Desktop UI council
 
 For independent, scored reviews of the MyGo Native UI design, use the project [council skill](.agents/skills/council/SKILL.md).
+
+After completing a desktop UI task, capture the implemented screens from the running application using an isolated workspace. Give the screenshots, their data state, and the matching design frames to a Kimi K3.1 Pro subagent for independent review. Record the findings against the implementation revision that produced the screenshots.

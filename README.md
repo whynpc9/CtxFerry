@@ -33,6 +33,22 @@ The CLI parses and renders; `internal/app` owns operations and validation, and `
 
 Run `go test -count=1 ./...` and `go vet ./...`. The reusable `internal/testcli` harness exercises the real binary with isolated data/home directories, sanitized environment, deadlines, separate streams and exact JSON decoding. CI checks Linux, macOS and Windows with CGO disabled and runs an offline Linux container smoke test.
 
+## Native desktop preview
+
+From the repository root, run the read-only MyGo desktop in its own Go module:
+
+```sh
+cd cmd/ctxferry-desktop
+go run .
+```
+
+Overview and Sync read the same local workspace as the CLI. Set
+`CTXFERRY_DATA_DIR` to inspect an isolated workspace. Use **刷新本地视图** to
+reload after a CLI operation. The desktop does not initialize the catalog or
+start the sync worker. Run `go test ./...` inside the desktop module for its
+view smoke test. The [desktop design](plans/desktop-design/README.md) covers
+the intended UI beyond this first slice.
+
 ## First-device onboarding
 
 ```sh

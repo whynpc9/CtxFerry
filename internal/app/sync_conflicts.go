@@ -342,7 +342,7 @@ func persistConflicts(ctx context.Context, c *sql.Conn, ops []operation, conflic
 	}
 	return nil
 }
-func conflictStatus(ctx context.Context, db *sql.DB) ([]ConflictInfo, []BlockedRecord, error) {
+func conflictStatus(ctx context.Context, db projectReader) ([]ConflictInfo, []BlockedRecord, error) {
 	var conflicts []ConflictInfo
 	var blocked []BlockedRecord
 	rows, e := db.QueryContext(ctx, "SELECT id,token,head FROM sync_conflicts WHERE active=1 ORDER BY id")
