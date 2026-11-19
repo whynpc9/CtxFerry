@@ -23,7 +23,11 @@ const schemaVersion = 11
 func Path(root string) string { return filepath.Join(root, "workspaces", "default", "catalog.sqlite") }
 
 func Open(ctx context.Context, root string, create bool) (*sql.DB, error) {
-	path := Path(root)
+	return OpenCatalog(ctx, Path(root), create)
+}
+
+// OpenCatalog opens a catalog at an explicit path, including staged snapshots.
+func OpenCatalog(ctx context.Context, path string, create bool) (*sql.DB, error) {
 	if create {
 		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 			return nil, err
@@ -158,7 +162,15 @@ func Write(ctx context.Context, db *sql.DB, fn func(*sql.Conn) error) error {
 
 // OpenReadOnly observes the current catalog without creating or migrating it.
 func OpenReadOnly(ctx context.Context, root string) (*sql.DB, error) {
-	path := Path(root)
+	return openCatalogReadOnly(ctx, Path(root), schemaVersion)
+}
+
+// OpenBackupCatalog accepts earlier catalogs written by the workspace backup format.
+func OpenBackupCatalog(ctx context.Context, path string) (*sql.DB, error) {
+	return openCatalogReadOnly(ctx, path, 10)
+}
+
+func openCatalogReadOnly(ctx context.Context, path string, minimum int) (*sql.DB, error) {
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
 			return nil, ErrNotInitialized
@@ -169,7 +181,7 @@ func OpenReadOnly(ctx context.Context, root string) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	if version < schemaVersion {
+	if version < minimum {
 		db.Close()
 		if version == 0 {
 			return nil, ErrNotInitialized

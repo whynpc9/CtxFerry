@@ -297,6 +297,9 @@ func persistConflicts(ctx context.Context, c *sql.Conn, ops []operation, conflic
 	}
 	for _, o := range ops {
 		if !conflicts[o.id] {
+			if _, e = c.ExecContext(ctx, "UPDATE sync_conflicts SET active=0 WHERE id=? AND active=1", o.id); e != nil {
+				return e
+			}
 			continue
 		}
 		var oldLocal, oldRemote []byte

@@ -18,10 +18,11 @@ import (
 )
 
 type workspaceFormat struct {
-	Format      int    `json:"format"`
-	WorkspaceID string `json:"workspaceId"`
-	Epoch       string `json:"epoch"`
-	StorageMode string `json:"storageMode"`
+	Format       int    `json:"format"`
+	WorkspaceID  string `json:"workspaceId"`
+	Epoch        string `json:"epoch"`
+	StorageMode  string `json:"storageMode"`
+	RestoredFrom string `json:"restoredFrom,omitempty"`
 }
 type recordPayload struct {
 	Project
@@ -147,7 +148,7 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 	if w.Format != 1 {
 		return w, nil, Fail("unsupported-schema", "unsupported workspace format")
 	}
-	if !validUUID(w.WorkspaceID) || !validUUID(w.Epoch) || w.StorageMode != "plaintext" || wid != "" && w.WorkspaceID != wid || epoch != "" && w.Epoch != epoch {
+	if !validUUID(w.WorkspaceID) || !validUUID(w.Epoch) || w.StorageMode != "plaintext" || w.RestoredFrom != "" && !validCommitID(w.RestoredFrom) || wid != "" && w.WorkspaceID != wid || epoch != "" && w.Epoch != epoch {
 		return invalid()
 	}
 	if len(files["README.md"]) == 0 {
@@ -637,7 +638,7 @@ func (a App) Join(ctx context.Context, remote, branch string, subscriptions []st
 	for _, selector := range subscriptions {
 		found := false
 		for id, r := range records {
-			if r.Kind == "project" && (id == selector || r.Value.Slug == selector) {
+			if r.Kind == "project" && !r.Deleted && (id == selector || r.Value.Slug == selector) {
 				selected[id] = true
 				found = true
 			}
@@ -768,7 +769,7 @@ func (a App) syncRound(ctx context.Context, db *sql.DB) (result SyncResult, err 
 	if err != nil {
 		return result, err
 	}
-	_, records, err := validateSnapshot(remote, conf.WorkspaceID, epoch)
+	workspace, records, err := validateSnapshot(remote, conf.WorkspaceID, "")
 	if err != nil {
 		return result, err
 	}
@@ -782,16 +783,31 @@ func (a App) syncRound(ctx context.Context, db *sql.DB) (result SyncResult, err 
 	if !extends {
 		return result, Fail("history-rewritten", "remote head no longer extends confirmed history")
 	}
+	epochChanged := workspace.Epoch != epoch
+	if epochChanged {
+		if workspace.RestoredFrom == "" {
+			return result, Fail("incomplete", "workspace epoch changed without a restore marker")
+		}
+		extends, err := newSyncBackend().Ancestor(ctx, dir, workspace.RestoredFrom, head)
+		if err != nil {
+			return result, err
+		}
+		if !extends {
+			return result, Fail("incomplete", "workspace restore source is outside published history")
+		}
+	}
+	result.Epoch = workspace.Epoch
+	refreshOutbox := true
 	if pending != "" {
 		var attempt pendingPush
-		if json.Unmarshal([]byte(pending), &attempt) != nil || attempt.Epoch != epoch || attempt.ExpectedHead == "" {
+		if json.Unmarshal([]byte(pending), &attempt) != nil || attempt.ExpectedHead == "" || attempt.RestoredFrom == "" && attempt.Epoch != epoch {
 			return result, Fail("push-pending", "pending initialization requires its explicit preview retry")
 		}
 		accepted, e := newSyncBackend().Ancestor(ctx, dir, attempt.Candidate, head)
 		if e != nil {
 			return result, e
 		}
-		if accepted {
+		if accepted && !epochChanged && attempt.RestoredFrom == "" {
 			candidateFiles, e := readSnapshot(ctx, dir, attempt.Candidate)
 			if e != nil {
 				return result, e
@@ -813,36 +829,42 @@ func (a App) syncRound(ctx context.Context, db *sql.DB) (result SyncResult, err 
 			if err != nil {
 				return result, err
 			}
-		} else {
-			// The remote still extends confirmed history and does not contain C.
-			// Keep original operations and compare them again against fetched business baselines.
+		} else if !epochChanged && attempt.RestoredFrom == "" {
 			if _, err = db.ExecContext(ctx, "UPDATE sync_state SET pending=''"); err != nil {
 				return result, err
 			}
+		} else {
+			// Keep the journal until the new baseline commits. An acknowledged
+			// old-generation edit may still have been rolled back by the restore.
+			// Shared writes were blocked while the journal was active, so its
+			// already persisted outbox can go straight to the planner.
+			refreshOutbox = false
 		}
 	}
-	// Bootstrap existing schema-4 publishers from their actual confirmed Git snapshot.
-	err = store.Write(ctx, db, func(c *sql.Conn) error {
-		base, e := baselineFiles(ctx, c)
-		if e != nil {
-			return e
-		}
-		if len(base) == 0 {
-			files, e := readSnapshot(ctx, dir, confirmed)
+	if refreshOutbox {
+		// Bootstrap existing schema-4 publishers from their actual confirmed Git snapshot.
+		err = store.Write(ctx, db, func(c *sql.Conn) error {
+			base, e := baselineFiles(ctx, c)
 			if e != nil {
 				return e
 			}
-			if _, _, e = validateSnapshot(files, conf.WorkspaceID, epoch); e != nil {
-				return e
+			if len(base) == 0 {
+				files, e := readSnapshot(ctx, dir, confirmed)
+				if e != nil {
+					return e
+				}
+				if _, _, e = validateSnapshot(files, conf.WorkspaceID, epoch); e != nil {
+					return e
+				}
+				if e = saveBaseline(ctx, c, files, confirmed, false); e != nil {
+					return e
+				}
 			}
-			if e = saveBaseline(ctx, c, files, confirmed, false); e != nil {
-				return e
-			}
+			return queueChanges(ctx, c)
+		})
+		if err != nil {
+			return result, err
 		}
-		return queueChanges(ctx, c)
-	})
-	if err != nil {
-		return result, err
 	}
 	ops := []operation{}
 	rows, err := db.QueryContext(ctx, "SELECT id,base,proposed,operation_id FROM sync_outbox ORDER BY id")
@@ -870,7 +892,7 @@ func (a App) syncRound(ctx context.Context, db *sql.DB) (result SyncResult, err 
 	if err != nil {
 		return result, err
 	}
-	_, mergedRecords, err := validateSnapshot(merged, conf.WorkspaceID, epoch)
+	_, mergedRecords, err := validateSnapshot(merged, conf.WorkspaceID, workspace.Epoch)
 	if err != nil {
 		return result, err
 	}
@@ -922,6 +944,17 @@ func (a App) syncRound(ctx context.Context, db *sql.DB) (result SyncResult, err 
 		if err := installSnapshot(ctx, c, remote, records); err != nil {
 			return err
 		}
+		if epochChanged {
+			if _, err := c.ExecContext(ctx, "UPDATE sync_state SET epoch=? WHERE singleton=1", workspace.Epoch); err != nil {
+				return err
+			}
+		}
+		// Rebuild only operations that passed comparison in the current epoch.
+		for _, o := range selected {
+			if _, err := c.ExecContext(ctx, "UPDATE sync_outbox SET epoch=? WHERE id=?", workspace.Epoch, o.id); err != nil {
+				return err
+			}
+		}
 		return saveBaseline(ctx, c, remote, head, false)
 	})
 	if err != nil {
@@ -951,7 +984,7 @@ func (a App) syncRound(ctx context.Context, db *sql.DB) (result SyncResult, err 
 	if parents != candidate+" "+head {
 		return result, Fail("invalid-candidate", "candidate must have the fetched head as its only parent")
 	}
-	attempt := pendingPush{ExpectedHead: head, Candidate: candidate, Epoch: epoch}
+	attempt := pendingPush{ExpectedHead: head, Candidate: candidate, Epoch: workspace.Epoch}
 	for _, o := range selected {
 		attempt.OperationIDs = append(attempt.OperationIDs, o.op)
 	}

@@ -349,9 +349,9 @@ func (a App) ListProjectsAll(ctx context.Context, all bool) (ListResult, error) 
 		return r, e
 	}
 	defer db.Close()
-	query := "SELECT id,slug,created_at FROM projects"
+	query := "SELECT id,slug,created_at FROM projects WHERE id NOT IN (SELECT id FROM sync_tombstones)"
 	if !all {
-		query += " WHERE id NOT IN (SELECT project_id FROM project_subscriptions WHERE subscribed=0)"
+		query += " AND id NOT IN (SELECT project_id FROM project_subscriptions WHERE subscribed=0)"
 	}
 	rows, e := db.QueryContext(ctx, query+" ORDER BY slug,id")
 	if e != nil {

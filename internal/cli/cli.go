@@ -145,7 +145,7 @@ func RunWithServices(ctx context.Context, args []string, stdout, stderr io.Write
 	onExit := func(code int) { taskExit, taskRan = code, true }
 	runTask := runCommand(ctx, invoke, &projectSelector, &format, onExit)
 	execTask := execCommand(ctx, invoke, &projectSelector, &format, onExit)
-	root.AddCommand(doctorCommand(ctx, invoke, &projectSelector), secrets, providerCommands, runTask, execTask, taskCommand(ctx, invoke, &projectSelector), initCmd, project, config, profile, contextCommand(ctx, invoke, &projectSelector), resourceCommand(ctx, invoke, &projectSelector), artifactCommand(ctx, invoke, &projectSelector), syncCommand(ctx, invoke), joinCommand(ctx, invoke))
+	root.AddCommand(doctorCommand(ctx, invoke, &projectSelector), secrets, providerCommands, runTask, execTask, taskCommand(ctx, invoke, &projectSelector), initCmd, project, config, profile, contextCommand(ctx, invoke, &projectSelector), resourceCommand(ctx, invoke, &projectSelector), artifactCommand(ctx, invoke, &projectSelector), syncCommand(ctx, invoke), joinCommand(ctx, invoke), workspaceCommand(ctx, invoke))
 
 	// Detect format before parsing so usage errors also obey the JSON contract.
 	requestedFormat := ""
@@ -289,7 +289,7 @@ func render(w io.Writer, result any) error {
 		_, err = fmt.Fprintln(w, string(b))
 	case platform.SyncService:
 		_, err = fmt.Fprintln(w, r.Message)
-	case app.SyncResult:
+	case app.SyncResult, app.WorkspaceBackupResult, app.WorkspaceRestoreResult:
 		b, e := json.MarshalIndent(r, "", "  ")
 		if e != nil {
 			return e
