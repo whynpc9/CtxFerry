@@ -49,6 +49,7 @@ type SyncResult struct {
 	Boundary   string          `json:"boundary"`
 	State      string          `json:"state"`
 	Head       string          `json:"head,omitempty"`
+	Epoch      string          `json:"epoch,omitempty"`
 	LastSyncAt *string         `json:"lastSyncAt"`
 	Pending    int             `json:"pending"`
 }
@@ -78,6 +79,7 @@ type pendingPush struct {
 	Epoch        string   `json:"epoch"`
 	OperationIDs []string `json:"operationIds"`
 	PreviewID    string   `json:"previewId"`
+	RestoredFrom string   `json:"restoredFrom,omitempty"`
 }
 
 func digest(b []byte) string { h := sha256.Sum256(b); return hex.EncodeToString(h[:]) }
@@ -894,7 +896,7 @@ func readSyncStatus(ctx context.Context, db *sql.DB) (SyncResult, error) {
 	}
 	r.Config = &c
 	var pending, stamp, outcome string
-	if err = db.QueryRowContext(ctx, "SELECT confirmed_head,pending,last_sync_at,outcome FROM sync_state WHERE singleton=1").Scan(&r.Head, &pending, &stamp, &outcome); err != nil {
+	if err = db.QueryRowContext(ctx, "SELECT confirmed_head,epoch,pending,last_sync_at,outcome FROM sync_state WHERE singleton=1").Scan(&r.Head, &r.Epoch, &pending, &stamp, &outcome); err != nil {
 		return r, err
 	}
 	if stamp != "" {

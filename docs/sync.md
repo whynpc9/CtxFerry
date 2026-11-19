@@ -245,3 +245,59 @@ and its dependents remain in the working view. The incompatible remote projectio
 is deferred while its records remain in the published baseline. Status retains the
 uniqueness blocker; unrelated records continue to upload and download on subsequent
 syncs without violating local database constraints.
+
+## Workspace backup and restore
+
+Save to a new directory in a protected location. Backups are plaintext.
+
+```sh
+ctxferry workspace backup --to /protected/ctxferry-backup
+ctxferry workspace backup --to /protected/ctxferry-device-backup --include-local-only
+```
+
+The command works offline. It bundles the last locally confirmed published
+Git history, if any, and takes a standalone SQLite snapshot of the catalog,
+including unpublished edits, their original bases, and referenced objects.
+Objects and conflict evidence are stored inside SQLite. If a publication is
+awaiting reconciliation, run `ctxferry sync` before backing up. A completed
+backup has a `manifest.json` with checksums for its files. Keep the directory
+together. A failed backup may leave an incomplete directory.
+
+By default the snapshot includes shared records, workspace and device IDs,
+and credential-free sync repository information. Use `--include-local-only`
+to save device-only records, checkout bindings, local configuration, Profile
+selections, subscriptions, route facts, and observations. Both modes exclude
+credential stores, provider sessions, Git authentication, and execution trust.
+Secret references can appear in shared records. Review authored content for
+secrets pasted into notes or other fields before backing it up.
+
+To recover the saved device's offline state, choose a new application data
+directory. The command keeps the original device ID and pending queue. Use
+the recovered directory in place of the original device's data directory.
+Backed-up checkout paths and local settings may need adjustment on new
+hardware. Authenticate to Git and credential providers on that device.
+
+```sh
+ctxferry --data-dir /protected/recovered workspace recover-local --from /protected/ctxferry-backup
+```
+
+To roll back the shared workspace, run restore from a configured device or
+the recovered data directory. Inspect the current published commit and pass
+its full SHA. A concurrent publication causes restore to stop. The restore
+appends a commit under a new epoch and keeps published history. Records added
+after the backup become tombstones.
+
+```sh
+ctxferry workspace restore --from /protected/ctxferry-backup --new-epoch --if-head <current-commit>
+ctxferry sync
+```
+
+Restore publishes the bundle's shared snapshot. To also recover the backup
+device's unpublished edits or local-only content, use `recover-local` first
+and run restore with that data directory. The existing queue on every other
+device stays in place. On the next sync, each device compares its queued
+edits with the restored records using their original bases. Compatible edits
+can publish in the new epoch. Use `sync status`, `sync conflicts`, and
+`sync resolve` to inspect and resolve conflicting edits. A lost restore
+response can be reconciled by sync or by retrying the same restore while its
+publication journal is pending. Use an epoch-aware CLI on each syncing device.
