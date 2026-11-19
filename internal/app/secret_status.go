@@ -216,31 +216,28 @@ func (a App) checkSecretAvailability(ctx context.Context, key provider.SessionKe
 	if err != nil {
 		return Fail("secret-unavailable", Classify(err).Message)
 	}
-	session, err := a.loadProviderSession(ctx, key)
+	session, loadErr := a.loadProviderSession(ctx, key)
 	defer clear(session)
-	if errors.Is(err, provider.ErrNoSession) || err == nil && len(session) == 0 {
-		auth := provider.Authentication{State: provider.SignedOut}
-		out.Authentication, out.Authenticated = &auth, new(bool)
-		return Fail("authentication-required", "log in to the provider on this device")
-	}
-	if err != nil {
-		return err
-	}
-	auth, err := providerAuthentication(ctx, adapter, key.Profile, session)
+	auth, err := sessionAuthentication(ctx, adapter, key.Profile, session, loadErr)
 	if err != nil {
 		return err
 	}
 	authenticated := auth.State == provider.Authenticated
 	out.Authentication, out.Authenticated = &auth, &authenticated
 	if !authenticated {
-		return Fail("authentication-required", "provider session requires login or unlock")
+		return authenticationFailure(auth)
 	}
 
 	value, err := adapter.Resolve(ctx, key.Profile, session, out.Binding.Locator)
 	clear(value)
 	if errors.Is(err, provider.ErrAuthenticationRequired) {
-		out.Authentication.State, *out.Authenticated = provider.SignedOut, false
-		out.Authentication.ExpiresAt = nil
+		*out.Authenticated = false
+		current, checkErr := providerAuthentication(ctx, adapter, key.Profile, session)
+		if checkErr == nil && current.State != provider.Authenticated {
+			out.Authentication = &current
+			return authenticationFailure(current)
+		}
+		out.Authentication = nil
 		return Fail("authentication-required", "provider session is no longer usable")
 	}
 	retrievable := err == nil

@@ -213,6 +213,45 @@ Both login methods store the access token in the OS credential store (Secret Ser
 
 Session checks and reads require a connection. Both methods report token expiry, and Infisical can revoke or restrict access before that time. Reads use the stable secret ID when specified. A named read requires the explicit Infisical project ID, environment slug, folder and exact shared key. The Resource stage is independent, and the adapter disables imported secrets and reference expansion. The adapter reports no offline read, native execution or file delivery capability. Catalog sync works independently of provider login.
 
+### Bitwarden Password Manager
+
+Install the official `bw` executable on PATH. Sign in and unlock with Bitwarden
+on this device, and supply the resulting `BW_SESSION` through your protected
+environment. Use `--method personal` and `--entry-id <item-uuid>` in
+`secret bind`. The binding resolves the password of that exact login item.
+Copy its UUID from Bitwarden. Missing, denied, or passwordless items return
+`secret-unavailable`.
+[Bitwarden CLI documentation](https://bitwarden.com/help/cli/)
+
+Use the provider profile `default`, or set `CTXFERRY_BITWARDEN_PROFILE` to the
+named profile you are using. If you use a separate Bitwarden CLI account
+directory, set `BITWARDENCLI_APPDATA_DIR` to the same absolute path for unlock
+and CtxFerry commands. To adopt the key into this device's OS credential store,
+run:
+
+```sh
+ctxferry provider login bitwarden --provider-profile default --method personal
+```
+
+For headless use, a protected launcher can supply `BW_SESSION` for
+`secret status` and credentialed runs. It must also set
+`CTXFERRY_BITWARDEN_WORKSPACE_ID`, `CTXFERRY_BITWARDEN_DEVICE_ID`, and
+`CTXFERRY_BITWARDEN_PROFILE` to the exact local IDs and provider profile.
+Get the IDs from `ctxferry init --format json`. This path works without an OS
+keyring. The launcher must establish a valid unlock session independently.
+Bitwarden's personal API key can sign in headlessly, while vault decryption
+normally requires a separate unlock. Without a usable key, a logged-in vault
+reports `authentication-required` with an unlock diagnostic.
+[Bitwarden API key authentication](https://bitwarden.com/help/personal-api-key/)
+
+`secret status` reports `loggedIn`, `unlocked`, and `sessionValidity` separately.
+Validity reflects the selected local `bw` cache and scoped key. Bitwarden
+invalidates keys on lock or logout. CtxFerry reports no timed expiry. A valid
+key permits offline reads of previously synced items from the local vault.
+Freshness, current server-side access, and availability of a particular item
+remain separate. Sign-in and fetching updates require a connection.
+[Bitwarden offline behavior](https://bitwarden.com/help/using-bitwarden-offline/)
+
 ### Credentialed runs
 
 `run` resolves only the requirements of the Task being run, through the

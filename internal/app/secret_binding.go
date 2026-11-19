@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/whynpc9/CtxFerry/internal/provider"
+	"github.com/whynpc9/CtxFerry/internal/provider/bitwarden"
 	"github.com/whynpc9/CtxFerry/internal/store"
 )
 
@@ -258,6 +259,9 @@ func (a App) changeSecretMapping(ctx context.Context, selector, cwd string, chan
 			spec := SecretBindingSpec{change.Alias, resource.ID, req.Purpose, req.Type, change.ProviderProfile, change.Locator}
 			if err := validateSecretBinding(spec); err != nil {
 				return err
+			}
+			if spec.ProviderProfile.Provider == bitwarden.Name && !bitwarden.ValidLocator(spec.Locator) {
+				return Fail("invalid-secret-binding", "Bitwarden requires an exact item UUID in --entry-id")
 			}
 			if i >= 0 {
 				current, err := loadSecretBinding(ctx, c, cfg.SecretMappings[i].BindingID)

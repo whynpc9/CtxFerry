@@ -10,7 +10,7 @@ import (
 
 // ContractFixture points an adapter at provisioned synthetic entries. The
 // fixture supplies a near match that must fail and backend-specific controls to
-// lock and expire an established session.
+// lock and invalidate an established session.
 type ContractFixture struct {
 	Adapter      provider.Adapter
 	Profile      provider.Profile
@@ -19,6 +19,9 @@ type ContractFixture struct {
 	NearMatch    provider.Locator
 	Value        string
 	SetState     func(provider.AuthState)
+	// InvalidatedState overrides Expired when an adapter with no timed expiry
+	// cannot distinguish invalidation from a lock or sign-out.
+	InvalidatedState provider.AuthState
 }
 
 func RunContract(t *testing.T, f ContractFixture) {
@@ -58,10 +61,15 @@ func RunContract(t *testing.T, f ContractFixture) {
 			t.Fatal("resolve did not return the exact entry")
 		}
 		assertUnavailable(t, session, f.NearMatch, provider.ErrSecretUnavailable)
-		for _, state := range []provider.AuthState{provider.Locked, provider.Expired} {
-			f.SetState(state)
-			assertAuth(t, session, state)
-			assertUnavailable(t, session, f.Entry, provider.ErrAuthenticationRequired)
+		f.SetState(provider.Locked)
+		assertAuth(t, session, provider.Locked)
+		assertUnavailable(t, session, f.Entry, provider.ErrAuthenticationRequired)
+		f.SetState(provider.Expired)
+		expected := f.InvalidatedState
+		if expected == "" {
+			expected = provider.Expired
 		}
+		assertAuth(t, session, expected)
+		assertUnavailable(t, session, f.Entry, provider.ErrAuthenticationRequired)
 	})
 }

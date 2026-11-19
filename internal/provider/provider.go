@@ -46,9 +46,20 @@ const (
 )
 
 type Authentication struct {
-	State     AuthState  `json:"state"`
-	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+	State           AuthState       `json:"state"`
+	ExpiresAt       *time.Time      `json:"expiresAt,omitempty"`
+	LoggedIn        *bool           `json:"loggedIn,omitempty"`
+	Unlocked        *bool           `json:"unlocked,omitempty"`
+	SessionValidity SessionValidity `json:"sessionValidity,omitempty"`
 }
+
+type SessionValidity string
+
+const (
+	SessionAbsent  SessionValidity = "absent"
+	SessionInvalid SessionValidity = "invalid"
+	SessionValid   SessionValidity = "valid"
+)
 
 var (
 	ErrAuthenticationRequired = errors.New("provider authentication required")
@@ -60,7 +71,8 @@ var (
 // Login returns an opaque session for CredentialStore. Adapters must not persist
 // it themselves. Resolve must use the exact Locator and distinguish an invalid
 // session from an absent or denied entry. Login and Resolve return caller-owned
-// byte slices.
+// byte slices. Authentication with no session may report backend login and lock
+// evidence, but cannot confirm a usable CtxFerry session.
 type Adapter interface {
 	Capabilities() []MethodCapabilities
 	Login(context.Context, Profile) ([]byte, error)

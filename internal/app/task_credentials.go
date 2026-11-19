@@ -211,18 +211,10 @@ func (a App) credentialEnvironment(ctx context.Context, plan TaskExecution) ([]s
 func (a App) deviceSession(ctx context.Context, adapter provider.Adapter, key provider.SessionKey) ([]byte, error) {
 	// The shared loader prefers a runtime session provisioned for exactly this
 	// workspace, device and provider profile, then secure device storage.
-	session, err := a.loadProviderSession(ctx, key)
-	if errors.Is(err, provider.ErrNoSession) || err == nil && len(session) == 0 {
-		clear(session)
-		return nil, Fail("authentication-required", "log in to the provider on this device")
-	}
-	if err != nil {
-		clear(session)
-		return nil, err
-	}
-	auth, err := providerAuthentication(ctx, adapter, key.Profile, session)
+	session, loadErr := a.loadProviderSession(ctx, key)
+	auth, err := sessionAuthentication(ctx, adapter, key.Profile, session, loadErr)
 	if err == nil && auth.State != provider.Authenticated {
-		err = Fail("authentication-required", "provider session requires login or unlock")
+		err = authenticationFailure(auth)
 	}
 	if err != nil {
 		clear(session)
