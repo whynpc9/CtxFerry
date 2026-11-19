@@ -3,7 +3,9 @@ package tests
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -274,6 +276,35 @@ func TestExecutionTrustAcrossDevices(t *testing.T) {
 	inspect := execTask(t, b, local, "exec", "--task", "adhoc", "--format=jsonl", "--", program, "inspect", "--format", "json", "--")
 	assertTaskOutput(t, inspect, "device B", "--format", "json", "--")
 
+	// The caller's program path reaches the OS unchanged: ".." after a
+	// symlinked directory is resolved by the filesystem, not lexically.
+	if runtime.GOOS != "windows" {
+		elsewhere := t.TempDir()
+		working := filepath.Join(b.Dir, "working")
+		for dir, label := range map[string]string{elsewhere: "elsewhere", working: "working"} {
+			if err := os.WriteFile(filepath.Join(dir, "check"), []byte("#!/bin/sh\necho "+label+"\n"), 0700); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := os.Mkdir(filepath.Join(elsewhere, "bin"), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(filepath.Join(elsewhere, "bin"), filepath.Join(working, "links")); err != nil {
+			t.Fatal(err)
+		}
+		events := runEvents(t, execTask(t, b, local, "exec", "--task", "adhoc", "--format=jsonl", "--", "links/../check"))
+		if len(events) != 3 || events[1].Data != "elsewhere\n" || *events[2].ExitCode != 0 {
+			t.Fatalf("exec did not run the caller's path: %+v", events)
+		}
+	} else {
+		before = lookups()
+		refusedTask(t, execTask(t, b, local, "exec", "--task", "adhoc", "--format=jsonl", "--", `\tools\check.exe`), "invalid-command")
+		refusedTask(t, execTask(t, b, local, "exec", "--task", "adhoc", "--format=jsonl", "--", `C:check.exe`), "invalid-command")
+		if lookups() != before {
+			t.Fatal("a refused exec path reached the provider")
+		}
+	}
+
 	// Allowing custom commands is itself an execution change: a synchronized
 	// opt-in never lets exec run a caller-chosen command unreviewed.
 	a.Run(t, "task", "update", "integration", "--if-revision", taskRevision(t, a, "integration"), "--allow-custom-command", "--format=json").Success(t)
@@ -311,9 +342,42 @@ func TestExecutionTrustAcrossDevices(t *testing.T) {
 		t.Fatal("a conflicted Task reached the provider")
 	}
 	b.Run(t, "sync", "resolve", integrationID, "--if-conflict", conflictToken(t, b, integrationID), "--take", "remote", "--format=json").Success(t)
+	b.Run(t, "sync", "--format=json").Success(t)
+	a.Run(t, "sync", "--format=json").Success(t)
 	refusedChange(t, run(b, "integration"), "execution-definition-changed", "argv")
 	enableTask(t, b, "integration")
 	assertChildEnvironment(t, reportedEnvironment(t, run(b, "integration")), "DATABASE_URL", otherSecretValue)
+
+	// A Task edit that would strand a Profile mapping is refused, so sync can
+	// still publish; the Task keeps its revision.
+	current := taskRevision(t, a, "integration")
+	renamed := strings.Replace(dbCredential, `"name":"login"`, `"name":"renamed"`, 1)
+	failure(t, a.Run(t, "task", "update", "integration", "--if-revision", current, "--credential-requirement", renamed, "--format=json"),
+		"invalid-task-dependency")
+	if taskRevision(t, a, "integration") != current {
+		t.Fatal("a refused update changed the Task")
+	}
+	a.Run(t, "sync", "--format=json").Success(t)
+
+	// A synchronized move to another membership is previewed against the
+	// earlier approval and blocks until enabled for the new root.
+	root := filepath.Dir(a.Dir)
+	moved := obj(t, a.Run(t, "project", "bind", root, "--project=checkout", "--repository="+repo, "--format=json").Success(t), "binding")
+	a.Run(t, "task", "update", "integration", "--if-revision", current, "--membership", moved["membershipId"].(string),
+		"--working-directory", "app/working", "--format=json").Success(t)
+	a.Run(t, "sync", "--format=json").Success(t)
+	b.Run(t, "sync", "--format=json").Success(t)
+	// Profile selection is per checkout, so the new root names its Profile.
+	movedRun := func() testcli.Result {
+		return credentialRun(t, b, local, "integration", "--profile=dev", "--format=jsonl")
+	}
+	refusedChange(t, movedRun(), "execution-definition-changed", "membershipId", "membershipRoot")
+	if review := reviewTask(t, b, "integration", "--profile=dev"); review.State != "execution-definition-changed" ||
+		!slices.Equal(changedFields(review), []string{"membershipId", "membershipRoot"}) {
+		t.Fatalf("membership move is not previewed as a change: %+v", review)
+	}
+	enableTask(t, b, "integration", "--profile=dev")
+	assertChildEnvironment(t, reportedEnvironment(t, movedRun()), "DATABASE_URL", otherSecretValue)
 
 	// A credential-free Task needs no trust decision.
 	addTask(t, a, "plain", mid, program, "shared", "--working-directory=working", "--arg=marker").Success(t)

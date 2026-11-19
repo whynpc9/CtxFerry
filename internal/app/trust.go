@@ -154,11 +154,26 @@ func trustFailure(d ExecutionDefinition, current ReviewedDefinition, record *tru
 	return &Error{Code: "execution-definition-changed", Message: message, Details: details}
 }
 
+// loadTrust returns this device's approval for exactly this Task, Profile and
+// membership root. When there is none, it returns the latest approval of the
+// same Task and Profile made for another membership, so a synchronized
+// membership move is previewed as a change rather than a first approval.
+// Authorization still requires the exact record.
 func loadTrust(ctx context.Context, q rowQuerier, r ReviewedDefinition) (*trustRecord, error) {
+	record, err := scanTrust(q.QueryRowContext(ctx, `SELECT t.digest,t.definition,t.enabled_at FROM execution_trust t JOIN device d ON d.id=t.device_id
+		WHERE t.task_id=? AND t.profile_id=? AND t.membership_root=?`, r.TaskID, r.ProfileID, r.MembershipRoot))
+	if record != nil || err != nil {
+		return record, err
+	}
+	return scanTrust(q.QueryRowContext(ctx, `SELECT t.digest,t.definition,t.enabled_at FROM execution_trust t JOIN device d ON d.id=t.device_id
+		WHERE t.task_id=? AND t.profile_id=? AND coalesce(json_extract(t.definition,'$.membershipId'),'')<>?
+		ORDER BY t.enabled_at DESC, t.membership_root LIMIT 1`, r.TaskID, r.ProfileID, r.MembershipID))
+}
+
+func scanTrust(row *sql.Row) (*trustRecord, error) {
 	var out trustRecord
 	var raw string
-	err := q.QueryRowContext(ctx, `SELECT t.digest,t.definition,t.enabled_at FROM execution_trust t JOIN device d ON d.id=t.device_id
-		WHERE t.task_id=? AND t.profile_id=? AND t.membership_root=?`, r.TaskID, r.ProfileID, r.MembershipRoot).Scan(&out.digest, &raw, &out.enabledAt)
+	err := row.Scan(&out.digest, &raw, &out.enabledAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -253,45 +268,51 @@ func (a App) PreviewExecution(ctx context.Context, project, cwd, task, checkout,
 	return review, nil
 }
 
-// EnableExecution enables the previewed definition on this device. It is
-// refused when the definition no longer matches the preview, so a change
-// synchronized between preview and enable must be reviewed again. The stored
-// record is exactly the previewed definition.
+// enableLocked runs after the trust write lock is taken; tests use it.
+var enableLocked = func() {}
+
+// EnableExecution enables the previewed definition on this device. The
+// definition is prepared again while this device's store write lock is held,
+// so no local or synchronized catalog change can commit between the check and
+// the stored approval. It is refused with preview-stale when the definition no
+// longer matches the preview; the stored record is exactly the previewed one.
 func (a App) EnableExecution(ctx context.Context, project, cwd, task, checkout, profile, preview string) (ExecutionReview, error) {
 	if preview == "" {
 		return ExecutionReview{}, Fail("usage", "enable requires --preview from ctxferry task trust preview")
-	}
-	plan, err := a.PrepareTask(ctx, project, cwd, task, checkout, profile)
-	if err != nil {
-		return ExecutionReview{}, err
-	}
-	if len(plan.credentials) == 0 {
-		return ExecutionReview{}, Fail("trust-not-required", "Task receives no credentials; it runs without enabling")
-	}
-	current := plan.Definition().Reviewed()
-	if current.Digest() != preview {
-		return ExecutionReview{}, &Error{Code: "preview-stale", Message: "the execution definition differs from the preview; preview it again",
-			Details: map[string]string{"taskId": plan.Task.ID, "task": plan.Task.Name}}
-	}
-	raw, err := json.Marshal(current)
-	if err != nil {
-		return ExecutionReview{}, err
 	}
 	db, err := store.Open(ctx, a.DataDir, false)
 	if err != nil {
 		return ExecutionReview{}, err
 	}
 	defer db.Close()
-	stamp := now()
+	var out ExecutionReview
 	err = store.Write(ctx, db, func(c *sql.Conn) error {
-		_, err := c.ExecContext(ctx, `INSERT INTO execution_trust SELECT id,?,?,?,?,?,? FROM device WHERE singleton=1
+		enableLocked()
+		plan, err := a.PrepareTask(ctx, project, cwd, task, checkout, profile)
+		if err != nil {
+			return err
+		}
+		if len(plan.credentials) == 0 {
+			return Fail("trust-not-required", "Task receives no credentials; it runs without enabling")
+		}
+		current := plan.Definition().Reviewed()
+		if current.Digest() != preview {
+			return &Error{Code: "preview-stale", Message: "the execution definition differs from the preview; preview it again",
+				Details: map[string]string{"taskId": plan.Task.ID, "task": plan.Task.Name}}
+		}
+		raw, err := json.Marshal(current)
+		if err != nil {
+			return err
+		}
+		stamp := now()
+		if _, err := c.ExecContext(ctx, `INSERT INTO execution_trust SELECT id,?,?,?,?,?,? FROM device WHERE singleton=1
 			ON CONFLICT(device_id,task_id,profile_id,membership_root) DO UPDATE SET digest=excluded.digest,definition=excluded.definition,enabled_at=excluded.enabled_at`,
-			current.TaskID, current.ProfileID, current.MembershipRoot, preview, string(raw), stamp)
-		return err
+			current.TaskID, current.ProfileID, current.MembershipRoot, preview, string(raw), stamp); err != nil {
+			return err
+		}
+		out = ExecutionReview{TaskID: plan.Task.ID, Task: plan.Task.Name, Profile: plan.Profile, State: "enabled", Preview: preview,
+			Definition: &current, EnabledAt: stamp, Changes: []ExecutionChange{}, CustomCommands: current.AllowCustomCommand}
+		return nil
 	})
-	if err != nil {
-		return ExecutionReview{}, err
-	}
-	return ExecutionReview{TaskID: plan.Task.ID, Task: plan.Task.Name, Profile: plan.Profile, State: "enabled", Preview: preview,
-		Definition: &current, EnabledAt: stamp, Changes: []ExecutionChange{}, CustomCommands: current.AllowCustomCommand}, nil
+	return out, err
 }

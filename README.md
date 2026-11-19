@@ -198,9 +198,15 @@ details name the changed fields, until this device enables the new version.
 Editing a Task's purpose or inputs, aliases or other descriptive text keeps the
 enabled state. Trust records stay in this device's local store and are never
 synchronized; every device, including the one that made a change, reviews it.
+Approval is per checkout. When a synchronized edit moves the Task to another
+membership, the preview compares it with the latest approval for the old
+membership. `enable` prepares and stores the definition under the local store's
+write lock, so nothing can change it between the check and the approval.
 
 Change a Task at its current revision with `task update`; only the given fields
-are replaced:
+are replaced. An edit that would leave a Profile mapping pointing at a removed or
+incompatible slot or requirement is refused with `invalid-task-dependency`;
+change or unmap that mapping first.
 
 ```sh
 ctxferry task update integration-check --if-revision <revision> --arg=check --arg=--verbose
@@ -218,9 +224,16 @@ ctxferry exec --task integration-check --profile development --format jsonl -- g
 `exec` resolves the same checkout, working directory, Profile and credential
 requirements as `run`, needs the same enabled definition, and follows the same
 output, redaction and exit-code contract. The program is an absolute path, a
-path relative to the Task's working directory, or a name on `PATH`; arguments
+path relative to the Task's working directory, or a name on `PATH`. The path
+reaches the operating system unchanged, so `..` follows symbolic links as the
+filesystem resolves them. Windows drive-relative (`C:tool.exe`) and
+drive-rooted (`\tool.exe`) paths are refused with `invalid-command`. Arguments
 are passed as an array, never through a shell. Without the opt-in it stops with
 `custom-command-not-allowed`. Enabling a definition that allows custom commands
 approves any command run through `exec` for it, and the preview says so with
 `customCommands: true`. Turning the opt-in on is itself an execution change.
 The command can read and exfiltrate the delivered values.
+
+Clients older than this release do not know the `allowCustomCommand` field.
+Once a shared Task with the opt-in is published, they stop syncing with
+`unsupported-schema` until they are upgraded; they never drop the field.

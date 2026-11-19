@@ -375,6 +375,9 @@ func (a App) UpdateTask(ctx context.Context, selector, cwd, name string, change 
 		if _, _, err := taskMembership(ctx, c, project.ID, spec.MembershipID); err != nil {
 			return err
 		}
+		if err := requireMappableTask(ctx, c, old.ID, old.TaskSpec, spec); err != nil {
+			return err
+		}
 		env := publishedEnvelope{SchemaVersion: 1, ID: old.ID, Kind: "task", Scope: old.Scope, Policy: old.Policy,
 			Revision: uuid.NewString(), PreviousRevision: old.Revision, OperationID: uuid.NewString(), Payload: spec}
 		env.Provenance.UpdatedAt = now()
@@ -398,4 +401,69 @@ func (a App) UpdateTask(ctx context.Context, selector, cwd, name string, change 
 		return nil
 	})
 	return out, err
+}
+
+// requireMappableTask refuses a Task change that breaks a Profile mapping
+// which was valid before it: a removed or incompatible slot or requirement.
+// Sync would block publishing such a Task, and unmapping needs the old names,
+// so the mapping is changed first. Mappings that were already broken do not
+// block an edit, so a repair is never refused.
+func requireMappableTask(ctx context.Context, c *sql.Conn, taskID string, before, after TaskSpec) error {
+	rows, err := c.QueryContext(ctx, "SELECT id FROM configurations ORDER BY id")
+	if err != nil {
+		return err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	stranded := func(profile, kind, name string) error {
+		return &Error{Code: "invalid-task-dependency", Message: "Profile " + profile + " maps " + kind + " " + name +
+			", which this change removes or makes incompatible; change or unmap it first",
+			Details: map[string]string{"profile": profile, kind: name}}
+	}
+	for _, id := range ids {
+		cfg, exists, err := readConfiguration(c.QueryRowContext(ctx, "SELECT payload FROM configurations WHERE id=?", id), false)
+		if err != nil || !exists {
+			return err
+		}
+		resources := map[string]string{}
+		for _, m := range cfg.ResourceMappings {
+			if m.TaskID != taskID {
+				continue
+			}
+			resources[m.Slot] = m.ResourceID
+			resource, err := loadMappedResource(ctx, c, m.ResourceID)
+			if err == nil && compatibleResource(before, m.Slot, resource.ResourceSpec) && !compatibleResource(after, m.Slot, resource.ResourceSpec) {
+				return stranded(cfg.Profile, "slot", m.Slot)
+			}
+		}
+		for _, m := range cfg.SecretMappings {
+			if m.TaskID != taskID {
+				continue
+			}
+			binding, err := loadSecretBinding(ctx, c, m.BindingID)
+			if err != nil {
+				continue
+			}
+			valid := func(spec TaskSpec) bool {
+				req, ok := spec.requirement(m.Requirement)
+				return ok && compatibleSecret(req, resources[req.ResourceSlot], binding.SecretBindingSpec)
+			}
+			if valid(before) && !valid(after) {
+				return stranded(cfg.Profile, "requirement", m.Requirement)
+			}
+		}
+	}
+	return nil
 }

@@ -1,10 +1,15 @@
 package app
 
 import (
+	"database/sql"
+	"path/filepath"
+	"runtime"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/whynpc9/CtxFerry/internal/provider"
+	"github.com/whynpc9/CtxFerry/internal/store"
 )
 
 func trustDefinition() ExecutionDefinition {
@@ -74,5 +79,65 @@ func TestReviewedDefinitionCoversExecutionFields(t *testing.T) {
 	none.Argv = []string{}
 	if empty.Reviewed().Digest() != none.Reviewed().Digest() {
 		t.Error("nil and empty argument arrays differ")
+	}
+}
+
+// Enable prepares and stores the definition under the store's write lock, so
+// no catalog write can commit between the digest check and the approval.
+func TestEnableHoldsWriteLock(t *testing.T) {
+	a := App{DataDir: t.TempDir()}
+	if _, err := a.Init(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	var concurrent error
+	ran := false
+	enableLocked = func() {
+		ran = true
+		path := filepath.ToSlash(store.Path(a.DataDir))
+		if !strings.HasPrefix(path, "/") {
+			path = "/" + path
+		}
+		db, err := sql.Open("sqlite", "file://"+path+"?_pragma=busy_timeout(50)")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+		_, concurrent = db.Exec("BEGIN IMMEDIATE")
+		if concurrent == nil {
+			db.Exec("ROLLBACK")
+		}
+	}
+	defer func() { enableLocked = func() {} }()
+	if _, err := a.EnableExecution(t.Context(), "", t.TempDir(), "task", "", "", "preview"); err == nil {
+		t.Fatal("enable succeeded without a Task")
+	}
+	if !ran || concurrent == nil {
+		t.Fatal("a concurrent writer could commit while enable prepared the definition", ran)
+	}
+}
+
+func TestCustomProgramPathIsPassedUnchanged(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "work")
+	for program, want := range map[string]string{
+		"tools/../check": dir + string(filepath.Separator) + "tools/../check",
+		"check":          "check",
+	} {
+		got, err := launchProgram(taskLaunch{program: program, dir: dir, custom: true})
+		if err != nil || got != want {
+			t.Errorf("%s: got %q, %v", program, got, err)
+		}
+	}
+	abs := filepath.Join(dir, "a") + string(filepath.Separator) + ".." + string(filepath.Separator) + "b"
+	if got, err := launchProgram(taskLaunch{program: abs, dir: dir, custom: true}); err != nil || got != abs {
+		t.Errorf("absolute path was rewritten: %q", got)
+	}
+	command := ExecutionCommand{Program: `\tools\check.exe`}
+	if runtime.GOOS == "windows" {
+		for _, program := range []string{`\tools\check.exe`, `/tools/check.exe`, `C:check.exe`} {
+			command.Program = program
+			if _, err := (App{}).PrepareCustomTask(t.Context(), "", "", "task", "", "", command); Classify(err).Code != "invalid-command" {
+				t.Errorf("%s was accepted: %v", program, err)
+			}
+		}
 	}
 }

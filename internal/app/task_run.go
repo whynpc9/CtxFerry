@@ -58,6 +58,12 @@ func (a App) PrepareCustomTask(ctx context.Context, project, cwd, name, checkout
 	if command.Program == "" || strings.ContainsRune(command.Program, 0) || len(command.Argv) > 4096 {
 		return TaskExecution{}, Fail("usage", "exec requires a program after --")
 	}
+	if !filepath.IsAbs(command.Program) && (filepath.VolumeName(command.Program) != "" ||
+		os.IsPathSeparator(command.Program[0]) || command.Program[0] == '/') {
+		// Windows drive-relative (C:tool) and drive-rooted (\tool) paths depend
+		// on per-process drive state; refuse them before any credential work.
+		return TaskExecution{}, Fail("invalid-command", "exec program must be absolute, relative to the Task's working directory, or a name on PATH")
+	}
 	for _, arg := range command.Argv {
 		if strings.ContainsRune(arg, 0) {
 			return TaskExecution{}, Fail("usage", "exec arguments must not contain NUL")
@@ -377,11 +383,13 @@ func runChild(ctx context.Context, launch taskLaunch, env []string, stdin io.Rea
 // custom exec program may also be absolute or use the platform separator.
 func launchProgram(launch taskLaunch) (string, error) {
 	if launch.custom {
+		// The caller's path is passed to the OS unchanged: lexical cleaning
+		// would resolve ".." before symlinks and could select another file.
 		switch {
 		case filepath.IsAbs(launch.program):
-			return filepath.Clean(launch.program), nil
+			return launch.program, nil
 		case strings.ContainsAny(launch.program, "/"+string(filepath.Separator)):
-			return filepath.Join(launch.dir, filepath.FromSlash(launch.program)), nil
+			return strings.TrimRight(launch.dir, `/\`) + string(filepath.Separator) + launch.program, nil
 		}
 		return launch.program, nil
 	}
