@@ -231,6 +231,9 @@ func planOperations(remote, local map[string][]byte, ops []operation) (map[strin
 		}
 	}
 	propagate()
+	if err := limitPublicationUnits(remote, local, ops, edges, blocked); err != nil {
+		return nil, nil, nil, nil, err
+	}
 	f := build()
 	selected := []operation{}
 	for _, o := range ops {
@@ -274,19 +277,47 @@ func requireNoConflict(ctx context.Context, c rowQuerier, id string) error {
 	return nil
 }
 func persistConflicts(ctx context.Context, c *sql.Conn, ops []operation, conflicts map[string]bool, blocked map[string]string, remote, local map[string][]byte, head string) error {
-	base, e := baselineFiles(ctx, c)
-	if e != nil {
-		return e
-	}
-	for _, files := range []map[string][]byte{base, remote, local} {
-		for p, b := range files {
-			if strings.HasPrefix(p, "objects/") {
-				if _, e = c.ExecContext(ctx, "INSERT OR IGNORE INTO sync_objects VALUES(?,?)", p, b); e != nil {
-					return e
+	for _, o := range ops {
+		if !conflicts[o.id] {
+			continue
+		}
+		for _, version := range []struct {
+			record []byte
+			files  map[string][]byte
+		}{{o.base, nil}, {o.proposed, local}, {remote[recordPath(o.id)], remote}} {
+			if len(version.record) == 0 {
+				continue
+			}
+			r, err := decodeRecord(version.record)
+			if err != nil {
+				return err
+			}
+			var path string
+			switch {
+			case r.Value.Body != nil:
+				path = "objects/" + r.Value.Body.SHA256
+			case r.Kind == artifactKind && r.Artifact.Omitted == "":
+				path = r.Artifact.objectPath()
+			default:
+				continue
+			}
+			data, ok := version.files[path]
+			if !ok {
+				err := c.QueryRowContext(ctx, "SELECT data FROM sync_baselines WHERE path=?", path).Scan(&data)
+				if err == sql.ErrNoRows {
+					// An unpublished artifact intent may only have a local object.
+					continue
 				}
+				if err != nil {
+					return err
+				}
+			}
+			if _, err := c.ExecContext(ctx, "INSERT OR IGNORE INTO sync_objects VALUES(?,?)", path, data); err != nil {
+				return err
 			}
 		}
 	}
+	var e error
 	if _, e = c.ExecContext(ctx, "DELETE FROM sync_blocked"); e != nil {
 		return e
 	}
@@ -511,6 +542,21 @@ func (a App) Resolve(ctx context.Context, id, token, take string, input []byte) 
 				return e
 			}
 		}
+		if r.Kind == artifactKind && take == "local" && !r.Deleted && r.Artifact.Omitted == "" {
+			p := r.Artifact
+			if _, exists := f[p.objectPath()]; !exists {
+				data, err := a.readLocalArtifactBytes(p)
+				switch {
+				case err != nil:
+					p.Omitted = "payload-unavailable"
+				case excludedArtifactBytes(data):
+					p.Omitted = "excluded-format"
+				default:
+					f[p.objectPath()] = data
+				}
+				r.Payload = p
+			}
+		}
 		if e = applyExplicit(ctx, c, f, r.publishedEnvelope, remote, epoch); e != nil {
 			return e
 		}
@@ -573,6 +619,9 @@ func applyExplicit(ctx context.Context, c *sql.Conn, f map[string][]byte, r publ
 		return e
 	}
 	f[recordPath(r.ID)] = b
+	if e := pruneLargeEvidence(f); e != nil {
+		return e
+	}
 	// Validate the replacement in its published context, never an unchecked identity/payload.
 	_, records, e := validateSnapshot(f, r.WorkspaceID, epoch)
 	if e != nil {
@@ -647,6 +696,13 @@ func (a App) ChangeDeletion(ctx context.Context, id, revision, commit string) (S
 		if e != nil {
 			return e
 		}
+		base, e := baselineFiles(ctx, c)
+		if e != nil {
+			return e
+		}
+		if e := addConfirmedArtifactObjects(f, base); e != nil {
+			return e
+		}
 		r, e := decodeRecord(f[recordPath(id)])
 		if e != nil || r.Kind != "context" {
 			return Fail("document-not-found", "shared document not found")
@@ -663,11 +719,8 @@ func (a App) ChangeDeletion(ctx context.Context, id, revision, commit string) (S
 			r.Payload = old.Payload
 			r.Policy = old.Policy
 			r.Deleted = false
-			for p, b := range historical {
-				if strings.HasPrefix(p, "objects/") {
-					f[p] = b
-				}
-			}
+			p := "objects/" + old.Value.Body.SHA256
+			f[p] = historical[p]
 		} else {
 			r.Deleted = true
 		}
@@ -676,10 +729,6 @@ func (a App) ChangeDeletion(ctx context.Context, id, revision, commit string) (S
 		r.OperationID = uuid.NewString()
 		r.Provenance.UpdatedAt = now()
 		if e = c.QueryRowContext(ctx, "SELECT id FROM device").Scan(&r.Provenance.DeviceID); e != nil {
-			return e
-		}
-		base, e := baselineFiles(ctx, c)
-		if e != nil {
 			return e
 		}
 		return applyExplicit(ctx, c, f, r.publishedEnvelope, base[recordPath(id)], epoch)
@@ -727,7 +776,7 @@ func installableRecords(ctx context.Context, c *sql.Conn, records map[string]rem
 // Baseline records whose projections were deferred still belong to the published
 // catalog. Their absence from a typed table is not a local deletion/policy change.
 func retainDeferredRecords(ctx context.Context, c *sql.Conn, files map[string][]byte) error {
-	base, e := baselineFiles(ctx, c)
+	base, e := baselineRecords(ctx, c)
 	if e != nil {
 		return e
 	}
@@ -747,7 +796,7 @@ func retainDeferredRecords(ctx context.Context, c *sql.Conn, files map[string][]
 			table = "repositories"
 		case "membership":
 			table = "memberships"
-		case "context", "resource", "task", secretBindingKind:
+		case "context", "resource", "task", secretBindingKind, artifactKind:
 			table = "records"
 		case "configuration":
 			table = "configurations"
@@ -763,7 +812,11 @@ func retainDeferredRecords(ctx context.Context, c *sql.Conn, files map[string][]
 			files[path] = b
 			if r.Value.Body != nil {
 				p := "objects/" + r.Value.Body.SHA256
-				files[p] = base[p]
+				var data []byte
+				if e := c.QueryRowContext(ctx, "SELECT data FROM sync_baselines WHERE path=?", p).Scan(&data); e != nil {
+					return e
+				}
+				files[p] = data
 			}
 		}
 	}

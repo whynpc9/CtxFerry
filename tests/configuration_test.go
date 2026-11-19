@@ -188,7 +188,7 @@ func TestConfigurationSyncAcrossDevices(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = db.Exec(`DROP TABLE resource_observations; DROP TABLE resource_routes; DROP TABLE profile_selections; DROP TABLE local_configurations; DROP TABLE configurations; PRAGMA user_version=6;`)
+	_, err = db.Exec(`DROP TABLE artifact_observations; ALTER TABLE sync_state DROP COLUMN history_bytes; DROP TABLE resource_observations; DROP TABLE resource_routes; DROP TABLE profile_selections; DROP TABLE local_configurations; DROP TABLE configurations; PRAGMA user_version=6;`)
 	db.Close()
 	if err != nil {
 		t.Fatal(err)

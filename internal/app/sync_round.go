@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -44,12 +46,13 @@ type objectManifest struct {
 }
 type remoteRecord struct {
 	publishedEnvelope
-	Data          json.RawMessage   `json:"-"`
-	Value         recordPayload     `json:"-"`
-	Config        configuration     `json:"-"`
-	Resource      ResourceSpec      `json:"-"`
-	Task          TaskSpec          `json:"-"`
-	SecretBinding SecretBindingSpec `json:"-"`
+	Data          json.RawMessage     `json:"-"`
+	Value         recordPayload       `json:"-"`
+	Config        configuration       `json:"-"`
+	Resource      ResourceSpec        `json:"-"`
+	Task          TaskSpec            `json:"-"`
+	SecretBinding SecretBindingSpec   `json:"-"`
+	Artifact      artifactPublication `json:"-"`
 }
 
 func strictJSON(b []byte, v any) error {
@@ -116,6 +119,8 @@ func decodeRecord(b []byte) (remoteRecord, error) {
 		return r, nil
 	case "resource":
 		err = strictJSON(raw, &r.Resource)
+	case artifactKind:
+		err = strictJSON(wire.Payload, &r.Artifact)
 	case secretBindingKind:
 		for field, keys := range map[string][]string{
 			"scope":      {"kind", "id"},
@@ -156,12 +161,14 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 	}
 	slugs := map[string]bool{}
 	summaries := map[string]bool{}
+	artifactObjects := map[string]bool{}
+	runs := map[string]remoteRecord{}
 	for path, b := range files {
 		if path == "workspace.json" || path == "README.md" {
 			continue
 		}
 		if strings.HasPrefix(path, "objects/") {
-			if len(path) != 72 || digest(b) != strings.TrimPrefix(path, "objects/") || len(b) > BodyLimit {
+			if len(path) != 72 || digest(b) != strings.TrimPrefix(path, "objects/") || len(b) > artifactExplicitLimit {
 				return invalid()
 			}
 			continue
@@ -249,7 +256,7 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 				return invalid()
 			}
 			b, ok := files["objects/"+v.Body.SHA256]
-			if !ok || v.Body.Type != "text/markdown" || v.Body.Size != len(b) || digest(b) != v.Body.SHA256 || !utf8.Valid(b) {
+			if !ok || len(b) > BodyLimit || v.Body.Type != "text/markdown" || v.Body.Size != len(b) || digest(b) != v.Body.SHA256 || !utf8.Valid(b) {
 				return invalid()
 			}
 			if v.ValidUntil != "" {
@@ -262,6 +269,23 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 					return invalid()
 				}
 				summaries[r.Scope.ID] = true
+			}
+		case artifactKind:
+			p := r.Artifact
+			if r.Scope.Kind != "project" || r.Policy != (Policy{"shared", "reference"}) ||
+				!validArtifactPublication(p) {
+				return invalid()
+			}
+			if prior, ok := runs[p.Run.ID]; ok && (prior.Scope != r.Scope || prior.Artifact.Run != p.Run) {
+				return invalid()
+			}
+			runs[p.Run.ID] = r
+			if p.Omitted == "" {
+				b, ok := files[p.objectPath()]
+				if !ok || int64(len(b)) != p.Size || excludedArtifactBytes(b) {
+					return invalid()
+				}
+				artifactObjects[p.objectPath()] = true
 			}
 		case secretBindingKind:
 			if r.Scope.Kind != "project" || r.Policy != (Policy{"shared", "reference"}) || validateSecretBinding(r.SecretBinding) != nil {
@@ -279,6 +303,20 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 			return w, nil, Fail("unsupported-schema", "unsupported catalog record kind")
 		}
 		records[r.ID] = r
+	}
+	var ordinaryBytes, artifactBytes int
+	for path, b := range files {
+		if artifactObjects[path] {
+			artifactBytes += len(b)
+			continue
+		}
+		if strings.HasPrefix(path, "objects/") && len(b) > BodyLimit {
+			return invalid()
+		}
+		ordinaryBytes += len(b)
+	}
+	if ordinaryBytes > 64*BodyLimit || artifactBytes > artifactStagingBudget {
+		return w, nil, Fail("size-limit", "catalog exceeds staging limit")
 	}
 	for _, r := range records {
 		if r.Deleted {
@@ -300,54 +338,96 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 	}
 	return w, records, nil
 }
+
+type snapshotBlob struct {
+	path string
+	oid  string
+	size int
+}
+
 func readSnapshot(ctx context.Context, dir, head string) (map[string][]byte, error) {
-	listing, err := syncGitRaw(ctx, dir, nil, "ls-tree", "-r", "-z", head)
+	listing, err := syncGitRaw(ctx, dir, nil, "ls-tree", "-r", "-l", "-z", head)
 	if err != nil {
 		return nil, err
 	}
 	if listing == "" || !strings.HasSuffix(listing, "\x00") {
 		return nil, Fail("incomplete", "partial Git tree listing")
 	}
-	files := map[string][]byte{}
-	total := 0
-	for _, line := range strings.Split(listing, "\x00") {
-		if line == "" {
-			continue
-		}
-		parts := strings.SplitN(line, "\t", 2)
-		if len(parts) != 2 {
-			return nil, Fail("incomplete", "invalid Git tree")
-		}
-		meta := strings.Fields(parts[0])
-		if len(meta) != 3 || meta[0] != "100644" || meta[1] != "blob" {
+	var blobs []snapshotBlob
+	var total int
+	for line := range strings.SplitSeq(strings.TrimSuffix(listing, "\x00"), "\x00") {
+		header, path, found := strings.Cut(line, "\t")
+		meta := strings.Fields(header)
+		if !found || len(meta) != 4 || meta[0] != "100644" || meta[1] != "blob" || !validCommitID(meta[2]) {
 			return nil, Fail("incomplete", "catalog requires regular files")
 		}
-		size, err := syncGit(ctx, dir, nil, "cat-file", "-s", meta[2])
-		if err != nil {
-			return nil, err
+		n, err := strconv.Atoi(meta[3])
+		if err != nil || n < 0 {
+			return nil, Fail("incomplete", "catalog blob size is missing or invalid")
 		}
-		var n int
-		if json.Unmarshal([]byte(size), &n) != nil || n < 0 || n > BodyLimit {
+		limit := BodyLimit
+		if strings.HasPrefix(path, "objects/") {
+			limit = artifactExplicitLimit
+		}
+		if n > limit {
 			return nil, Fail("size-limit", "catalog file exceeds limits")
 		}
 		total += n
-		if total > 64*BodyLimit {
+		if total > artifactStagingBudget+64*BodyLimit {
 			return nil, Fail("size-limit", "catalog exceeds staging limit")
 		}
-		data, err := syncGitRaw(ctx, dir, nil, "cat-file", "blob", meta[2])
+		blobs = append(blobs, snapshotBlob{path: path, oid: meta[2], size: n})
+	}
+	files := make(map[string][]byte, len(blobs))
+	// Git process startup is particularly expensive on Windows. Batch small
+	// blobs together while bounding the temporary cat-file output.
+	const batchLimit = 16 << 20
+	for len(blobs) > 0 {
+		var batchBytes, count int
+		var input strings.Builder
+		for _, blob := range blobs {
+			batchBytes += blob.size + 100 // Include the batch response header.
+			if batchBytes > batchLimit {
+				break
+			}
+			input.WriteString(blob.oid)
+			input.WriteByte('\n')
+			count++
+		}
+		out, err := syncGitRaw(ctx, dir, []byte(input.String()), "cat-file", "--batch")
 		if err != nil {
 			return nil, err
 		}
-		if len(data) != n {
-			return nil, Fail("incomplete", "partial Git blob")
+		for _, blob := range blobs[:count] {
+			header, data, found := strings.Cut(out, "\n")
+			if !found || header != blob.oid+" blob "+strconv.Itoa(blob.size) ||
+				len(data) <= blob.size || data[blob.size] != '\n' {
+				return nil, Fail("incomplete", "partial or invalid Git blob")
+			}
+			if _, exists := files[blob.path]; exists {
+				return nil, Fail("incomplete", "duplicate Git snapshot path")
+			}
+			files[blob.path] = []byte(data[:blob.size])
+			out = data[blob.size+1:]
 		}
-		files[parts[1]] = []byte(data)
+		if out != "" {
+			return nil, Fail("incomplete", "unexpected Git blob data")
+		}
+		blobs = blobs[count:]
 	}
 	return files, nil
 }
+func baselineRecords(ctx context.Context, c *sql.Conn) (map[string][]byte, error) {
+	return readBaseline(ctx, c, "SELECT path,data FROM sync_baselines WHERE path LIKE 'records/%'")
+}
+
 func baselineFiles(ctx context.Context, c *sql.Conn) (map[string][]byte, error) {
+	return readBaseline(ctx, c, "SELECT path,data FROM sync_baselines")
+}
+
+func readBaseline(ctx context.Context, c *sql.Conn, query string) (map[string][]byte, error) {
 	files := map[string][]byte{}
-	rows, err := c.QueryContext(ctx, "SELECT path,data FROM sync_baselines")
+	rows, err := c.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -380,11 +460,15 @@ func queueChanges(ctx context.Context, c *sql.Conn) error {
 	if pending != "" {
 		return Fail("push-pending", "reconcile the pending push before editing shared catalog")
 	}
-	base, err := baselineFiles(ctx, c)
+	base, err := baselineRecords(ctx, c)
 	if err != nil {
 		return err
 	}
-	if head != "" && len(base) == 0 {
+	var hasBaseline bool
+	if err := c.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM sync_baselines)").Scan(&hasBaseline); err != nil {
+		return err
+	}
+	if head != "" && !hasBaseline {
 		return Fail("sync-required", "run sync once to upgrade the published baseline before editing")
 	}
 	files, _, err := exportConn(ctx, c, conf)
@@ -457,11 +541,34 @@ func queueChanges(ctx context.Context, c *sql.Conn) error {
 	return nil
 }
 func saveBaseline(ctx context.Context, c *sql.Conn, files map[string][]byte, head string, clear bool) error {
-	if _, err := c.ExecContext(ctx, "DELETE FROM sync_baselines"); err != nil {
+	rows, err := c.QueryContext(ctx, "SELECT path FROM sync_baselines")
+	if err != nil {
 		return err
 	}
+	var removed []string
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			rows.Close()
+			return err
+		}
+		if _, exists := files[path]; !exists {
+			removed = append(removed, path)
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, path := range removed {
+		if _, err := c.ExecContext(ctx, "DELETE FROM sync_baselines WHERE path=?", path); err != nil {
+			return err
+		}
+	}
 	for path, b := range files {
-		if _, err := c.ExecContext(ctx, "INSERT INTO sync_baselines VALUES(?,?)", path, b); err != nil {
+		if _, err := c.ExecContext(ctx, `INSERT INTO sync_baselines VALUES(?,?) ON CONFLICT(path)
+			DO UPDATE SET data=excluded.data WHERE sync_baselines.data IS NOT excluded.data`, path, b); err != nil {
 			return err
 		}
 	}
@@ -470,7 +577,7 @@ func saveBaseline(ctx context.Context, c *sql.Conn, files map[string][]byte, hea
 			return err
 		}
 	}
-	_, err := c.ExecContext(ctx, "UPDATE sync_state SET confirmed_head=?,pending='',last_sync_at=?,outcome='synced' WHERE singleton=1", head, now())
+	_, err = c.ExecContext(ctx, "UPDATE sync_state SET confirmed_head=?,pending='',last_sync_at=?,outcome='synced' WHERE singleton=1", head, now())
 	return err
 }
 func installSnapshot(ctx context.Context, c *sql.Conn, files map[string][]byte, records map[string]remoteRecord) error {
@@ -479,7 +586,7 @@ func installSnapshot(ctx context.Context, c *sql.Conn, files map[string][]byte, 
 	if err != nil {
 		return err
 	}
-	for _, kind := range []string{"project", "repository", "membership", "context", "configuration", "resource", "task", secretBindingKind} {
+	for _, kind := range []string{"project", "repository", "membership", "context", "configuration", "resource", "task", secretBindingKind, artifactKind} {
 		for id, r := range records {
 			if r.Kind != kind {
 				continue
@@ -514,6 +621,8 @@ func installSnapshot(ctx context.Context, c *sql.Conn, files map[string][]byte, 
 				}
 			case "membership":
 				_, err = c.ExecContext(ctx, "INSERT INTO memberships VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id,repository_id=excluded.repository_id,subdirectory=excluded.subdirectory", id, r.Scope.ID, v.RepositoryID, v.Subdirectory)
+			case artifactKind:
+				err = installArtifactPublication(ctx, c, r)
 			case "configuration":
 				if r.Deleted {
 					_, err = c.ExecContext(ctx, "DELETE FROM configurations WHERE id=?", id)
@@ -647,6 +756,11 @@ func (a App) Join(ctx context.Context, remote, branch string, subscriptions []st
 			return r, Fail("project-not-found", "subscription project was not found")
 		}
 	}
+	history, err := measureSyncHistory(ctx, dir, head)
+	if err != nil {
+		return r, err
+	}
+	r.History = syncHistory(history)
 	err = store.Write(ctx, db, func(c *sql.Conn) error {
 		var n int
 		if err := c.QueryRowContext(ctx, "SELECT count(*) FROM workspace").Scan(&n); err != nil {
@@ -680,6 +794,9 @@ func (a App) Join(ctx context.Context, remote, branch string, subscriptions []st
 			}
 		}
 		if err := reindex(ctx, c); err != nil {
+			return err
+		}
+		if err := saveSyncHistory(ctx, c, history); err != nil {
 			return err
 		}
 		return saveBaseline(ctx, c, files, head, true)
@@ -748,7 +865,8 @@ func (a App) syncRound(ctx context.Context, db *sql.DB) (result SyncResult, err 
 	}
 	result.Config = &conf
 	var epoch, confirmed, pending string
-	if err = db.QueryRowContext(ctx, "SELECT epoch,confirmed_head,pending FROM sync_state").Scan(&epoch, &confirmed, &pending); err != nil {
+	var previousHistory sql.NullInt64
+	if err = db.QueryRowContext(ctx, "SELECT epoch,confirmed_head,pending,history_bytes FROM sync_state").Scan(&epoch, &confirmed, &pending, &previousHistory); err != nil {
 		return result, err
 	}
 
@@ -796,6 +914,16 @@ func (a App) syncRound(ctx context.Context, db *sql.DB) (result SyncResult, err 
 			return result, Fail("incomplete", "workspace restore source is outside published history")
 		}
 	}
+	history := previousHistory.Int64
+	if !previousHistory.Valid || confirmed != head {
+		history, err = measureSyncHistory(ctx, dir, head)
+		if err != nil {
+			return result, err
+		}
+	} else {
+		history = syncHistorySize(history)
+	}
+	result.History = syncHistory(history)
 	result.Epoch = workspace.Epoch
 	refreshOutbox := true
 	if pending != "" {
@@ -812,12 +940,23 @@ func (a App) syncRound(ctx context.Context, db *sql.DB) (result SyncResult, err 
 			if e != nil {
 				return result, e
 			}
-			if _, _, e = validateSnapshot(candidateFiles, conf.WorkspaceID, epoch); e != nil {
+			_, candidateRecords, e := validateSnapshot(candidateFiles, conf.WorkspaceID, epoch)
+			if e != nil {
 				return result, e
 			}
 			err = store.Write(ctx, db, func(c *sql.Conn) error {
 				if e := saveBaseline(ctx, c, candidateFiles, attempt.Candidate, false); e != nil {
 					return e
+				}
+				if _, e := c.ExecContext(ctx, "UPDATE sync_state SET history_bytes=NULL"); e != nil {
+					return e
+				}
+				for _, r := range candidateRecords {
+					if r.Kind == artifactKind && slices.Contains(attempt.OperationIDs, r.OperationID) {
+						if e := installArtifactPublication(ctx, c, r); e != nil {
+							return e
+						}
+					}
 				}
 				for _, id := range attempt.OperationIDs {
 					if _, e := c.ExecContext(ctx, "DELETE FROM sync_outbox WHERE operation_id=?", id); e != nil {
@@ -844,11 +983,11 @@ func (a App) syncRound(ctx context.Context, db *sql.DB) (result SyncResult, err 
 	if refreshOutbox {
 		// Bootstrap existing schema-4 publishers from their actual confirmed Git snapshot.
 		err = store.Write(ctx, db, func(c *sql.Conn) error {
-			base, e := baselineFiles(ctx, c)
-			if e != nil {
+			var hasBaseline bool
+			if e := c.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM sync_baselines)").Scan(&hasBaseline); e != nil {
 				return e
 			}
-			if len(base) == 0 {
+			if !hasBaseline {
 				files, e := readSnapshot(ctx, dir, confirmed)
 				if e != nil {
 					return e
@@ -892,13 +1031,16 @@ func (a App) syncRound(ctx context.Context, db *sql.DB) (result SyncResult, err 
 	if err != nil {
 		return result, err
 	}
+	if err := a.stageArtifactPublications(merged, remote, selected, history); err != nil {
+		return result, err
+	}
 	_, mergedRecords, err := validateSnapshot(merged, conf.WorkspaceID, workspace.Epoch)
 	if err != nil {
 		return result, err
 	}
 	// Missing records require a tombstone protocol, and identities keep their kind.
 	err = store.Write(ctx, db, func(c *sql.Conn) error {
-		base, e := baselineFiles(ctx, c)
+		base, e := baselineRecords(ctx, c)
 		if e != nil {
 			return e
 		}
@@ -914,8 +1056,21 @@ func (a App) syncRound(ctx context.Context, db *sql.DB) (result SyncResult, err 
 			if !ok || current.Kind != old.Kind || current.Scope != old.Scope {
 				return Fail("invalid-catalog", "published records cannot disappear or change kind or scope")
 			}
+			if old.Kind == artifactKind && !sameArtifactIdentity(old.Artifact, current.Artifact) {
+				return Fail("invalid-catalog", "published artifact identity cannot change")
+			}
 		}
 		for id, r := range records {
+			if r.Kind == artifactKind {
+				var localOnly bool
+				if e := c.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM artifacts WHERE id=?)
+					AND NOT EXISTS(SELECT 1 FROM records WHERE id=? AND kind=?)`, id, id, artifactKind).Scan(&localOnly); e != nil {
+					return e
+				}
+				if localOnly {
+					return Fail("record-collision", "remote artifact collides with a local-only registration")
+				}
+			}
 			var kind, projectID, storage string
 			e := c.QueryRowContext(ctx, `SELECT kind,project_id,json_extract(metadata,'$.policy.storage') FROM records WHERE id=?`, id).Scan(&kind, &projectID, &storage)
 			if e == sql.ErrNoRows {
@@ -955,16 +1110,15 @@ func (a App) syncRound(ctx context.Context, db *sql.DB) (result SyncResult, err 
 				return err
 			}
 		}
+		if err := saveSyncHistory(ctx, c, history); err != nil {
+			return err
+		}
 		return saveBaseline(ctx, c, remote, head, false)
 	})
 	if err != nil {
 		return result, err
 	}
 	if len(selected) == 0 {
-		err = store.Write(ctx, db, func(c *sql.Conn) error { return saveBaseline(ctx, c, remote, head, false) })
-		if err != nil {
-			return result, err
-		}
 		result.Head = head
 		result.State = "synced"
 		if len(conflicts) > 0 {
@@ -974,6 +1128,10 @@ func (a App) syncRound(ctx context.Context, db *sql.DB) (result SyncResult, err 
 		return result, err
 	}
 	candidate, err := candidateCommit(ctx, dir, merged, head)
+	if err != nil {
+		return result, err
+	}
+	candidateHistory, err := measureSyncHistory(ctx, dir, candidate)
 	if err != nil {
 		return result, err
 	}
@@ -1008,6 +1166,9 @@ func (a App) syncRound(ctx context.Context, db *sql.DB) (result SyncResult, err 
 		if err := installSnapshot(ctx, c, merged, mergedRecords); err != nil {
 			return err
 		}
+		if err := saveSyncHistory(ctx, c, candidateHistory); err != nil {
+			return err
+		}
 		if err := saveBaseline(ctx, c, merged, candidate, false); err != nil {
 			return err
 		}
@@ -1022,8 +1183,16 @@ func (a App) syncRound(ctx context.Context, db *sql.DB) (result SyncResult, err 
 		}
 		return nil
 	})
+	result.Pending = len(ops) - len(selected)
 	result.Head = candidate
+	result.History = syncHistory(candidateHistory)
 	result.State = "synced"
+	for _, reason := range blocked {
+		if reason == publicationBudgetReason {
+			result.State = "pending"
+			break
+		}
+	}
 	if len(conflicts) > 0 {
 		result.State = "conflict"
 	}
