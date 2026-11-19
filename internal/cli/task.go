@@ -31,6 +31,7 @@ func taskCommand(ctx context.Context, invoke func(func(app.App) (any, error)) fu
 	add.Flags().StringArrayVar(&spec.Argv, "arg", []string{}, "One literal argument (repeatable, use --arg=VALUE for leading dashes)")
 	add.Flags().StringArrayVar(&spec.Platforms, "platform", []string{}, "Supported OS or OS/architecture (repeatable)")
 	add.Flags().StringVar(&storage, "storage", "", "Required storage policy (local-only or shared)")
+	add.Flags().BoolVar(&spec.AllowCustomCommand, "allow-custom-command", false, "Allow exec to run caller-chosen commands with this Task's credentials")
 	add.RunE = func(cmd *cobra.Command, args []string) error {
 		return invoke(func(a app.App) (any, error) {
 			cwd, err := os.Getwd()
@@ -67,8 +68,150 @@ func taskCommand(ctx context.Context, invoke func(func(app.App) (any, error)) fu
 			return a.InspectTask(ctx, *project, cwd, args[0])
 		})(cmd, args)
 	}
-	group.AddCommand(add, list, inspect)
+	group.AddCommand(add, list, inspect, taskUpdateCommand(ctx, invoke, project), trustCommand(ctx, invoke, project))
 	return group
+}
+
+func taskUpdateCommand(ctx context.Context, invoke func(func(app.App) (any, error)) func(*cobra.Command, []string) error, project *string) *cobra.Command {
+	var change app.TaskChange
+	var purpose, membership, workingDirectory, program string
+	var inputs, resources, credentials, argv, platforms []string
+	var allowCustom bool
+	cmd := &cobra.Command{Use: "update <name-or-uuid>", Short: "Replace fields of a Task at its current revision", Long: `Replace the given fields of a Task. Fields not given keep their values.
+
+A change to the program, arguments, membership, working directory, credential
+requirements or custom-command permission is an execution change: every device,
+including this one, must enable the new definition with task trust preview and
+task trust enable before running it with credentials. A change to the purpose
+or inputs alone keeps the enabled state.`, Args: cobra.ExactArgs(1)}
+	cmd.Flags().StringVar(&change.IfRevision, "if-revision", "", "Required current Task revision")
+	cmd.Flags().StringVar(&purpose, "purpose", "", "Task purpose")
+	cmd.Flags().StringArrayVar(&inputs, "input", nil, "Describe a Task input (repeatable, replaces all inputs)")
+	cmd.Flags().StringArrayVar(&resources, "resource-slot", nil, "JSON Resource slot (repeatable, replaces all slots)")
+	cmd.Flags().StringArrayVar(&credentials, "credential-requirement", nil, "JSON credential requirement (repeatable, replaces all requirements)")
+	cmd.Flags().StringVar(&membership, "membership", "", "Repository membership UUID")
+	cmd.Flags().StringVar(&workingDirectory, "working-directory", "", "Directory relative to the membership root")
+	cmd.Flags().StringVar(&program, "program", "", "Executable name or slash-separated path relative to the working directory")
+	cmd.Flags().StringArrayVar(&argv, "arg", nil, "One literal argument (repeatable, replaces all arguments)")
+	cmd.Flags().Bool("no-args", false, "Replace the arguments with an empty array")
+	cmd.Flags().StringArrayVar(&platforms, "platform", nil, "Supported OS or OS/architecture (repeatable, replaces all)")
+	cmd.Flags().BoolVar(&allowCustom, "allow-custom-command", false, "Allow or forbid exec with caller-chosen commands")
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		return invoke(func(a app.App) (any, error) {
+			flags := cmd.Flags()
+			if flags.Changed("purpose") {
+				change.Purpose = &purpose
+			}
+			if flags.Changed("input") {
+				change.Inputs = &inputs
+			}
+			if flags.Changed("membership") {
+				change.MembershipID = &membership
+			}
+			if flags.Changed("working-directory") {
+				change.WorkingDirectory = &workingDirectory
+			}
+			if flags.Changed("program") {
+				change.Program = &program
+			}
+			noArgs, _ := flags.GetBool("no-args")
+			if noArgs && flags.Changed("arg") {
+				return nil, app.Fail("usage", "--arg and --no-args cannot be combined")
+			}
+			if noArgs {
+				argv = []string{}
+			}
+			if noArgs || flags.Changed("arg") {
+				change.Argv = &argv
+			}
+			if flags.Changed("platform") {
+				change.Platforms = &platforms
+			}
+			if flags.Changed("allow-custom-command") {
+				change.AllowCustomCommand = &allowCustom
+			}
+			if flags.Changed("resource-slot") {
+				slots, err := slotFlags[app.TaskResourceSlot](resources, "--resource-slot")
+				if err != nil {
+					return nil, err
+				}
+				change.ResourceSlots = &slots
+			}
+			if flags.Changed("credential-requirement") {
+				reqs, err := slotFlags[app.CredentialRequirement](credentials, "--credential-requirement")
+				if err != nil {
+					return nil, err
+				}
+				change.CredentialRequirements = &reqs
+			}
+			cwd, err := os.Getwd()
+			if err != nil {
+				return nil, err
+			}
+			return a.UpdateTask(ctx, *project, cwd, args[0], change)
+		})(cmd, args)
+	}
+	return cmd
+}
+
+const trustHelp = `Review and enable a Task's credentialed execution definition on this device.
+
+The definition covers the program and arguments, whether exec may run custom
+commands, the Repository membership, the resolved local checkout and working
+directory, and the selected Profile's Resource and SecretBinding mapping with
+each binding's provider profile, locator and Resource purpose. A synchronized
+change to any of these blocks credentialed run and exec here with
+execution-definition-changed until it is previewed and enabled again. Editing
+descriptive text does not. Trust records stay on this device and are never
+synchronized.`
+
+func trustCommand(ctx context.Context, invoke func(func(app.App) (any, error)) func(*cobra.Command, []string) error, project *string) *cobra.Command {
+	group := &cobra.Command{Use: "trust", Short: "Review and enable credentialed execution on this device", Long: trustHelp}
+	for _, action := range []string{"preview", "enable"} {
+		var profiles, checkouts []string
+		var preview string
+		cmd := &cobra.Command{Use: action + " <task>", Args: cobra.ExactArgs(1), Long: trustHelp}
+		cmd.Short = "Show the execution definition and what changed since it was enabled"
+		if action == "enable" {
+			cmd.Short = "Enable the previewed execution definition on this device"
+			cmd.Flags().StringVar(&preview, "preview", "", "Preview token from task trust preview")
+		}
+		cmd.Flags().StringArrayVar(&profiles, "profile", nil, "Explicit Profile, as passed to run or exec")
+		cmd.Flags().StringArrayVar(&checkouts, "checkout", nil, "Explicit Git checkout root, as passed to run or exec")
+		cmd.RunE = func(cmd *cobra.Command, args []string) error {
+			return invoke(func(a app.App) (any, error) {
+				profile, checkout, err := executionFlags(profiles, checkouts)
+				if err != nil {
+					return nil, err
+				}
+				cwd, err := os.Getwd()
+				if err != nil {
+					return nil, err
+				}
+				if action == "enable" {
+					return a.EnableExecution(ctx, *project, cwd, args[0], checkout, profile, preview)
+				}
+				return a.PreviewExecution(ctx, *project, cwd, args[0], checkout, profile)
+			})(cmd, args)
+		}
+		group.AddCommand(cmd)
+	}
+	return group
+}
+
+func executionFlags(profiles, checkouts []string) (string, string, error) {
+	profile, err := explicitProfile(profiles)
+	if err != nil {
+		return "", "", err
+	}
+	checkout := ""
+	if len(checkouts) > 0 {
+		if len(checkouts) != 1 || checkouts[0] == "" {
+			return "", "", app.Fail("usage", "specify one nonempty --checkout root")
+		}
+		checkout = checkouts[0]
+	}
+	return profile, checkout, nil
 }
 
 func slotFlags[T any](values []string, flag string) ([]T, error) {
@@ -93,6 +236,11 @@ child receives a minimal base environment and the Task's delivered variables.
 Git and provider authentication material is not passed to it. Delivered values
 are replaced with [REDACTED] in the output CtxFerry forwards.
 
+Credentialed execution requires this device to have enabled the Task's current
+execution definition (see ctxferry task trust). Once enabled, runs do not ask
+again until a synchronized change alters what executes or which credential it
+receives.
+
 The target program can still read, print, encode or exfiltrate anything it is
 given. A Task is not OS isolation: run credentialed Tasks only with programs
 you trust.`
@@ -112,22 +260,66 @@ func runCommand(ctx context.Context, invoke func(func(app.App) (any, error)) fun
 	cmd.Flags().StringArrayVar(&checkouts, "checkout", nil, "Explicit Git checkout root for the Task's membership")
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		return invoke(func(a app.App) (any, error) {
-			profile, err := explicitProfile(profiles)
+			profile, checkout, err := executionFlags(profiles, checkouts)
 			if err != nil {
 				return nil, err
-			}
-			checkout := ""
-			if len(checkouts) > 0 {
-				if len(checkouts) != 1 || checkouts[0] == "" {
-					return nil, app.Fail("usage", "specify one nonempty --checkout root")
-				}
-				checkout = checkouts[0]
 			}
 			cwd, err := os.Getwd()
 			if err != nil {
 				return nil, err
 			}
 			plan, err := a.PrepareTask(ctx, *project, cwd, args[0], checkout, profile)
+			if err != nil {
+				return nil, err
+			}
+			code, err := executeTask(ctx, a, cmd, *format, plan)
+			if err == nil {
+				onExit(code)
+			}
+			return nil, err
+		})(cmd, args)
+	}
+	return cmd
+}
+
+const execHelp = `Run a caller-chosen command with a Task's credentials.
+
+exec is available only for a Task registered with --allow-custom-command. It
+resolves the same checkout, working directory, Profile and credential
+requirements as run, requires the same device trust decision, and follows the
+same output, redaction and exit-code contract. The program is an absolute path,
+a path relative to the Task's working directory, or a name on PATH; arguments
+are passed as an array, never through a shell.
+
+The command can read, print, encode or exfiltrate every delivered value. A Task
+is not OS isolation: enable custom commands only for Tasks whose credentials
+you would hand to any program you run.`
+
+const execUsage = "use ctxferry exec --task <task> [--checkout <root>] [--profile <name>] [--format text|jsonl] -- <program> [args...]"
+
+func execCommand(ctx context.Context, invoke func(func(app.App) (any, error)) func(*cobra.Command, []string) error, project, format *string, onExit func(int)) *cobra.Command {
+	var profiles, checkouts, tasks []string
+	cmd := &cobra.Command{Use: "exec --task <task> -- <program> [args...]", Short: "Run a custom command with a Task's credentials where the Task allows it", Long: execHelp,
+		Args: func(cmd *cobra.Command, args []string) error {
+			if *format != "text" && *format != "jsonl" || cmd.ArgsLenAtDash() != 0 || len(args) == 0 || len(tasks) != 1 || tasks[0] == "" {
+				return app.Fail("usage", execUsage)
+			}
+			return nil
+		}}
+	cmd.Flags().StringArrayVar(&tasks, "task", nil, "Task whose credentials and working directory the command uses")
+	cmd.Flags().StringArrayVar(&profiles, "profile", nil, "Explicit Profile for this invocation")
+	cmd.Flags().StringArrayVar(&checkouts, "checkout", nil, "Explicit Git checkout root for the Task's membership")
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		return invoke(func(a app.App) (any, error) {
+			profile, checkout, err := executionFlags(profiles, checkouts)
+			if err != nil {
+				return nil, err
+			}
+			cwd, err := os.Getwd()
+			if err != nil {
+				return nil, err
+			}
+			plan, err := a.PrepareCustomTask(ctx, *project, cwd, tasks[0], checkout, profile, app.ExecutionCommand{Program: args[0], Argv: args[1:]})
 			if err != nil {
 				return nil, err
 			}

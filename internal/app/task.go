@@ -26,6 +26,9 @@ type TaskSpec struct {
 	Program                string                  `json:"program"`
 	Argv                   []string                `json:"argv"`
 	Platforms              []string                `json:"platforms"`
+	// AllowCustomCommand opts the Task into exec: a caller-chosen command
+	// receives the Task's credentials in its working directory.
+	AllowCustomCommand bool `json:"allowCustomCommand,omitempty"`
 }
 
 type TaskResourceSlot struct {
@@ -281,4 +284,118 @@ func taskMembership(ctx context.Context, q rowQuerier, projectID, id string) (re
 		err = Fail("invalid-reference", "Task must reference a live Repository membership in its Project")
 	}
 	return
+}
+
+// TaskChange replaces the given execution and descriptive fields of a Task.
+// Nil fields keep their current values.
+type TaskChange struct {
+	IfRevision             string
+	Purpose                *string
+	Inputs                 *[]string
+	ResourceSlots          *[]TaskResourceSlot
+	CredentialRequirements *[]CredentialRequirement
+	MembershipID           *string
+	WorkingDirectory       *string
+	Program                *string
+	Argv                   *[]string
+	Platforms              *[]string
+	AllowCustomCommand     *bool
+}
+
+func (c TaskChange) apply(spec TaskSpec) TaskSpec {
+	set := func(dst *[]string, src *[]string) {
+		if src != nil {
+			*dst = append([]string{}, (*src)...)
+		}
+	}
+	if c.Purpose != nil {
+		spec.Purpose = *c.Purpose
+	}
+	set(&spec.Inputs, c.Inputs)
+	set(&spec.Argv, c.Argv)
+	set(&spec.Platforms, c.Platforms)
+	if c.ResourceSlots != nil {
+		spec.ResourceSlots = append([]TaskResourceSlot{}, (*c.ResourceSlots)...)
+	}
+	if c.CredentialRequirements != nil {
+		spec.CredentialRequirements = append([]CredentialRequirement{}, (*c.CredentialRequirements)...)
+	}
+	if c.MembershipID != nil {
+		spec.MembershipID = *c.MembershipID
+	}
+	if c.WorkingDirectory != nil {
+		spec.WorkingDirectory = *c.WorkingDirectory
+	}
+	if c.Program != nil {
+		spec.Program = *c.Program
+	}
+	if c.AllowCustomCommand != nil {
+		spec.AllowCustomCommand = *c.AllowCustomCommand
+	}
+	return spec
+}
+
+// UpdateTask writes a new revision of a Task. It requires the current
+// revision, so a concurrent local or synced change is never overwritten.
+// Changes to execution fields take effect with credentials on each device
+// only after that device enables the new execution definition.
+func (a App) UpdateTask(ctx context.Context, selector, cwd, name string, change TaskChange) (Task, error) {
+	var out Task
+	if !validUUID(change.IfRevision) {
+		return out, Fail("usage", "task update requires the current --if-revision from task inspect")
+	}
+	release, err := a.syncOwner(ctx)
+	if err != nil {
+		return out, err
+	}
+	defer release()
+	db, project, err := a.openSubscribedProject(ctx, selector, cwd)
+	if err != nil {
+		return out, err
+	}
+	defer db.Close()
+	if err := a.prepareBaseline(ctx, db); err != nil {
+		return out, err
+	}
+	err = store.Write(ctx, db, func(c *sql.Conn) error {
+		old, err := loadTask(ctx, c, project.ID, name)
+		if err != nil {
+			return err
+		}
+		if err := requireNoConflict(ctx, c, old.ID); err != nil {
+			return err
+		}
+		if old.Revision != change.IfRevision {
+			return Fail("revision-conflict", "Task changed; read its current revision before updating")
+		}
+		spec := change.apply(old.TaskSpec)
+		if err := validateTask(spec); err != nil {
+			return err
+		}
+		if _, _, err := taskMembership(ctx, c, project.ID, spec.MembershipID); err != nil {
+			return err
+		}
+		env := publishedEnvelope{SchemaVersion: 1, ID: old.ID, Kind: "task", Scope: old.Scope, Policy: old.Policy,
+			Revision: uuid.NewString(), PreviousRevision: old.Revision, OperationID: uuid.NewString(), Payload: spec}
+		env.Provenance.UpdatedAt = now()
+		if err := c.QueryRowContext(ctx, "SELECT workspace.id, device.id FROM workspace CROSS JOIN device").Scan(&env.WorkspaceID, &env.Provenance.DeviceID); err != nil {
+			return err
+		}
+		raw, err := json.Marshal(env)
+		if err != nil {
+			return err
+		}
+		if len(raw)+1 > MetadataLimit {
+			return Fail("size-limit", "Task record envelope exceeds 256 KiB")
+		}
+		if _, err = c.ExecContext(ctx, "UPDATE records SET metadata=? WHERE id=? AND kind='task'", string(raw), old.ID); err != nil {
+			return err
+		}
+		out = taskFromRecord(remoteRecord{publishedEnvelope: env, Task: spec})
+		if old.Policy.Storage == "shared" {
+			return queueChanges(ctx, c)
+		}
+		return nil
+	})
+	return out, err
 }

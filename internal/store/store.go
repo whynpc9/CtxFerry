@@ -59,7 +59,7 @@ func Open(ctx context.Context, root string, create bool) (*sql.DB, error) {
 	if err = db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		return fail(err)
 	}
-	if version > 8 {
+	if version > 9 {
 		return fail(ErrUnsupportedSchema)
 	}
 	if version == 0 && !create {
@@ -72,13 +72,13 @@ func Open(ctx context.Context, root string, create bool) (*sql.DB, error) {
 	if mode != "wal" {
 		return fail(fmt.Errorf("WAL unavailable: %s", mode))
 	}
-	if version < 8 {
+	if version < 9 {
 		err = Write(ctx, db, func(c *sql.Conn) error {
 			var v int
 			if err := c.QueryRowContext(ctx, "PRAGMA user_version").Scan(&v); err != nil {
 				return err
 			}
-			if v > 8 {
+			if v > 9 {
 				return ErrUnsupportedSchema
 			}
 			if v == 0 {
@@ -124,7 +124,13 @@ func Open(ctx context.Context, root string, create bool) (*sql.DB, error) {
 				v = 7
 			}
 			if v == 7 {
-				_, err := c.ExecContext(ctx, resourceSchema)
+				if _, err := c.ExecContext(ctx, resourceSchema); err != nil {
+					return err
+				}
+				v = 8
+			}
+			if v == 8 {
+				_, err := c.ExecContext(ctx, trustSchema)
 				return err
 			}
 			return nil
@@ -230,3 +236,17 @@ CREATE TABLE resource_observations (
 );
 CREATE INDEX resource_observation_history ON resource_observations(resource_id,device_id,seq);
 PRAGMA user_version=8;`
+
+// Execution trust is device-local: it is never exported to the sync repository.
+const trustSchema = `
+CREATE TABLE IF NOT EXISTS execution_trust (
+  device_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  profile_id TEXT NOT NULL,
+  membership_root TEXT NOT NULL,
+  digest TEXT NOT NULL,
+  definition TEXT NOT NULL,
+  enabled_at TEXT NOT NULL,
+  PRIMARY KEY(device_id,task_id,profile_id,membership_root)
+);
+PRAGMA user_version=9;`

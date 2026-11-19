@@ -150,8 +150,8 @@ otherwise the run stops with `incompatible`. A missing mapping reports
 similar bindings are never substituted.
 
 Credentialed execution also requires this device to have enabled the Task's
-execution definition. Until that review is available, credentialed runs stop
-with `execution-definition-changed` before any provider call. The run opens
+execution definition (see Execution trust below). Until then, credentialed runs
+stop with `execution-definition-changed` before any provider call. The run opens
 no connection itself: when this device's latest `resource check` of the
 selected Resource's direct route found it unreachable, or the device has no
 usable route, the run stops with `resource-unreachable`. A local Resource with
@@ -171,3 +171,56 @@ values in forwarded stdout and stderr are replaced with `[REDACTED]`.
 
 The target program can still read, encode, print or exfiltrate anything it is
 given. Output replacement is not a guarantee and a Task is not OS isolation.
+
+### Execution trust
+
+Each device decides for itself which credentialed execution definitions it
+runs. The reviewed definition covers the program and arguments, whether `exec`
+may run custom commands, the Repository membership, the resolved local
+checkout and working directory, and the selected Profile's Resource and
+SecretBinding mapping with each binding's provider profile, locator and
+Resource purpose. Preview it, then enable exactly what was previewed:
+
+```sh
+ctxferry task trust preview integration-check --profile development --format json
+ctxferry task trust enable integration-check --profile development --preview <preview>
+```
+
+Pass the same `--profile` and `--checkout` as `run`. A preview reports `state`
+(`not-enabled`, `enabled`, `execution-definition-changed` or `not-required` for
+a Task without credentials), the current definition, and for a changed one the
+enabled definition and the changed fields. `enable` refuses with
+`preview-stale` when the definition no longer matches the preview, for
+example after a sync landed in between; preview again. Once enabled, runs do
+not ask again. A synchronized or local change to any reviewed field stops
+credentialed `run` and `exec` with `execution-definition-changed`, whose
+details name the changed fields, until this device enables the new version.
+Editing a Task's purpose or inputs, aliases or other descriptive text keeps the
+enabled state. Trust records stay in this device's local store and are never
+synchronized; every device, including the one that made a change, reviews it.
+
+Change a Task at its current revision with `task update`; only the given fields
+are replaced:
+
+```sh
+ctxferry task update integration-check --if-revision <revision> --arg=check --arg=--verbose
+```
+
+### Custom commands
+
+A Task registered or updated with `--allow-custom-command` lets `exec` run a
+caller-chosen command with that Task's credentials:
+
+```sh
+ctxferry exec --task integration-check --profile development --format jsonl -- go test ./...
+```
+
+`exec` resolves the same checkout, working directory, Profile and credential
+requirements as `run`, needs the same enabled definition, and follows the same
+output, redaction and exit-code contract. The program is an absolute path, a
+path relative to the Task's working directory, or a name on `PATH`; arguments
+are passed as an array, never through a shell. Without the opt-in it stops with
+`custom-command-not-allowed`. Enabling a definition that allows custom commands
+approves any command run through `exec` for it, and the preview says so with
+`customCommands: true`. Turning the opt-in on is itself an execution change.
+The command can read and exfiltrate the delivered values.

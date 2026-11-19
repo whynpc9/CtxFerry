@@ -30,6 +30,9 @@ type taskLaunch struct {
 	program string
 	argv    []string
 	dir     string
+	// custom launches a caller-chosen program: an absolute path, a path
+	// relative to the working directory, or a name looked up on PATH.
+	custom bool
 }
 
 // Definition returns a copy of the credentialed execution definition.
@@ -37,10 +40,37 @@ func (p TaskExecution) Definition() ExecutionDefinition {
 	d := p.definition
 	d.Argv = slices.Clone(d.Argv)
 	d.Credentials = slices.Clone(d.Credentials)
+	if d.CustomCommand != nil {
+		d.CustomCommand = &ExecutionCommand{Program: d.CustomCommand.Program, Argv: slices.Clone(d.CustomCommand.Argv)}
+	}
 	return d
 }
 
+// PrepareTask resolves the Task's registered command for run.
 func (a App) PrepareTask(ctx context.Context, project, cwd, name, checkout, profile string) (TaskExecution, error) {
+	return a.prepareTask(ctx, project, cwd, name, checkout, profile, nil)
+}
+
+// PrepareCustomTask resolves a caller-chosen command for exec. It resolves the
+// same Task, checkout, Profile and credential requirements as run, and is
+// refused unless the Task explicitly allows custom commands.
+func (a App) PrepareCustomTask(ctx context.Context, project, cwd, name, checkout, profile string, command ExecutionCommand) (TaskExecution, error) {
+	if command.Program == "" || strings.ContainsRune(command.Program, 0) || len(command.Argv) > 4096 {
+		return TaskExecution{}, Fail("usage", "exec requires a program after --")
+	}
+	for _, arg := range command.Argv {
+		if strings.ContainsRune(arg, 0) {
+			return TaskExecution{}, Fail("usage", "exec arguments must not contain NUL")
+		}
+	}
+	command.Argv = slices.Clone(command.Argv)
+	if command.Argv == nil {
+		command.Argv = []string{}
+	}
+	return a.prepareTask(ctx, project, cwd, name, checkout, profile, &command)
+}
+
+func (a App) prepareTask(ctx context.Context, project, cwd, name, checkout, profile string, custom *ExecutionCommand) (TaskExecution, error) {
 	var out TaskExecution
 	db, err := store.Open(ctx, a.DataDir, false)
 	if err != nil {
@@ -62,6 +92,10 @@ func (a App) PrepareTask(ctx context.Context, project, cwd, name, checkout, prof
 	task, err := loadTask(ctx, tx, r.Project.ID, name)
 	if err != nil {
 		return out, err
+	}
+	if custom != nil && !task.AllowCustomCommand {
+		return out, &Error{Code: "custom-command-not-allowed", Message: "Task " + task.Name +
+			" does not allow custom commands; use ctxferry run " + task.Name, Details: map[string]string{"taskId": task.ID, "task": task.Name}}
 	}
 	if len(task.Platforms) != 0 && !slices.Contains(task.Platforms, runtime.GOOS) &&
 		!slices.Contains(task.Platforms, runtime.GOOS+"/"+runtime.GOARCH) {
@@ -147,14 +181,23 @@ func (a App) PrepareTask(ctx context.Context, project, cwd, name, checkout, prof
 			return out, err
 		}
 		out.definition = ExecutionDefinition{TaskID: task.ID, TaskRevision: task.Revision, MembershipID: task.MembershipID,
-			Program: task.Program, Argv: slices.Clone(task.Argv), MembershipRoot: root, WorkingDirectory: dir,
-			ProfileID: selected.ID, Profile: selected.Name, Credentials: make([]ExecutionCredential, 0, len(out.credentials))}
+			RepositoryID: repository, Program: task.Program, Argv: slices.Clone(task.Argv), AllowCustomCommand: task.AllowCustomCommand,
+			MembershipRoot: root, WorkingDirectory: dir, ProfileID: selected.ID, Profile: selected.Name,
+			Credentials: make([]ExecutionCredential, 0, len(out.credentials))}
 		for _, c := range out.credentials {
 			out.definition.Credentials = append(out.definition.Credentials, c.ExecutionCredential)
 		}
 	}
 	out.Task, out.Dir = task, dir
+	// The trust decision and the launch read the same snapshot, so the command
+	// that was authorized is the command that runs.
 	out.launch = &taskLaunch{program: task.Program, argv: slices.Clone(task.Argv), dir: dir}
+	if custom != nil {
+		out.launch = &taskLaunch{program: custom.Program, argv: slices.Clone(custom.Argv), dir: dir, custom: true}
+		if len(out.credentials) != 0 {
+			out.definition.CustomCommand = &ExecutionCommand{Program: custom.Program, Argv: slices.Clone(custom.Argv)}
+		}
+	}
 	return out, nil
 }
 
@@ -297,12 +340,9 @@ func sameWriter(a, b io.Writer) (same bool) {
 }
 
 func runChild(ctx context.Context, launch taskLaunch, env []string, stdin io.Reader, stdout, stderr io.Writer, started func()) (int, error) {
-	program, err := filepath.Localize(strings.TrimPrefix(launch.program, "./"))
+	program, err := launchProgram(launch)
 	if err != nil {
-		return 0, Fail("launch-failed", "Task program path is invalid on this platform")
-	}
-	if strings.Contains(launch.program, "/") {
-		program = filepath.Join(launch.dir, program)
+		return 0, err
 	}
 	cmd := exec.CommandContext(ctx, program, launch.argv...)
 	if cmd.Err == nil && !filepath.IsAbs(cmd.Path) {
@@ -330,6 +370,29 @@ func runChild(ctx context.Context, launch taskLaunch, env []string, stdin io.Rea
 		return 0, Fail("execution-failed", err.Error())
 	}
 	return 0, nil
+}
+
+// launchProgram resolves a registered program like #13 did: a slash-separated
+// path is relative to the working directory, otherwise a name on PATH. A
+// custom exec program may also be absolute or use the platform separator.
+func launchProgram(launch taskLaunch) (string, error) {
+	if launch.custom {
+		switch {
+		case filepath.IsAbs(launch.program):
+			return filepath.Clean(launch.program), nil
+		case strings.ContainsAny(launch.program, "/"+string(filepath.Separator)):
+			return filepath.Join(launch.dir, filepath.FromSlash(launch.program)), nil
+		}
+		return launch.program, nil
+	}
+	program, err := filepath.Localize(strings.TrimPrefix(launch.program, "./"))
+	if err != nil {
+		return "", Fail("launch-failed", "Task program path is invalid on this platform")
+	}
+	if strings.Contains(launch.program, "/") {
+		program = filepath.Join(launch.dir, program)
+	}
+	return program, nil
 }
 
 var baseEnvironmentNames = []string{"PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "HOME", "USERPROFILE", "TMP", "TMPDIR", "TEMP",
