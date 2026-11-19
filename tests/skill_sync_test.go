@@ -71,7 +71,8 @@ func TestSharedSkillsAcrossDevices(t *testing.T) {
 	git(t, public, "tag", "-f", "release")
 
 	privateSource := t.TempDir()
-	writeSkillFixture(t, filepath.Join(privateSource, "SKILL.md"), skillFixtureBody("private-fixture", "private shared payload"), 0600)
+	privateManifest := skillFixtureBody("private-fixture", "private shared payload")
+	writeSkillFixture(t, filepath.Join(privateSource, "SKILL.md"), privateManifest, 0600)
 	writeSkillFixture(t, filepath.Join(privateSource, "assets", "empty"), "", 0600)
 	a.Run(t, "skill", "add", "--share", "private", "--local", privateSource, "--format=json").Success(t)
 	localSource := addSharedSkillFixture(t, a, "", "local-fixture", "local-only Skill sentinel")
@@ -92,9 +93,17 @@ func TestSharedSkillsAcrossDevices(t *testing.T) {
 	if installedA.Status != "installed" {
 		t.Fatal(installedA)
 	}
+	sharedArtifact := addSyncArtifact(t, a, "same-object.json", privateManifest, "internal")
+	explicitBody := strings.Repeat("a", app.BodyLimit+1)
+	explicitArtifact := addSyncArtifact(t, a, "explicit-sample.json", explicitBody, "internal")
 	enableSync(t, a)
+	queueArtifact(t, a, sharedArtifact.ID, "automatic")
+	queueArtifact(t, a, explicitArtifact.ID, "explicit")
 	a.Run(t, "sync", "init", "--preview", previewSync(t, a), "--format=json").Success(t)
 	tree := git(t, a, "--git-dir", remote, "ls-tree", "-r", "--name-only", "ctxferry-v1")
+	if strings.Count(tree, "objects/"+sharedArtifact.Payload.SHA256) != 1 {
+		t.Fatal("the private Skill and artifact must reference the same published object")
+	}
 	for path := range strings.SplitSeq(tree, "\n") {
 		data := git(t, a, "--git-dir", remote, "show", "ctxferry-v1:"+path)
 		for _, forbidden := range []string{privateSource, localSource, a.Home, a.DataDir, installedA.Path, "local-only Skill sentinel", "local-fixture", "public pin v1"} {
@@ -108,6 +117,8 @@ func TestSharedSkillsAcrossDevices(t *testing.T) {
 	b := joinDevice(t, a, false)
 	failure(t, b.Run(t, "skill", "plan", "--group", "project:checkout", "--target", "codex", "--format=json"), "project-unsubscribed")
 	b.Run(t, "project", "subscribe", "checkout", "--format=json").Success(t)
+	fetchSyncedArtifact(t, b, sharedArtifact.ID, privateManifest)
+	fetchSyncedArtifact(t, b, explicitArtifact.ID, explicitBody)
 	failure(t, b.Run(t, "skill", "plan", "local-fixture", "--target", "codex", "--format=json"), "skill-not-found")
 	for selection, names := range map[string][]string{
 		"global":            {"public-fixture"},
@@ -137,7 +148,7 @@ func TestSharedSkillsAcrossDevices(t *testing.T) {
 		got, err := os.ReadFile(filepath.Join(p.Path, "SKILL.md"))
 		want := pinned
 		if name == "private-fixture" {
-			want = skillFixtureBody(name, "private shared payload")
+			want = privateManifest
 			if empty, err := os.ReadFile(filepath.Join(p.Path, "assets", "empty")); err != nil || len(empty) != 0 {
 				t.Fatalf("private empty file: %q %v", empty, err)
 			}

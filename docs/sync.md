@@ -79,6 +79,8 @@ it is never overwritten. Routine sync and join use the same validated record for
   group, its Project. Public pins carry a credential-free HTTPS source,
   an exact Git commit and a file manifest. Private pins reference selected
   files by hash under `objects/<sha256>`, up to 1 MiB per package.
+  These bytes count toward the ordinary staging and routine publication
+  budgets, including when an artifact references the same object.
   Install directories, link targets and ownership receipts are device-local.
 - README describes plaintext, repository-wide access, history and recovery limits.
 - Schema 4 adds local access configuration, immutable preview snapshots, stable
