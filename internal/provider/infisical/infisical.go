@@ -1,4 +1,4 @@
-// Package infisical resolves explicit Infisical US Cloud references without a local secret cache.
+// Package infisical handles explicit Infisical US Cloud references without a local secret cache.
 package infisical
 
 import (
@@ -93,7 +93,7 @@ func matchesInjectionScope(key provider.SessionKey) bool {
 func (*adapter) Capabilities() []provider.MethodCapabilities {
 	return []provider.MethodCapabilities{
 		{Method: personal, SessionExpiry: true},
-		{Method: universalAuth, MachineAuth: true, SessionExpiry: true},
+		{Method: universalAuth, MachineAuth: true, SessionExpiry: true, CreateImport: true},
 	}
 }
 
@@ -286,9 +286,31 @@ func secretRoute(l provider.Locator) string {
 var errResponse = errors.New("invalid Infisical response")
 
 func (a *adapter) request(ctx context.Context, method, route string, session, payload []byte, result any) (int, error) {
+	resp, err := a.send(ctx, method, route, session, payload)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return resp.StatusCode, nil
+	}
+	return resp.StatusCode, decodeResponse(resp, result)
+}
+
+func decodeResponse(resp *http.Response, result any) error {
+	const maxResponse = 4 << 20
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponse+1))
+	defer clear(body)
+	if err != nil || len(body) > maxResponse || json.Unmarshal(body, result) != nil {
+		return errResponse
+	}
+	return nil
+}
+
+func (a *adapter) send(ctx context.Context, method, route string, session, payload []byte) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, method, a.baseURL+route, bytes.NewReader(payload))
 	if err != nil {
-		return 0, errResponse
+		return nil, errResponse
 	}
 	if len(session) > 0 {
 		req.Header.Set("Authorization", "Bearer "+string(session))
@@ -299,17 +321,7 @@ func (a *adapter) request(ctx context.Context, method, route string, session, pa
 	req.Header.Set("Accept", "application/json")
 	resp, err := a.client.Do(req)
 	if err != nil {
-		return 0, errResponse
+		return nil, errResponse
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return resp.StatusCode, nil
-	}
-	const maxResponse = 4 << 20
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponse+1))
-	defer clear(body)
-	if err != nil || len(body) > maxResponse || json.Unmarshal(body, result) != nil {
-		return resp.StatusCode, errResponse
-	}
-	return resp.StatusCode, nil
+	return resp, nil
 }

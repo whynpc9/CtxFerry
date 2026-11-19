@@ -32,6 +32,7 @@ type MethodCapabilities struct {
 	OfflineRead   bool   `json:"offlineRead"`
 	NativeExec    bool   `json:"nativeExec"`
 	FileDelivery  bool   `json:"fileDelivery"`
+	CreateImport  bool   `json:"createImport,omitempty"`
 	SessionExpiry bool   `json:"sessionExpiry"`
 }
 
@@ -66,6 +67,20 @@ type Adapter interface {
 	Authentication(context.Context, Profile, []byte) (Authentication, error)
 	Resolve(context.Context, Profile, []byte, Locator) ([]byte, error)
 }
+
+// Importer is optional and must be advertised for the selected method. Import
+// creates one exact shared entry and must never overwrite or adopt an entry.
+// The value and session are borrowed for the duration of the call.
+type Importer interface {
+	Import(context.Context, Profile, []byte, Locator, []byte) error
+}
+
+var (
+	ErrImportCollision = errors.New("provider entry already exists")
+	ErrImportRejected  = errors.New("provider rejected the import")
+	ErrImportPending   = errors.New("provider approval is pending")
+	ErrImportUnknown   = errors.New("provider import outcome is unknown")
+)
 
 type SessionKey struct {
 	WorkspaceID string
