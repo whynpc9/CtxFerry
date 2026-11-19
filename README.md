@@ -273,3 +273,36 @@ before publishing a new file. All sensitivity classes (`public`, `internal`,
 of unique payload bytes by default. Set `CTXFERRY_ARTIFACT_CACHE_BYTES` to a
 positive byte count to adjust the limit. At capacity, new content is rejected
 and existing registrations remain retrievable.
+
+### Skills
+
+After `ctxferry init`, import one directory with a `SKILL.md` whose YAML front
+matter declares its `name`. The name becomes the install directory name.
+
+```sh
+ctxferry skill add --local ./skills/example
+ctxferry skill add --git https://github.com/example/skills.git \
+  --ref refs/tags/v1.2.0 --subdir skills/another-example
+ctxferry skill plan example --target codex --format json
+ctxferry skill apply example --target codex
+ctxferry skill plan another-example --target claude-code --symlink
+ctxferry skill apply another-example --target claude-code --symlink
+```
+
+Git imports accept a full commit hash or a tag under `refs/tags/`. A tag records
+both its name and resolved commit. Local imports capture a content digest and
+retain a snapshot independent of subsequent source edits. Use `--license` to
+override the front-matter license. Unknown licenses appear as `NOASSERTION`.
+Use repeatable `--platform <os[/arch]>` and `--depends-on <executable>` to declare
+requirements. Executable metadata is captured in the manifest and honored on
+Unix. Import and install do not execute Skill scripts.
+
+Codex uses `~/.agents/skills`. Claude Code uses `~/.claude/skills`, or
+`$CLAUDE_CONFIG_DIR/skills` when configured. Copy is the default. `--symlink`
+links to the verified local package and requires OS permission to create links.
+The plan reports intended writes and blocking issues without changing the
+target or local state. A blocked plan is a successful query and reports
+`status: "blocked"`. Apply refuses unowned targets or externally edited
+installs. If apply is interrupted, run the same command to resume a verified
+staged install. Packages, receipts and recovery records are device-local in
+this slice.

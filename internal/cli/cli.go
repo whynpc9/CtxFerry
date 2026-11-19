@@ -174,6 +174,7 @@ func RunWithServices(ctx context.Context, args []string, stdout, stderr io.Write
 		return nil
 	}
 	project.RunE = root.RunE
+	root.AddCommand(skillCommand(ctx, invoke))
 	root.SetContext(ctx)
 	command, err := root.ExecuteC()
 	if taskRan {
@@ -250,6 +251,10 @@ func RunWithServices(ctx context.Context, args []string, stdout, stderr io.Write
 func render(w io.Writer, result any) error {
 	var err error
 	switch r := result.(type) {
+	case app.SkillPackage:
+		_, err = fmt.Fprintf(w, "%s (%s)\nSource: %s\nLicense: %s\n", r.Name, r.Digest, r.SourceURL, r.License)
+	case app.SkillPlan:
+		return renderSkillPlan(w, r)
 	case app.DoctorReport:
 		return renderDoctor(w, r)
 	case app.InitResult:
