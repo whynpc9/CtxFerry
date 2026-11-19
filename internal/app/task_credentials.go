@@ -122,7 +122,7 @@ func (a App) credentialEnvironment(ctx context.Context, plan TaskExecution) ([]s
 	if a.Trust == nil {
 		return nil, nil, Fail("execution-definition-changed", "credentialed execution of this Task definition is not enabled on this device")
 	}
-	if err := a.Trust.Enabled(ctx, plan.Definition); err != nil {
+	if err := a.Trust.Enabled(ctx, plan.Definition()); err != nil {
 		var failure *Error
 		if errors.As(err, &failure) {
 			return nil, nil, err
@@ -215,8 +215,9 @@ func (a App) deviceSession(ctx context.Context, adapter provider.Adapter, key pr
 	return session, nil
 }
 
-// requireReachable probes the selected Resources on this device's resolved
-// route. It never substitutes another Resource with the same identity.
+// requireReachable reports the selected Resources' latest reachability on
+// this device's resolved route. It opens no connection: `resource check` is the
+// explicit probe. It never substitutes another Resource with the same identity.
 func (a App) requireReachable(ctx context.Context, plan TaskExecution) error {
 	db, err := store.Open(ctx, a.DataDir, false)
 	if err != nil {
@@ -229,7 +230,7 @@ func (a App) requireReachable(ctx context.Context, plan TaskExecution) error {
 			continue
 		}
 		seen[c.ResourceID] = true
-		detail, err := resourceDetail(ctx, db, c.resource.Scope.ID, plan.Dir, c.ResourceID)
+		detail, err := resourceDetail(ctx, db, c.resource.Scope.ID, plan.launch.dir, c.ResourceID)
 		if err != nil {
 			return err
 		}
@@ -246,17 +247,14 @@ func (a App) requireReachable(ctx context.Context, plan TaskExecution) error {
 			return &Error{Code: "resource-unreachable", Message: "Resource " + detail.Resource.Identity +
 				" has no usable route from this execution environment (" + detail.Route.Status + ")", Details: facts}
 		}
-		observation, err := probeResource(ctx, db, detail)
-		if ctx.Err() != nil {
-			return Fail("interrupted", "Task execution was interrupted")
-		}
+		observation, err := latestServiceObservation(ctx, db, detail)
 		if err != nil {
 			return err
 		}
-		if observation.Status != "reachable" {
+		if observation != nil && observation.Status == "unreachable" {
 			facts["target"], facts["observedAt"] = observation.Scope.Target, observation.ObservedAt
 			return &Error{Code: "resource-unreachable", Message: "Resource " + detail.Resource.Identity +
-				" is unreachable at " + observation.Scope.Target + " from this device", Details: facts}
+				" was unreachable at " + observation.Scope.Target + " from this device; run resource check after fixing the network", Details: facts}
 		}
 	}
 	return nil
@@ -292,11 +290,28 @@ func (r *redactor) Write(p []byte) (int, error) {
 		return 0, r.err
 	}
 	r.pending = append(r.pending, p...)
+	if r.scan(false); r.err != nil {
+		return 0, r.err
+	}
+	return len(p), nil
+}
+
+// scan replaces the longest value at each position. Before EOF it waits while
+// the remaining bytes could still grow into a longer value, so a shorter match
+// is decided only when no longer one is possible.
+func (r *redactor) scan(eof bool) {
 	var out []byte
 	i := 0
 scan:
 	for i < len(r.pending) {
 		rest := r.pending[i:]
+		if !eof {
+			for _, value := range r.values {
+				if len(rest) < len(value) && bytes.HasPrefix(value, rest) {
+					break scan
+				}
+			}
+		}
 		for _, value := range r.values {
 			if bytes.HasPrefix(rest, value) {
 				out = append(out, redactionMarker...)
@@ -304,28 +319,21 @@ scan:
 				continue scan
 			}
 		}
-		for _, value := range r.values {
-			if len(rest) < len(value) && bytes.HasPrefix(value, rest) {
-				break scan
-			}
-		}
 		out = append(out, r.pending[i])
 		i++
 	}
-	r.pending = append(r.pending[:0], r.pending[i:]...)
+	n := copy(r.pending, r.pending[i:])
+	clear(r.pending[n:])
+	r.pending = r.pending[:n]
 	if len(out) != 0 {
 		_, r.err = r.w.Write(out)
 	}
-	if r.err != nil {
-		return 0, r.err
-	}
-	return len(p), nil
 }
 
-// Flush emits a held partial prefix once the stream has ended.
+// Flush matches the held bytes once the stream has ended.
 func (r *redactor) Flush() error {
-	if r.err == nil && len(r.pending) != 0 {
-		_, r.err = r.w.Write(r.pending)
+	if r.err == nil {
+		r.scan(true)
 	}
 	clear(r.pending)
 	r.pending = nil
@@ -343,12 +351,12 @@ func childEnvironment(delivered []string) []string {
 	names := map[string]bool{}
 	for _, entry := range delivered {
 		name, _, _ := strings.Cut(entry, "=")
-		names[strings.ToUpper(name)] = true
+		names[environmentKey(name)] = true
 	}
 	env := []string{}
 	for _, entry := range taskEnvironment() {
 		name, _, _ := strings.Cut(entry, "=")
-		if !names[strings.ToUpper(name)] {
+		if !names[environmentKey(name)] {
 			env = append(env, entry)
 		}
 	}

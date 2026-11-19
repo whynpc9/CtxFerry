@@ -410,18 +410,10 @@ func (a App) CheckResource(ctx context.Context, selector, cwd, id string) (Obser
 	if detail.Route.Status != "resolved" {
 		return out, Fail(detail.Route.Status, "no unambiguous TCP route for this execution environment")
 	}
-	return probeResource(ctx, db, detail)
-}
-
-// probeResource opens one TCP connection to a resolved route and appends the
-// outcome to this device's Observation history.
-func probeResource(ctx context.Context, db *sql.DB, detail ResourceDetail) (Observation, error) {
-	var out Observation
 	obsID, err := newID()
 	if err != nil {
 		return out, err
 	}
-	id := detail.Resource.ID
 	scope := ObservationScope{Kind: "service-endpoint", Target: detail.Route.Endpoint, Network: detail.Route.Network, OS: detail.Environment.OS, Arch: detail.Environment.Arch, ResourceRevision: detail.Resource.Revision}
 	if detail.Route.Proxy != "" {
 		scope.Kind = "proxy-endpoint"

@@ -144,17 +144,19 @@ checkout's Project, the Task, the selected Profile, its explicit mappings, the
 SecretBinding and its locator, and this device's own provider login. Before
 each run the requirement, the selected Resource and the binding must agree on
 purpose, type and Resource; otherwise the run stops with `incompatible`. A
-missing mapping reports `binding-missing`; similar bindings are never
-substituted.
+missing mapping reports `binding-missing` and conflicting mapping edits report
+`binding-conflict`; similar bindings are never substituted.
 
 Credentialed execution also requires this device to have enabled the Task's
 execution definition. Until that review is available, credentialed runs stop
-with `execution-definition-changed` before any provider call. The run then
-opens one TCP connection to the selected Resource's route on this device and
-stops with `resource-unreachable` when it fails; a local Resource with the same
-identity is never used in its place. Login is per device: a session on another
-device does not count (`authentication-required`), and a missing or denied
-entry reports `secret-unavailable` without its value.
+with `execution-definition-changed` before any provider call. The run opens
+no connection itself: when this device's latest `resource check` of the
+selected Resource's direct route found it unreachable, or the device has no
+usable route, the run stops with `resource-unreachable`. A local Resource with
+the same identity is never used in its place. Login is per device: a session
+on another device does not count (`authentication-required`), and a missing or
+denied entry reports `secret-unavailable` without its value. Interrupting the
+run while it resolves values reports `interrupted`.
 
 The child receives a minimal base environment (`PATH`, `HOME`, temporary
 directories, locale and terminal variables) plus the Task's delivered

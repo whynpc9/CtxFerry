@@ -47,12 +47,38 @@ func assertNoSecretValues(t *testing.T, output string) {
 
 func credentialRun(t *testing.T, h *testcli.Harness, services cli.Services, args ...string) testcli.Result {
 	t.Helper()
+	return credentialRunContext(t, t.Context(), h, services, args...)
+}
+
+func credentialRunContext(t *testing.T, ctx context.Context, h *testcli.Harness, services cli.Services, args ...string) testcli.Result {
+	t.Helper()
 	t.Chdir(h.Dir)
 	var stdout, stderr bytes.Buffer
-	code := cli.RunWithServices(t.Context(), append([]string{"--data-dir", h.DataDir, "run"}, args...), &stdout, &stderr, services)
+	code := cli.RunWithServices(ctx, append([]string{"--data-dir", h.DataDir, "run"}, args...), &stdout, &stderr, services)
 	r := testcli.Result{Stdout: stdout.String(), Stderr: stderr.String(), ExitCode: code}
 	assertNoSecretValues(t, r.Stdout+r.Stderr)
 	return r
+}
+
+// blockingAdapter waits in Resolve until the invocation is interrupted.
+type blockingAdapter struct {
+	*providertest.Fake
+	started chan struct{}
+}
+
+func (b blockingAdapter) Resolve(ctx context.Context, _ provider.Profile, _ []byte, _ provider.Locator) ([]byte, error) {
+	close(b.started)
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func observationCount(t *testing.T, h *testcli.Harness, id string) int {
+	t.Helper()
+	var observations []any
+	if err := json.Unmarshal(h.Run(t, "resource", "inspect", id, "--format=json").Success(t).Data["observations"], &observations); err != nil {
+		t.Fatal(err)
+	}
+	return len(observations)
 }
 
 type credentialReport struct {
@@ -192,11 +218,15 @@ func TestCredentialedRun(t *testing.T) {
 	p := provider.Profile{Provider: "fake", Name: "team", Method: "machine"}
 	ref := provider.Locator{ProjectID: "backend", Environment: "sandbox", Path: "/apps", Key: "BACKEND_DB"}
 	other := provider.Locator{ProjectID: "backend", Environment: "sandbox", Path: "/apps", Key: "NEIGHBOUR_DB"}
-	newBinding := func(task, alias string, loc provider.Locator) string {
+	bindOn := func(h *testcli.Harness, task, alias string, loc provider.Locator) string {
 		t.Helper()
-		return field(t, a.Run(t, "secret", "bind", task, "login", "--profile=dev", "--alias", alias,
+		return field(t, h.Run(t, "secret", "bind", task, "login", "--profile=dev", "--alias", alias,
 			"--provider=fake", "--provider-profile=team", "--method=machine", "--backend-project", loc.ProjectID,
 			"--environment", loc.Environment, "--path", loc.Path, "--key", loc.Key, "--format=json").Success(t), "binding")
+	}
+	newBinding := func(task, alias string, loc provider.Locator) string {
+		t.Helper()
+		return bindOn(a, task, alias, loc)
 	}
 	bindingID := newBinding("integration", "db", ref)
 	a.Run(t, "secret", "bind", "leaky", "login", "--profile=dev", "--binding", bindingID, "--format=json").Success(t)
@@ -279,6 +309,38 @@ func TestCredentialedRun(t *testing.T) {
 		t.Fatalf("text output was not protected: %+v", text)
 	}
 
+	// Authorization and launch use one private snapshot: changing the returned
+	// plan cannot redirect delivery. One shared writer stays one stream.
+	application := app.App{DataDir: a.DataDir, Providers: providers, Trust: trust}
+	t.Chdir(a.Dir)
+	plan, err := application.PrepareTask(t.Context(), "", a.Dir, "leaky", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan.Task.Program, plan.Task.Argv, plan.Dir = "ctxferry-redirected", []string{"credentials", "DATABASE_URL"}, t.TempDir()
+	plan.Task.CredentialRequirements = nil
+	var combined bytes.Buffer
+	code, err := application.ExecuteTask(t.Context(), plan, nil, &combined, &combined, func() {})
+	if err != nil || code != 5 || !strings.Contains(combined.String(), "before [REDACTED] after [REDACTED][REDACTED]\n") ||
+		!strings.Contains(combined.String(), "diagnostic [REDACTED]\n") {
+		t.Fatalf("snapshot or shared output was not honoured: %d %v %q", code, err, combined.String())
+	}
+	assertNoSecretValues(t, combined.String())
+	if d := trust.definitions[len(trust.definitions)-1]; d.Program != program || !slices.Equal(d.Argv, []string{"leak", "DATABASE_URL"}) {
+		t.Fatalf("trust decision saw a changed plan: %+v", d)
+	}
+	if _, err := application.ExecuteTask(t.Context(), app.TaskExecution{Task: plan.Task}, nil, &combined, &combined, func() {}); app.Classify(err).Code != "credentials-required" {
+		t.Fatal("an unprepared plan was executed", err)
+	}
+
+	// Interrupting provider resolution reports an interruption, not a credential fault.
+	blocking := blockingAdapter{fake, make(chan struct{})}
+	interruptible := cli.Services{Trust: trust, Providers: provider.Services{
+		Adapters: map[string]provider.Adapter{"fake": blocking}, Credentials: providers.Credentials}}
+	ctx, cancel := context.WithCancel(t.Context())
+	go func() { <-blocking.started; cancel() }()
+	refusedTask(t, credentialRunContext(t, ctx, a, interruptible, "integration", "--format=jsonl"), "interrupted")
+
 	// The requirement, selected Resource and binding are compared before each run.
 	lookups := len(fake.Lookups())
 	for _, edit := range []struct{ path, value string }{
@@ -292,19 +354,23 @@ func TestCredentialedRun(t *testing.T) {
 		t.Fatal("incompatible binding reached the provider")
 	}
 
-	// An unreachable selected Resource is not replaced by a local namesake.
+	// A recorded unreachable observation blocks the run; a reachable local
+	// namesake is never used in its place, and run itself opens no connection.
 	namesake, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer namesake.Close()
-	addResource(t, a, "shared-db", "Local namesake", "local-only", "--endpoint", namesake.Addr().String()).Success(t)
+	namesakeID := resourceString(t, addResource(t, a, "shared-db", "Local namesake", "local-only", "--endpoint", namesake.Addr().String()).Success(t), "id")
+	a.Run(t, "resource", "check", namesakeID, "--format=json").Success(t)
 	closed := listener.Addr().String()
 	listener.Close()
+	a.Run(t, "resource", "check", resourceID, "--format=json").Success(t)
+	observed := observationCount(t, a, resourceID)
 	unreachable := jsonl(a, trusted, "integration")
 	refusedTask(t, unreachable, "resource-unreachable")
 	if !strings.Contains(unreachable.Stdout, closed) || strings.Contains(unreachable.Stdout, namesake.Addr().String()) ||
-		!strings.Contains(unreachable.Stdout, resourceID) || len(fake.Lookups()) != lookups {
+		!strings.Contains(unreachable.Stdout, resourceID) || len(fake.Lookups()) != lookups || observationCount(t, a, resourceID) != observed {
 		t.Fatalf("unreachable diagnosis is wrong: %s", unreachable.Stdout)
 	}
 
@@ -322,6 +388,17 @@ func TestCredentialedRun(t *testing.T) {
 	fake.SetState(p, provider.Authenticated)
 	delete(fake.Entries, providertest.Reference{Profile: p, Locator: ref})
 	refusedTask(t, jsonl(b, trusted, "integration", "--profile=dev"), "secret-unavailable")
+
+	// Concurrent Profile mapping edits block credentialed runs as binding-conflict.
+	newBinding("integration", "device-a-edit", other)
+	bindOn(b, "integration", "device-b-edit", ref)
+	a.Run(t, "sync", "--format=json").Success(t)
+	b.Run(t, "sync", "--format=json").Success(t)
+	before := len(fake.Lookups())
+	refusedTask(t, jsonl(b, trusted, "integration", "--profile=dev"), "binding-conflict")
+	if len(fake.Lookups()) != before {
+		t.Fatal("conflicted mapping reached the provider")
+	}
 
 	// Values are never persisted: no general-purpose cache, store entry or published record.
 	assertNoPersistedValues(t, a.DataDir, b.DataDir)
