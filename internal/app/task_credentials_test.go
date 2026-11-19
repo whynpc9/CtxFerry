@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"io"
 	"runtime"
 	"slices"
 	"strings"
@@ -53,17 +54,70 @@ func TestRedactorAcrossWrites(t *testing.T) {
 func TestChildEnvironmentReplacesBaseNames(t *testing.T) {
 	t.Setenv("HOME", "/caller")
 	t.Setenv("GH_TOKEN", "caller")
-	if runtime.GOOS != "windows" {
+	posix := runtime.GOOS != "windows"
+	if posix {
 		t.Setenv("path", "unrelated")
 	}
 	env := childEnvironment([]string{"home=/delivered", "DATABASE_URL=x"})
 	if !slices.Contains(env, "home=/delivered") || !slices.Contains(env, "DATABASE_URL=x") ||
-		slices.Contains(env, "HOME=/caller") != (runtime.GOOS != "windows") {
+		slices.Contains(env, "HOME=/caller") != posix {
 		t.Fatal(env)
 	}
 	for _, entry := range env {
 		if strings.HasPrefix(entry, "GH_TOKEN=") || strings.HasPrefix(entry, "path=") {
 			t.Fatal("unrelated or authentication material reached the child", env)
 		}
+	}
+	// The credential-free base keeps its previous case-folded selection.
+	if base := taskEnvironment(); posix && !slices.Contains(base, "path=unrelated") || slices.ContainsFunc(base, func(e string) bool {
+		return strings.HasPrefix(e, "GH_TOKEN=")
+	}) {
+		t.Fatal(base)
+	}
+}
+
+func TestDeliverableValue(t *testing.T) {
+	if deliverableValue([]byte("a\x00b")) || !deliverableValue([]byte("plain")) || !deliverableValue(nil) {
+		t.Fatal("NUL handling")
+	}
+	if deliverableValue([]byte{0xff, 'x'}) != (runtime.GOOS != "windows") {
+		t.Fatal("invalid UTF-8 must be refused only where the environment would alter it")
+	}
+}
+
+func TestRedactorNilDestination(t *testing.T) {
+	r := newRedactor(nil, [][]byte{[]byte("s3cret")})
+	if n, err := r.Write([]byte("output s3cret")); err != nil || n != 13 || r.Flush() != nil {
+		t.Fatal(n, err)
+	}
+}
+
+func TestRedactorLongNearMatchIsLinear(t *testing.T) {
+	value := append(bytes.Repeat([]byte("a"), 64*1024), 'b')
+	var out bytes.Buffer
+	r := newRedactor(&out, [][]byte{value})
+	chunk := bytes.Repeat([]byte("a"), 32*1024)
+	for range 128 { // 4 MiB of near-match; quadratic scanning would take minutes.
+		if _, err := r.Write(chunk); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r.Write([]byte("b"))
+	if err := r.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Repeat("a", 4*1024*1024-64*1024) + redactionMarker
+	if out.String() != want {
+		t.Fatal("near-match stream was not redacted exactly", out.Len())
+	}
+}
+
+func BenchmarkRedactorNearMatch(b *testing.B) {
+	value := append(bytes.Repeat([]byte("a"), 4096), 'b')
+	chunk := bytes.Repeat([]byte("a"), 32*1024)
+	b.SetBytes(int64(len(chunk)))
+	r := newRedactor(io.Discard, [][]byte{value})
+	for b.Loop() {
+		r.Write(chunk)
 	}
 }

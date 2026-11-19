@@ -250,10 +250,13 @@ func (a App) ExecuteTask(ctx context.Context, plan TaskExecution, stdin io.Reade
 	env := taskEnvironment()
 	if len(plan.credentials) != 0 {
 		delivered, values, err := a.credentialEnvironment(ctx, plan)
-		if err != nil {
-			if ctx.Err() != nil {
-				return 0, Fail("interrupted", "Task execution was interrupted")
+		if ctx.Err() != nil {
+			for _, value := range values {
+				clear(value)
 			}
+			return 0, Fail("interrupted", "Task execution was interrupted")
+		}
+		if err != nil {
 			return 0, err
 		}
 		defer func() {
@@ -271,6 +274,9 @@ func (a App) ExecuteTask(ctx context.Context, plan TaskExecution, stdin io.Reade
 			defer diagnostics.wipe()
 		}
 		code, err := runChild(ctx, launch, env, stdin, out, diagnostics, started)
+		if err != nil && ctx.Err() != nil {
+			err = Fail("interrupted", "Task execution was interrupted")
+		}
 		// Held partial matches are released only after the child has exited.
 		flushOut, flushDiagnostics := out.Flush(), diagnostics.Flush()
 		if err == nil && (flushOut != nil || flushDiagnostics != nil) {
@@ -326,7 +332,7 @@ func runChild(ctx context.Context, launch taskLaunch, env []string, stdin io.Rea
 	return 0, nil
 }
 
-var baseEnvironment = []string{"PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "HOME", "USERPROFILE", "TMP", "TMPDIR", "TEMP",
+var baseEnvironmentNames = []string{"PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "HOME", "USERPROFILE", "TMP", "TMPDIR", "TEMP",
 	"LANG", "LC_ALL", "TERM", "COLORTERM"}
 
 // environmentKey folds variable names only where the platform does.
@@ -337,11 +343,18 @@ func environmentKey(name string) string {
 	return name
 }
 
+// taskEnvironment is the credential-free base, unchanged from #13: names are
+// folded on every platform.
 func taskEnvironment() []string {
+	return baseEnvironment(strings.ToUpper)
+}
+
+// baseEnvironment selects the neutral variables passed to a Task child.
+func baseEnvironment(key func(string) string) []string {
 	env := []string{}
 	for _, entry := range os.Environ() {
 		name, _, _ := strings.Cut(entry, "=")
-		if slices.Contains(baseEnvironment, environmentKey(name)) {
+		if slices.Contains(baseEnvironmentNames, key(name)) {
 			env = append(env, entry)
 		}
 	}

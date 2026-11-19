@@ -5,8 +5,10 @@ import (
 	"context"
 	"errors"
 	"io"
+	"runtime"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/whynpc9/CtxFerry/internal/provider"
 	"github.com/whynpc9/CtxFerry/internal/store"
@@ -180,7 +182,7 @@ func (a App) credentialEnvironment(ctx context.Context, plan TaskExecution) ([]s
 			return fail(Fail("secret-unavailable", "provider could not retrieve the referenced entry"), c)
 		}
 		values = append(values, value)
-		if bytes.IndexByte(value, 0) >= 0 {
+		if !deliverableValue(value) {
 			return fail(Fail("secret-unavailable", "provider entry cannot be delivered as an environment variable"), c)
 		}
 		env = append(env, c.Env+"="+string(value))
@@ -260,80 +262,130 @@ func (a App) requireReachable(ctx context.Context, plan TaskExecution) error {
 	return nil
 }
 
+// deliverableValue reports whether the child receives exactly these bytes.
+// Windows environments are UTF-16, so invalid UTF-8 would be altered there and
+// then escape byte-exact redaction.
+func deliverableValue(value []byte) bool {
+	return bytes.IndexByte(value, 0) < 0 && (runtime.GOOS != "windows" || utf8.Valid(value))
+}
+
 const redactionMarker = "[REDACTED]"
 
-// redactor replaces delivered values in a child output stream. It holds back
-// only the bytes that could begin a value until more output or Flush arrives.
+// redactor replaces delivered values in a child output stream, choosing the
+// longest value at the leftmost position. A KMP state per value tracks the
+// earliest position where a value could still begin, so output is held only
+// while it may be part of a value and each byte is examined once per value.
 // This reduces accidental disclosure; it cannot stop a program that encodes or
 // transmits what it was given.
 type redactor struct {
 	w       io.Writer
 	values  [][]byte
+	fail    [][]int
+	state   []int
+	matches map[int]int // absolute start offset -> longest complete match
 	pending []byte
+	base    int // absolute offset of pending[0]
 	err     error
 }
 
 func newRedactor(w io.Writer, values [][]byte) *redactor {
-	r := &redactor{w: w}
+	if w == nil {
+		w = io.Discard
+	}
+	r := &redactor{w: w, matches: map[int]int{}}
 	for _, value := range values {
 		if len(value) != 0 && !slices.ContainsFunc(r.values, func(v []byte) bool { return bytes.Equal(v, value) }) {
 			r.values = append(r.values, value)
+			r.fail = append(r.fail, kmpFailure(value))
 		}
 	}
-	// Prefer the longest value when several match at one position.
-	slices.SortFunc(r.values, func(a, b []byte) int { return len(b) - len(a) })
+	r.state = make([]int, len(r.values))
 	return r
+}
+
+// kmpFailure returns, for each prefix length, its longest proper border.
+func kmpFailure(v []byte) []int {
+	f := make([]int, len(v)+1)
+	for i, k := 1, 0; i < len(v); i++ {
+		for k > 0 && v[i] != v[k] {
+			k = f[k]
+		}
+		if v[i] == v[k] {
+			k++
+		}
+		f[i+1] = k
+	}
+	return f
 }
 
 func (r *redactor) Write(p []byte) (int, error) {
 	if r.err != nil {
 		return 0, r.err
 	}
-	r.pending = append(r.pending, p...)
-	if r.scan(false); r.err != nil {
+	for _, c := range p {
+		pos := r.base + len(r.pending)
+		r.pending = append(r.pending, c)
+		for j, v := range r.values {
+			s := r.state[j]
+			for s > 0 && v[s] != c {
+				s = r.fail[j][s]
+			}
+			if v[s] == c {
+				s++
+			}
+			if s == len(v) {
+				if start := pos + 1 - s; s > r.matches[start] {
+					r.matches[start] = s
+				}
+				s = r.fail[j][s]
+			}
+			r.state[j] = s
+		}
+	}
+	if r.emit(false); r.err != nil {
 		return 0, r.err
 	}
 	return len(p), nil
 }
 
-// scan replaces the longest value at each position. Before EOF it waits while
-// the remaining bytes could still grow into a longer value, so a shorter match
-// is decided only when no longer one is possible.
-func (r *redactor) scan(eof bool) {
+// emit decides every position before the earliest possible value start. At
+// EOF no value can still grow, so everything is decided.
+func (r *redactor) emit(eof bool) {
+	end := r.base + len(r.pending)
+	live := end
+	if !eof {
+		for _, s := range r.state {
+			live = min(live, end-s)
+		}
+	}
 	var out []byte
-	i := 0
-scan:
-	for i < len(r.pending) {
-		rest := r.pending[i:]
-		if !eof {
-			for _, value := range r.values {
-				if len(rest) < len(value) && bytes.HasPrefix(value, rest) {
-					break scan
-				}
-			}
+	i := r.base
+	for i < live {
+		if n := r.matches[i]; n > 0 {
+			out = append(out, redactionMarker...)
+			i += n
+			continue
 		}
-		for _, value := range r.values {
-			if bytes.HasPrefix(rest, value) {
-				out = append(out, redactionMarker...)
-				i += len(value)
-				continue scan
-			}
-		}
-		out = append(out, r.pending[i])
+		out = append(out, r.pending[i-r.base])
 		i++
 	}
-	n := copy(r.pending, r.pending[i:])
+	for start := range r.matches {
+		if start < i {
+			delete(r.matches, start)
+		}
+	}
+	n := copy(r.pending, r.pending[i-r.base:])
 	clear(r.pending[n:])
-	r.pending = r.pending[:n]
+	r.pending, r.base = r.pending[:n], i
 	if len(out) != 0 {
 		_, r.err = r.w.Write(out)
 	}
 }
 
-// Flush matches the held bytes once the stream has ended.
+// Flush decides the held bytes once the stream has ended.
 func (r *redactor) Flush() error {
 	if r.err == nil {
-		r.scan(true)
+		r.emit(true)
 	}
 	clear(r.pending)
 	r.pending = nil
@@ -342,7 +394,8 @@ func (r *redactor) Flush() error {
 
 func (r *redactor) wipe() {
 	clear(r.pending)
-	r.pending, r.values = nil, nil
+	clear(r.state)
+	r.pending, r.values, r.fail, r.matches = nil, nil, nil, nil
 }
 
 // childEnvironment combines the neutral base with the Task's delivered
@@ -354,7 +407,7 @@ func childEnvironment(delivered []string) []string {
 		names[environmentKey(name)] = true
 	}
 	env := []string{}
-	for _, entry := range taskEnvironment() {
+	for _, entry := range baseEnvironment(environmentKey) {
 		name, _, _ := strings.Cut(entry, "=")
 		if !names[environmentKey(name)] {
 			env = append(env, entry)

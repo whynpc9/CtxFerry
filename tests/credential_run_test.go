@@ -72,6 +72,18 @@ func (b blockingAdapter) Resolve(ctx context.Context, _ provider.Profile, _ []by
 	return nil, ctx.Err()
 }
 
+// cancellingAdapter returns a valid value while the invocation is interrupted.
+type cancellingAdapter struct {
+	*providertest.Fake
+	cancel context.CancelFunc
+}
+
+func (c cancellingAdapter) Resolve(ctx context.Context, p provider.Profile, session []byte, l provider.Locator) ([]byte, error) {
+	value, err := c.Fake.Resolve(ctx, p, session, l)
+	c.cancel()
+	return value, err
+}
+
 func observationCount(t *testing.T, h *testcli.Harness, id string) int {
 	t.Helper()
 	var observations []any
@@ -339,6 +351,10 @@ func TestCredentialedRun(t *testing.T) {
 		Adapters: map[string]provider.Adapter{"fake": blocking}, Credentials: providers.Credentials}}
 	ctx, cancel := context.WithCancel(t.Context())
 	go func() { <-blocking.started; cancel() }()
+	refusedTask(t, credentialRunContext(t, ctx, a, interruptible, "integration", "--format=jsonl"), "interrupted")
+	ctx, cancel = context.WithCancel(t.Context())
+	interruptible.Providers.Adapters = map[string]provider.Adapter{"fake": cancellingAdapter{fake, cancel}}
+	// refusedTask also proves no start event, so the child never launched.
 	refusedTask(t, credentialRunContext(t, ctx, a, interruptible, "integration", "--format=jsonl"), "interrupted")
 
 	// The requirement, selected Resource and binding are compared before each run.
