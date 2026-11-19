@@ -90,7 +90,7 @@ func contextCommand(ctx context.Context, invoke func(func(app.App) (any, error))
 		})
 	}
 	cursor := ""
-	show := &cobra.Command{Use: "show", Short: "Project summary, execution environment and document and resource index (8 KiB)", Args: cobra.NoArgs}
+	show := &cobra.Command{Use: "show", Short: "Project summary, execution environment and document, Resource and Task index (8 KiB)", Args: cobra.NoArgs}
 	show.Flags().StringVar(&cursor, "cursor", "", "Continue the index after this UUID")
 	show.RunE = func(cmd *cobra.Command, args []string) error {
 		return run(cmd, args, func(a app.App, cwd string) (any, error) {
@@ -179,7 +179,7 @@ func budgetContext(result any, format string) (any, error) {
 		if len(b) <= 8192 {
 			return r, nil
 		}
-		if len(r.Documents)+len(r.Resources) <= 1 {
+		if len(r.Documents)+len(r.Resources)+len(r.Tasks) <= 1 {
 			if compact {
 				return nil, app.Fail("size-limit", "required context metadata exceeds 8192-byte show budget")
 			}
@@ -204,12 +204,19 @@ func budgetContext(result any, format string) (any, error) {
 				r.Resources[0].Identity = compactText(r.Resources[0].Identity)
 				r.Resources[0].Purpose = compactText(r.Resources[0].Purpose)
 			}
+			if len(r.Tasks) == 1 {
+				r.Tasks[0].Purpose = compactText(r.Tasks[0].Purpose)
+			}
 			continue
 		}
-		if lastContextID(r) == lastDocumentID(r) {
+		doc, resource, task := lastContextIDs(r)
+		switch max(doc, resource, task) {
+		case doc:
 			r.Documents = r.Documents[:len(r.Documents)-1]
-		} else {
+		case resource:
 			r.Resources = r.Resources[:len(r.Resources)-1]
+		case task:
+			r.Tasks = r.Tasks[:len(r.Tasks)-1]
 		}
 		r.Truncated = true
 		r.NextCursor = lastContextID(r)
@@ -227,17 +234,20 @@ func compactText(s string) string {
 	return s + "…"
 }
 
-func lastDocumentID(r app.ContextResult) string {
-	if len(r.Documents) == 0 {
-		return ""
+func lastContextIDs(r app.ContextResult) (doc, resource, task string) {
+	if len(r.Documents) > 0 {
+		doc = r.Documents[len(r.Documents)-1].ID
 	}
-	return r.Documents[len(r.Documents)-1].ID
+	if len(r.Resources) > 0 {
+		resource = r.Resources[len(r.Resources)-1].ID
+	}
+	if len(r.Tasks) > 0 {
+		task = r.Tasks[len(r.Tasks)-1].ID
+	}
+	return
 }
 
 func lastContextID(r app.ContextResult) string {
-	id := lastDocumentID(r)
-	if len(r.Resources) != 0 {
-		id = max(id, r.Resources[len(r.Resources)-1].ID)
-	}
-	return id
+	doc, resource, task := lastContextIDs(r)
+	return max(doc, resource, task)
 }

@@ -56,8 +56,15 @@ func dependencies(r remoteRecord) []string {
 	if r.Scope.Kind == "project" {
 		ids = append(ids, r.Scope.ID)
 	}
-	if r.Kind == "membership" {
+	switch r.Kind {
+	case "membership":
 		ids = append(ids, r.Value.RepositoryID)
+	case "task":
+		ids = append(ids, r.Task.MembershipID)
+	case "configuration":
+		for _, m := range r.Config.ResourceMappings {
+			ids = append(ids, m.TaskID, m.ResourceID)
+		}
 	}
 	return ids
 }
@@ -173,6 +180,19 @@ func planOperations(remote, local map[string][]byte, ops []operation) (map[strin
 								changed = true
 							}
 						}
+					}
+				}
+			}
+		}
+		for id, r := range parsed {
+			if r.Deleted {
+				continue
+			}
+			for _, dep := range invalidTaskDependencies(r, parsed) {
+				for _, target := range []string{id, dep} {
+					if pending[target] && blocked[target] == "" {
+						blocked[target] = "invalid-task-dependency:" + dep
+						changed = true
 					}
 				}
 			}
@@ -672,7 +692,7 @@ func retainDeferredRecords(ctx context.Context, c *sql.Conn, files map[string][]
 			table = "repositories"
 		case "membership":
 			table = "memberships"
-		case "context", "resource":
+		case "context", "resource", "task":
 			table = "records"
 		case "configuration":
 			table = "configurations"

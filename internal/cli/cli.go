@@ -4,9 +4,11 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/whynpc9/CtxFerry/internal/app"
@@ -32,7 +34,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	root.SetErr(stderr)
 	root.SetArgs(args)
 	root.PersistentFlags().StringVar(&projectSelector, "project", "", "Explicit Project UUID or slug")
-	root.PersistentFlags().StringVar(&format, "format", "text", "Output format: text or json")
+	root.PersistentFlags().StringVar(&format, "format", "text", "Output format: text, json for queries, or jsonl for run")
 	root.PersistentFlags().StringVar(&dataDir, "data-dir", "", "Application data root (or CTXFERRY_DATA_DIR)")
 	invoke := func(fn func(app.App) (any, error)) func(*cobra.Command, []string) error {
 		return func(cmd *cobra.Command, _ []string) error {
@@ -40,7 +42,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			if cmd.Flags().Changed("project") && projectSelector == "" {
 				return app.Fail("usage", "project must not be empty")
 			}
-			if format != "text" && format != "json" {
+			if format != "text" && format != "json" && !(cmd.Name() == "run" && format == "jsonl") {
 				return app.Fail("usage", "format must be text or json")
 			}
 			dir, e := platform.DataDir(dataDir, cmd.Flags().Changed("data-dir"))
@@ -107,22 +109,22 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 	project.AddCommand(bind, list, inspect, remote)
 	config, profile := configurationCommands(ctx, invoke, &projectSelector)
-	root.AddCommand(initCmd, project, config, profile, contextCommand(ctx, invoke, &projectSelector), resourceCommand(ctx, invoke, &projectSelector), syncCommand(ctx, invoke), joinCommand(ctx, invoke))
+	var taskExit int
+	taskRan := false
+	runTask := runCommand(ctx, invoke, &projectSelector, &format, func(code int) { taskExit, taskRan = code, true })
+	root.AddCommand(runTask, taskCommand(ctx, invoke, &projectSelector), initCmd, project, config, profile, contextCommand(ctx, invoke, &projectSelector), resourceCommand(ctx, invoke, &projectSelector), syncCommand(ctx, invoke), joinCommand(ctx, invoke))
 
 	// Detect format before parsing so usage errors also obey the JSON contract.
-	requestedJSON := false
+	requestedFormat := ""
 	for i, arg := range args {
 		if arg == "--" {
 			break
 		}
-		if arg == "--format=json" {
-			requestedJSON = true
-		}
-		if arg == "--format=text" {
-			requestedJSON = false
+		if value, ok := strings.CutPrefix(arg, "--format="); ok {
+			requestedFormat = value
 		}
 		if arg == "--format" && i+1 < len(args) {
-			requestedJSON = args[i+1] == "json"
+			requestedFormat = args[i+1]
 		}
 	}
 	root.SetHelpFunc(func(cmd *cobra.Command, _ []string) { ran = true; result = map[string]any{"help": cmd.UsageString()} })
@@ -132,7 +134,11 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return nil
 	}
 	project.RunE = root.RunE
-	err := root.ExecuteContext(ctx)
+	root.SetContext(ctx)
+	command, err := root.ExecuteC()
+	if taskRan {
+		return taskExit
+	}
 	if err == nil {
 		result, err = budgetContext(result, format)
 	}
@@ -147,9 +153,40 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		if failure.Code == "usage" {
 			code = 2
 		}
-		fmt.Fprintln(stderr, failure.Message)
+		if command == runTask {
+			f := *failure
+			f.Origin = "control-plane"
+			failure = &f
+			if requestedFormat == "jsonl" || format == "jsonl" {
+				truncated := false
+				var executionError *streamFailure
+				if errors.As(err, &executionError) {
+					truncated = executionError.truncated
+				}
+				if len(f.Message) > 1024 {
+					f.Message = compactText(f.Message)
+				}
+				event := taskEvent{Type: "result", Origin: f.Origin, Truncated: &truncated, Error: &f}
+				if wire, _ := json.Marshal(event); len(wire)+1 > taskEventLimit {
+					f.Details = nil
+				}
+				stream := taskStream{out: stdout}
+				stream.emit(event)
+				return code
+			}
+		}
+		if command == runTask && requestedFormat != "json" && format != "json" {
+			fmt.Fprintf(stderr, "%s (%s): %s\n", failure.Code, failure.Origin, failure.Message)
+			if paths, ok := failure.Details.([]string); ok {
+				for _, path := range paths {
+					fmt.Fprintln(stderr, path)
+				}
+			}
+		} else {
+			fmt.Fprintln(stderr, failure.Message)
+		}
 	}
-	if requestedJSON || format == "json" {
+	if requestedFormat == "json" || format == "json" {
 		if err != nil {
 			result = nil
 		}
@@ -213,7 +250,7 @@ func render(w io.Writer, result any) error {
 			return e
 		}
 		_, err = fmt.Fprintln(w, string(b))
-	case app.ContextResult, app.ConfigurationExplanation, app.ConfigurationReceipt, app.ProfileSelection, app.Resource, app.ResourceList, app.ResourceDetail, app.Observation:
+	case app.ContextResult, app.ConfigurationExplanation, app.ConfigurationReceipt, app.ProfileSelection, app.Resource, app.ResourceList, app.ResourceDetail, app.Observation, app.Task, app.TaskList, app.ResourceMapping:
 		b, e := json.MarshalIndent(r, "", "  ")
 		if e != nil {
 			return e

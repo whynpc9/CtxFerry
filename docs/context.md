@@ -45,7 +45,8 @@ bodies; `search` returns a metadata index with approved summaries, not bodies or
 body snippets. Restricted bodies are never placed in the agent-facing FTS5 index,
 so even match presence cannot reveal a hidden term. Policy changes and index
 replacement commit together. Search words are literal AND terms, not raw MATCH
-syntax; input is limited to 1024 bytes and results to 100 documents.
+syntax; input is limited to 1024 bytes and results to 100 entries. Search also matches Task names and returns them in an
+optional `tasks` array.
 
 A single document with `purpose=project-summary` supplies the Project's explicit
 summary. Reference/local-tool disclosure suppresses it. No summary is synthesized
@@ -57,13 +58,14 @@ observation and last-sync timestamps: an aggregate has no persisted revision and
 no claim of verified or synced state. The environment reports current device
 ID, OS, architecture and calling directory.
 
-`show` indexes documents and Resource purposes for the current Project. The
+`show` indexes documents, Resource purposes and Task entry points for the current
+Project. The
 combined response is limited to 8192 emitted bytes, including the JSON envelope
 and newline or the indented text rendering. Index fields and summaries are
 shortened at UTF-8 boundaries; complete entries are removed until the budget fits.
 `truncated:true` and `nextCursor` indicate more entries. Continue with
 `context show --cursor <nextCursor>`; `get` returns the complete approved fields.
-One UUID cursor advances through both indexes. Pagination is a live view, not
+One UUID cursor advances through all three indexes. Pagination is a live view, not
 a snapshot across writes.
 
 Size decisions: structured metadata (the ContextDoc JSON excluding separately

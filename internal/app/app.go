@@ -20,6 +20,7 @@ import (
 type Error struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	Origin  string `json:"origin,omitempty"`
 	Details any    `json:"details,omitempty"`
 }
 
@@ -128,6 +129,22 @@ func (a App) Init(ctx context.Context) (InitResult, error) {
 		return c.QueryRowContext(ctx, "SELECT id,name,os,arch,created_at FROM device WHERE singleton=1").Scan(&r.Device.ID, &r.Device.Name, &r.Device.OS, &r.Device.Arch, &r.Device.CreatedAt)
 	})
 	return r, e
+}
+
+func (a App) openSubscribedProject(ctx context.Context, selector, cwd string) (*sql.DB, Project, error) {
+	result, err := a.InspectProject(ctx, selector, cwd)
+	if err != nil {
+		return nil, Project{}, err
+	}
+	db, err := store.Open(ctx, a.DataDir, false)
+	if err != nil {
+		return nil, Project{}, err
+	}
+	if err = requireSubscription(ctx, db, result.Project.ID); err != nil {
+		db.Close()
+		return nil, Project{}, err
+	}
+	return db, result.Project, nil
 }
 
 func canonical(path string) (string, error) {
