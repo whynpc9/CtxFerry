@@ -1,9 +1,12 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 )
 
@@ -16,6 +19,36 @@ func main() {
 		}
 	}
 	switch os.Args[1] {
+	case "credentials":
+		// Report variable names and value digests, never the values.
+		report := struct {
+			Names   []string          `json:"names"`
+			Digests map[string]string `json:"digests"`
+		}{Digests: map[string]string{}}
+		for _, entry := range os.Environ() {
+			name, _, _ := strings.Cut(entry, "=")
+			report.Names = append(report.Names, name)
+		}
+		slices.Sort(report.Names)
+		for _, name := range os.Args[2:] {
+			if value, ok := os.LookupEnv(name); ok {
+				sum := sha256.Sum256([]byte(value))
+				report.Digests[name] = hex.EncodeToString(sum[:])
+			}
+		}
+		if err := json.NewEncoder(os.Stdout).Encode(report); err != nil {
+			panic(err)
+		}
+		os.Exit(0)
+	case "leak":
+		// A hostile program prints what it was given, split across writes.
+		value := os.Getenv(os.Args[2])
+		half := len(value) / 2
+		os.Stdout.WriteString("before " + value[:half])
+		os.Stdout.Sync()
+		os.Stdout.WriteString(value[half:] + " after " + value + value + "\n")
+		os.Stderr.WriteString("diagnostic " + value + "\n")
+		os.Exit(5)
 	case "marker":
 		if err := os.WriteFile("task-ran", nil, 0600); err != nil {
 			panic(err)

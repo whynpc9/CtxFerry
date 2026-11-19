@@ -19,6 +19,25 @@ type TaskExecution struct {
 	Task    Task
 	Dir     string
 	Profile string
+	// The private snapshot is the only input to authorization and launch, so
+	// changes to the exported fields cannot redirect delivered credentials.
+	launch      *taskLaunch
+	definition  ExecutionDefinition
+	credentials []plannedCredential
+}
+
+type taskLaunch struct {
+	program string
+	argv    []string
+	dir     string
+}
+
+// Definition returns a copy of the credentialed execution definition.
+func (p TaskExecution) Definition() ExecutionDefinition {
+	d := p.definition
+	d.Argv = slices.Clone(d.Argv)
+	d.Credentials = slices.Clone(d.Credentials)
+	return d
 }
 
 func (a App) PrepareTask(ctx context.Context, project, cwd, name, checkout, profile string) (TaskExecution, error) {
@@ -43,9 +62,6 @@ func (a App) PrepareTask(ctx context.Context, project, cwd, name, checkout, prof
 	task, err := loadTask(ctx, tx, r.Project.ID, name)
 	if err != nil {
 		return out, err
-	}
-	if len(task.CredentialRequirements) != 0 {
-		return out, Fail("credentials-required", "this Task declares credential requirements and cannot run in credential-free mode")
 	}
 	if len(task.Platforms) != 0 && !slices.Contains(task.Platforms, runtime.GOOS) &&
 		!slices.Contains(task.Platforms, runtime.GOOS+"/"+runtime.GOARCH) {
@@ -80,9 +96,14 @@ func (a App) PrepareTask(ctx context.Context, project, cwd, name, checkout, prof
 	if err != nil {
 		return out, err
 	}
+	// Credential mappings report a conflicted Profile or Resource as binding-conflict.
+	mappingConflict := requireNoConflict
+	if len(task.CredentialRequirements) != 0 {
+		mappingConflict = func(ctx context.Context, q rowQuerier, id string) error { return requireNoBindingConflict(ctx, q, id) }
+	}
 	var cfg configuration
 	if selected != nil {
-		if err := requireNoConflict(ctx, tx, selected.ID); err != nil {
+		if err := mappingConflict(ctx, tx, selected.ID); err != nil {
 			return out, err
 		}
 		value, exists, err := readConfiguration(tx.QueryRowContext(ctx, "SELECT payload FROM configurations WHERE id=?", selected.ID), false)
@@ -103,14 +124,14 @@ func (a App) PrepareTask(ctx context.Context, project, cwd, name, checkout, prof
 		if err != nil {
 			return out, err
 		}
-		if err := requireNoConflict(ctx, tx, id); err != nil {
+		if err := mappingConflict(ctx, tx, id); err != nil {
 			return out, err
 		}
 		resource, err := loadMappedResource(ctx, tx, id)
 		if err != nil {
 			return out, err
 		}
-		if err := requireNoConflict(ctx, tx, resource.Scope.ID); err != nil {
+		if err := mappingConflict(ctx, tx, resource.Scope.ID); err != nil {
 			return out, err
 		}
 		if resource.Policy.Storage != "shared" || !compatibleResource(task.TaskSpec, slot.Name, resource.ResourceSpec) {
@@ -120,7 +141,20 @@ func (a App) PrepareTask(ctx context.Context, project, cwd, name, checkout, prof
 			return out, Fail("platform-unsupported", "mapped Resource does not apply to the current platform")
 		}
 	}
+	if len(task.CredentialRequirements) != 0 {
+		out.credentials, err = planCredentials(ctx, tx, task, selected, cfg)
+		if err != nil {
+			return out, err
+		}
+		out.definition = ExecutionDefinition{TaskID: task.ID, TaskRevision: task.Revision, MembershipID: task.MembershipID,
+			Program: task.Program, Argv: slices.Clone(task.Argv), MembershipRoot: root, WorkingDirectory: dir,
+			ProfileID: selected.ID, Profile: selected.Name, Credentials: make([]ExecutionCredential, 0, len(out.credentials))}
+		for _, c := range out.credentials {
+			out.definition.Credentials = append(out.definition.Credentials, c.ExecutionCredential)
+		}
+	}
 	out.Task, out.Dir = task, dir
+	out.launch = &taskLaunch{program: task.Program, argv: slices.Clone(task.Argv), dir: dir}
 	return out, nil
 }
 
@@ -203,24 +237,79 @@ func taskCheckout(ctx context.Context, q taskReader, device, repository, subdir,
 	return "", &Error{Code: "ambiguous-checkout", Message: "multiple local checkouts match the Task; choose a Git checkout root with --checkout", Details: paths}
 }
 
-// ExecuteTask runs only a prepared credential-free Task and forwards byte streams.
-func ExecuteTask(ctx context.Context, plan TaskExecution, stdin io.Reader, stdout, stderr io.Writer, started func()) (int, error) {
-	if len(plan.Task.CredentialRequirements) != 0 {
-		return 0, Fail("credentials-required", "this Task declares credential requirements and cannot run in credential-free mode")
+// ExecuteTask runs a prepared Task and forwards byte streams. A Task with
+// credential requirements runs only after the device trust decision, a
+// reachability check and device-local provider resolution. Its child receives
+// the neutral base environment and the Task's delivered variables only, and
+// delivered values are replaced in its output.
+func (a App) ExecuteTask(ctx context.Context, plan TaskExecution, stdin io.Reader, stdout, stderr io.Writer, started func()) (int, error) {
+	if plan.launch == nil {
+		return 0, Fail("credentials-required", "prepare the Task before execution")
 	}
-	program, err := filepath.Localize(strings.TrimPrefix(plan.Task.Program, "./"))
+	launch := *plan.launch
+	env := taskEnvironment()
+	if len(plan.credentials) != 0 {
+		delivered, values, err := a.credentialEnvironment(ctx, plan)
+		if ctx.Err() != nil {
+			for _, value := range values {
+				clear(value)
+			}
+			return 0, Fail("interrupted", "Task execution was interrupted")
+		}
+		if err != nil {
+			return 0, err
+		}
+		defer func() {
+			for _, value := range values {
+				clear(value)
+			}
+		}()
+		env = childEnvironment(delivered)
+		out := newRedactor(stdout, values)
+		defer out.wipe()
+		diagnostics := out
+		// One destination keeps one serialized stream, as os/exec does.
+		if !sameWriter(stdout, stderr) {
+			diagnostics = newRedactor(stderr, values)
+			defer diagnostics.wipe()
+		}
+		code, err := runChild(ctx, launch, env, stdin, out, diagnostics, started)
+		if err != nil && ctx.Err() != nil {
+			err = Fail("interrupted", "Task execution was interrupted")
+		}
+		// Held partial matches are released only after the child has exited.
+		flushOut, flushDiagnostics := out.Flush(), diagnostics.Flush()
+		if err == nil && (flushOut != nil || flushDiagnostics != nil) {
+			err = Fail("execution-failed", "could not write Task output")
+		}
+		return code, err
+	}
+	return runChild(ctx, launch, env, stdin, stdout, stderr, started)
+}
+
+func sameWriter(a, b io.Writer) (same bool) {
+	defer func() {
+		if recover() != nil {
+			same = false
+		}
+	}()
+	return a == b
+}
+
+func runChild(ctx context.Context, launch taskLaunch, env []string, stdin io.Reader, stdout, stderr io.Writer, started func()) (int, error) {
+	program, err := filepath.Localize(strings.TrimPrefix(launch.program, "./"))
 	if err != nil {
 		return 0, Fail("launch-failed", "Task program path is invalid on this platform")
 	}
-	if strings.Contains(plan.Task.Program, "/") {
-		program = filepath.Join(plan.Dir, program)
+	if strings.Contains(launch.program, "/") {
+		program = filepath.Join(launch.dir, program)
 	}
-	cmd := exec.CommandContext(ctx, program, plan.Task.Argv...)
+	cmd := exec.CommandContext(ctx, program, launch.argv...)
 	if cmd.Err == nil && !filepath.IsAbs(cmd.Path) {
 		return 0, Fail("launch-failed", "Task program must resolve to an absolute executable path")
 	}
-	cmd.Dir, cmd.Stdin, cmd.Stdout, cmd.Stderr = plan.Dir, stdin, stdout, stderr
-	cmd.Env = taskEnvironment()
+	cmd.Dir, cmd.Stdin, cmd.Stdout, cmd.Stderr = launch.dir, stdin, stdout, stderr
+	cmd.Env = env
 	cmd.WaitDelay = 2 * time.Second
 	if err := cmd.Start(); err != nil {
 		return 0, Fail("launch-failed", err.Error())
@@ -243,13 +332,29 @@ func ExecuteTask(ctx context.Context, plan TaskExecution, stdin io.Reader, stdou
 	return 0, nil
 }
 
+var baseEnvironmentNames = []string{"PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "HOME", "USERPROFILE", "TMP", "TMPDIR", "TEMP",
+	"LANG", "LC_ALL", "TERM", "COLORTERM"}
+
+// environmentKey folds variable names only where the platform does.
+func environmentKey(name string) string {
+	if runtime.GOOS == "windows" {
+		return strings.ToUpper(name)
+	}
+	return name
+}
+
+// taskEnvironment is the credential-free base, unchanged from #13: names are
+// folded on every platform.
 func taskEnvironment() []string {
+	return baseEnvironment(strings.ToUpper)
+}
+
+// baseEnvironment selects the neutral variables passed to a Task child.
+func baseEnvironment(key func(string) string) []string {
 	env := []string{}
 	for _, entry := range os.Environ() {
 		name, _, _ := strings.Cut(entry, "=")
-		switch strings.ToUpper(name) {
-		case "PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "HOME", "USERPROFILE", "TMP", "TMPDIR", "TEMP",
-			"LANG", "LC_ALL", "TERM", "COLORTERM":
+		if slices.Contains(baseEnvironmentNames, key(name)) {
 			env = append(env, entry)
 		}
 	}

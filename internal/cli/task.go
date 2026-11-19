@@ -85,11 +85,23 @@ func slotFlags[T any](values []string, flag string) ([]T, error) {
 	return out, nil
 }
 
+const runHelp = `Run a registered Task from its Repository membership in a local checkout.
+
+A Task with credential requirements resolves only its own references, through
+the selected Profile's explicit mappings and this device's provider login. The
+child receives a minimal base environment and the Task's delivered variables.
+Git and provider authentication material is not passed to it. Delivered values
+are replaced with [REDACTED] in the output CtxFerry forwards.
+
+The target program can still read, print, encode or exfiltrate anything it is
+given. A Task is not OS isolation: run credentialed Tasks only with programs
+you trust.`
+
 const runUsage = "use ctxferry run <task> [--checkout <root>] [--profile <name>] [--format text|jsonl]"
 
 func runCommand(ctx context.Context, invoke func(func(app.App) (any, error)) func(*cobra.Command, []string) error, project, format *string, onExit func(int)) *cobra.Command {
 	var profiles, checkouts []string
-	cmd := &cobra.Command{Use: "run <task>", Short: "Run a registered credential-free Task with text or JSONL output",
+	cmd := &cobra.Command{Use: "run <task>", Short: "Run a registered Task with text or JSONL output", Long: runHelp,
 		Args: func(_ *cobra.Command, args []string) error {
 			if *format != "text" && *format != "jsonl" || len(args) != 1 {
 				return app.Fail("usage", runUsage)
@@ -119,7 +131,7 @@ func runCommand(ctx context.Context, invoke func(func(app.App) (any, error)) fun
 			if err != nil {
 				return nil, err
 			}
-			code, err := executeTask(ctx, cmd, *format, plan)
+			code, err := executeTask(ctx, a, cmd, *format, plan)
 			if err == nil {
 				onExit(code)
 			}
@@ -129,15 +141,15 @@ func runCommand(ctx context.Context, invoke func(func(app.App) (any, error)) fun
 	return cmd
 }
 
-func executeTask(ctx context.Context, cmd *cobra.Command, format string, plan app.TaskExecution) (int, error) {
+func executeTask(ctx context.Context, a app.App, cmd *cobra.Command, format string, plan app.TaskExecution) (int, error) {
 	out, diagnostics := cmd.OutOrStdout(), cmd.ErrOrStderr()
 	if format == "text" {
-		return app.ExecuteTask(ctx, plan, cmd.InOrStdin(), out, diagnostics, func() {})
+		return a.ExecuteTask(ctx, plan, cmd.InOrStdin(), out, diagnostics, func() {})
 	}
 	stream := taskStream{out: out}
 	stream.mu.Lock()
 	started := false
-	code, err := app.ExecuteTask(ctx, plan, nil, taskOutput{&stream, "stdout"}, taskOutput{&stream, "stderr"}, func() {
+	code, err := a.ExecuteTask(ctx, plan, nil, taskOutput{&stream, "stdout"}, taskOutput{&stream, "stderr"}, func() {
 		started = true
 		stream.emit(taskEvent{Type: "start", TaskID: plan.Task.ID, Task: plan.Task.Name, Profile: plan.Profile})
 		stream.mu.Unlock()

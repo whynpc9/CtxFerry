@@ -161,33 +161,47 @@ func readSecretStatus(ctx context.Context, tx *sql.Tx, loc configurationLocation
 
 func readSecretReachability(ctx context.Context, tx *sql.Tx, cwd string, resource Resource, out *SecretStatus) error {
 	detail, err := resourceDetail(ctx, tx, resource.Scope.ID, cwd, resource.ID)
-	if err != nil || detail.Route.Status != "resolved" || detail.Route.Proxy != "" {
-		return err
-	}
-	scope := ObservationScope{Kind: "service-endpoint", Target: detail.Route.Endpoint, Network: detail.Route.Network,
-		OS: detail.Environment.OS, Arch: detail.Environment.Arch, ResourceRevision: resource.Revision}
-	rows, err := tx.QueryContext(ctx, "SELECT data FROM resource_observations WHERE resource_id=? AND device_id=? ORDER BY seq DESC", resource.ID, out.DeviceID)
 	if err != nil {
 		return err
+	}
+	observation, err := latestServiceObservation(ctx, tx, detail)
+	if observation != nil {
+		reachable := observation.Status == "reachable"
+		out.ResourceReachable, out.ReachabilitySeenAt = &reachable, observation.ObservedAt
+	}
+	return err
+}
+
+// latestServiceObservation returns this device's latest service reachability
+// for the resolved direct route and current Resource revision. A proxy route
+// or a missing observation leaves reachability unknown.
+func latestServiceObservation(ctx context.Context, q taskReader, detail ResourceDetail) (*Observation, error) {
+	if detail.Route.Status != "resolved" || detail.Route.Proxy != "" {
+		return nil, nil
+	}
+	scope := ObservationScope{Kind: "service-endpoint", Target: detail.Route.Endpoint, Network: detail.Route.Network,
+		OS: detail.Environment.OS, Arch: detail.Environment.Arch, ResourceRevision: detail.Resource.Revision}
+	rows, err := q.QueryContext(ctx, "SELECT data FROM resource_observations WHERE resource_id=? AND device_id=? ORDER BY seq DESC",
+		detail.Resource.ID, detail.Environment.DeviceID)
+	if err != nil {
+		return nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var raw []byte
 		var observation Observation
 		if err := rows.Scan(&raw); err != nil {
-			return err
+			return nil, err
 		}
 		if err := json.Unmarshal(raw, &observation); err != nil {
-			return err
+			return nil, err
 		}
 		if observation.Scope == scope && observation.Tool == "tcp-connect" &&
 			(observation.Status == "reachable" || observation.Status == "unreachable") {
-			reachable := observation.Status == "reachable"
-			out.ResourceReachable, out.ReachabilitySeenAt = &reachable, observation.ObservedAt
-			break
+			return &observation, nil
 		}
 	}
-	return rows.Err()
+	return nil, rows.Err()
 }
 
 func (a App) checkSecretAvailability(ctx context.Context, key provider.SessionKey, out *SecretStatus) error {

@@ -191,7 +191,7 @@ func TestTaskExecution(t *testing.T) {
 		t.Fatal(text)
 	}
 	register("credential-task", "--resource-slot="+dbSlot, "--credential-requirement="+dbCredential, "--arg=marker")
-	refusedTask(t, run("credential-task"), "credentials-required")
+	refusedTask(t, run("credential-task"), "profile-required")
 	if _, err := os.Stat(filepath.Join(root, "app", "working", "task-ran")); !os.IsNotExist(err) {
 		t.Fatal("credential-dependent child launched", err)
 	}

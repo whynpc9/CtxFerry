@@ -91,6 +91,9 @@ type InspectResult struct {
 type App struct {
 	DataDir   string
 	Providers provider.Services
+	// Trust decides whether a credentialed execution definition is enabled on
+	// this device. Nil refuses every credentialed run.
+	Trust ExecutionTrust
 }
 
 func now() string            { return time.Now().UTC().Format(time.RFC3339Nano) }

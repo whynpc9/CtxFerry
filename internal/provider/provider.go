@@ -23,6 +23,9 @@ type Locator struct {
 	Key         string `json:"key,omitempty"`
 }
 
+// MethodCapabilities are reported per authentication method. NativeExec is
+// informational: CtxFerry builds the child environment itself unless a native
+// path can restrict the injected set and exclude authentication material.
 type MethodCapabilities struct {
 	Method        string `json:"method"`
 	MachineAuth   bool   `json:"machineAuth"`
