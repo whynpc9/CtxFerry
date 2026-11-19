@@ -59,7 +59,7 @@ func Open(ctx context.Context, root string, create bool) (*sql.DB, error) {
 	if err = db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		return fail(err)
 	}
-	if version > 6 {
+	if version > 7 {
 		return fail(ErrUnsupportedSchema)
 	}
 	if version == 0 && !create {
@@ -72,13 +72,13 @@ func Open(ctx context.Context, root string, create bool) (*sql.DB, error) {
 	if mode != "wal" {
 		return fail(fmt.Errorf("WAL unavailable: %s", mode))
 	}
-	if version < 6 {
+	if version < 7 {
 		err = Write(ctx, db, func(c *sql.Conn) error {
 			var v int
 			if err := c.QueryRowContext(ctx, "PRAGMA user_version").Scan(&v); err != nil {
 				return err
 			}
-			if v > 6 {
+			if v > 7 {
 				return ErrUnsupportedSchema
 			}
 			if v == 0 {
@@ -112,7 +112,13 @@ func Open(ctx context.Context, root string, create bool) (*sql.DB, error) {
 				v = 5
 			}
 			if v == 5 {
-				_, err := c.ExecContext(ctx, conflictSchema)
+				if _, err := c.ExecContext(ctx, conflictSchema); err != nil {
+					return err
+				}
+				v = 6
+			}
+			if v == 6 {
+				_, err := c.ExecContext(ctx, configurationSchema)
 				return err
 			}
 			return nil
@@ -188,3 +194,15 @@ CREATE TABLE IF NOT EXISTS sync_objects (path TEXT PRIMARY KEY, data BLOB NOT NU
 CREATE TABLE IF NOT EXISTS sync_tombstones (id TEXT PRIMARY KEY, data BLOB NOT NULL);
 CREATE TABLE IF NOT EXISTS sync_blocked (id TEXT PRIMARY KEY, reason TEXT NOT NULL);
 PRAGMA user_version=6;`
+
+const configurationSchema = `
+CREATE TABLE IF NOT EXISTS configurations (id TEXT PRIMARY KEY, project_id TEXT REFERENCES projects(id), payload TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS local_configurations (
+    device_id TEXT NOT NULL, project_id TEXT NOT NULL REFERENCES projects(id), checkout TEXT NOT NULL,
+    payload TEXT NOT NULL, PRIMARY KEY(device_id,project_id,checkout)
+);
+CREATE TABLE IF NOT EXISTS profile_selections (
+    device_id TEXT NOT NULL, project_id TEXT NOT NULL REFERENCES projects(id), checkout TEXT NOT NULL,
+    profile TEXT NOT NULL, selected_at TEXT NOT NULL, PRIMARY KEY(device_id,project_id,checkout)
+);
+PRAGMA user_version=7;`

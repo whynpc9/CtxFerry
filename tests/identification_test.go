@@ -258,6 +258,7 @@ func TestEqualScopeCommonDirAmbiguity(t *testing.T) {
 	if len(unbound(t, h)["candidates"].([]any)) != 2 {
 		t.Fatal("equal scopes must be ambiguous")
 	}
+	failure(t, h.Run(t, "context", "explain", "--format=json"), "project-unbound")
 }
 
 func TestRootAndSingleCharacterScope(t *testing.T) {

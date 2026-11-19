@@ -570,6 +570,15 @@ func exportConn(ctx context.Context, conn *sql.Conn, c SyncConfig) (map[string][
 				return err
 			}
 		}
+		configs, err := exportConfigurations(ctx, conn, c.WorkspaceID, projects)
+		if err != nil {
+			return err
+		}
+		for _, cfg := range configs {
+			if err = add(cfg.id, "configuration", cfg.scope, cfg.value, nil); err != nil {
+				return err
+			}
+		}
 		rows, err = conn.QueryContext(ctx, "SELECT r.id,r.project_id,r.kind,r.metadata,b.body FROM records r LEFT JOIN context_bodies b ON b.record_id=r.id ORDER BY r.id")
 		if err != nil {
 			return err

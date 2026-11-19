@@ -238,7 +238,7 @@ func overlayTombstones(ctx context.Context, c *sql.Conn, files map[string][]byte
 	}
 	return rows.Err()
 }
-func requireNoConflict(ctx context.Context, c *sql.Conn, id string) error {
+func requireNoConflict(ctx context.Context, c rowQuerier, id string) error {
 	var n int
 	if e := c.QueryRowContext(ctx, "SELECT count(*) FROM sync_conflicts WHERE id=? AND active=1", id).Scan(&n); e != nil {
 		return e
@@ -470,6 +470,11 @@ func (a App) Resolve(ctx context.Context, id, token, take string, input []byte) 
 		r.Revision = uuid.NewString()
 		r.OperationID = uuid.NewString()
 		r.Provenance.UpdatedAt = now()
+		if r.Kind == "configuration" {
+			r.Config.Revision = r.Revision
+			r.Config.UpdatedAt = r.Provenance.UpdatedAt
+			r.Payload = r.Config
+		}
 		if e = c.QueryRowContext(ctx, "SELECT id FROM device").Scan(&r.Provenance.DeviceID); e != nil {
 			return e
 		}
@@ -669,6 +674,8 @@ func retainDeferredRecords(ctx context.Context, c *sql.Conn, files map[string][]
 			table = "memberships"
 		case "context":
 			table = "records"
+		case "configuration":
+			table = "configurations"
 		}
 		if table == "" {
 			continue
