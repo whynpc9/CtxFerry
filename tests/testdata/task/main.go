@@ -8,7 +8,8 @@ import (
 )
 
 func main() {
-	for _, key := range []string{"GH_TOKEN", "BW_SESSION", "GIT_CONFIG_COUNT", "CTXFERRY_TEST_API"} {
+	for _, key := range []string{"GH_TOKEN", "BW_SESSION", "GIT_CONFIG_COUNT", "CTXFERRY_TEST_API",
+		"INFISICAL_TOKEN", "INFISICAL_CLIENT_ID", "INFISICAL_CLIENT_SECRET", "CTXFERRY_INFISICAL_ACCESS_TOKEN"} {
 		if _, exists := os.LookupEnv(key); exists {
 			fmt.Fprintln(os.Stderr, "unexpected inherited variable", key)
 			os.Exit(98)

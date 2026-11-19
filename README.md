@@ -25,7 +25,7 @@ Every command supports `--format json`, emitting one object (including failures 
 
 Failures return `ok:false`, `data:null`, and an error with `code` and `message`; diagnostics go to stderr. Exit codes are 0 for success, 2 for usage errors and 1 for application/storage errors. JSON field names and schema version form the scripting contract. Text output is intended for humans.
 
-The CLI parses and renders; `internal/app` owns operations and validation, and `internal/store` owns persistence. Git is optional for discovery; there are no provider, credential or desktop dependencies at runtime. Queries do not initialize a missing store.
+The CLI parses and renders; `internal/app` owns operations and validation, and `internal/store` owns persistence. Git is optional for discovery. Normal context queries run without a secret provider or desktop dependencies. Queries do not initialize a missing store.
 
 Run `go test -count=1 ./...` and `go vet ./...`. The reusable `internal/testcli` harness exercises the real binary with isolated data/home directories, sanitized environment, deadlines, separate streams and exact JSON decoding. CI checks Linux, macOS and Windows with CGO disabled and runs an offline Linux container smoke test.
 
@@ -119,8 +119,8 @@ Create a binding after registering a Task requirement and mapping its Resource s
 
 ```sh
 ctxferry secret bind integration-check login --profile development \
-  --alias shared-db --provider infisical --provider-profile team --method machine \
-  --backend-project team-vault --environment sandbox --path /app --key BACKEND_DB
+  --alias shared-db --provider infisical --provider-profile team --method universal-auth \
+  --backend-project 00000000-0000-0000-0000-000000000000 --environment sandbox --path /app --key BACKEND_DB
 ctxferry secret list --format json
 ctxferry secret status integration-check login --profile development --format json
 ```
@@ -129,4 +129,11 @@ Use `--entry-id` in place of the four namespace and key flags when the backend p
 
 `secret list` reads catalog metadata. `secret status` checks the exact reference for one Task requirement after validating its Profile mappings. Its JSON reports binding, authentication, entry retrievability and Resource reachability independently. Unknown facts are `null`. On failure the same facts are available in `error.details` when the Task and Project can be evaluated. Reachability uses the latest matching observation from `resource check` on this device.
 
-`provider login <provider> --provider-profile <name> --method <method>` uses the configured adapter and the OS credential store (Secret Service, Keychain or Credential Manager). It refuses login when secure storage is unavailable. Production provider adapters are added separately. Catalog sync works independently of provider login.
+### Infisical US Cloud
+
+- **Personal** (`--method personal`). Sign in interactively with `infisical login` before running `ctxferry provider login infisical --provider-profile <name> --method personal`. Use the same named Infisical CLI profile, or explicitly select `default` to adopt its current profile. The adapter uses the existing CLI session to obtain an access token. Re-run CtxFerry login when the token expires.
+- **Machine identity** (`--method universal-auth`). Supply `INFISICAL_CLIENT_ID` and `INFISICAL_CLIENT_SECRET` through your existing protected launcher. Set `CTXFERRY_INFISICAL_PROFILE` to the selected provider profile name, then run `ctxferry provider login infisical --provider-profile <name> --method universal-auth`. This flow needs network access and works without a browser or a terminal.
+
+Both login methods store the access token in the OS credential store (Secret Service, Keychain or Credential Manager). Login reports `credential-storage-unavailable` if the store is inaccessible. On a headless host without a keyring, a protected launcher can instead supply a current machine token as `CTXFERRY_INFISICAL_ACCESS_TOKEN` for `secret status`. Set `CTXFERRY_INFISICAL_WORKSPACE_ID`, `CTXFERRY_INFISICAL_DEVICE_ID` and `CTXFERRY_INFISICAL_PROFILE` to the exact local workspace, device and provider profile. Find the workspace and device IDs with `ctxferry init --format json`. The matching token is used for that invocation and remains under the launcher's control. Without either source, status reports `authentication-required`.
+
+Session checks and reads require a connection. Both methods report token expiry, and Infisical can revoke or restrict access before that time. Reads use the stable secret ID when specified. A named read requires the explicit Infisical project ID, environment slug, folder and exact shared key. The Resource stage is independent, and the adapter disables imported secrets and reference expansion. The adapter reports no offline read, native execution or file delivery capability. Catalog sync works independently of provider login.

@@ -198,11 +198,7 @@ func (a App) checkSecretAvailability(ctx context.Context, key provider.SessionKe
 	if err != nil {
 		return Fail("secret-unavailable", Classify(err).Message)
 	}
-	credentials, err := a.secureCredentials(ctx)
-	if err != nil {
-		return Fail("authentication-required", "secure device credential storage is unavailable")
-	}
-	session, err := credentials.Load(ctx, key)
+	session, err := a.loadProviderSession(ctx, key)
 	defer clear(session)
 	if errors.Is(err, provider.ErrNoSession) || err == nil && len(session) == 0 {
 		auth := provider.Authentication{State: provider.SignedOut}
@@ -210,7 +206,7 @@ func (a App) checkSecretAvailability(ctx context.Context, key provider.SessionKe
 		return Fail("authentication-required", "log in to the provider on this device")
 	}
 	if err != nil {
-		return Fail("authentication-required", "could not read the secure device session")
+		return err
 	}
 	auth, err := providerAuthentication(ctx, adapter, key.Profile, session)
 	if err != nil {

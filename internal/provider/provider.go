@@ -82,4 +82,7 @@ type CredentialStore interface {
 type Services struct {
 	Adapters    map[string]Adapter
 	Credentials CredentialStore
+	// InjectedSession reads an explicitly provisioned runtime session for the
+	// exact device profile. It returns a caller-owned copy, or nil if absent.
+	InjectedSession func(SessionKey) []byte
 }

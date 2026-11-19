@@ -143,7 +143,9 @@ func TestTaskExecution(t *testing.T) {
 	fixture := taskFixture(t)
 	program := "tools/" + filepath.Base(fixture)
 	h := gitHarness(t)
-	h.ExtraEnv = []string{"GH_TOKEN=synthetic", "BW_SESSION=synthetic", "GIT_CONFIG_COUNT=0"}
+	h.ExtraEnv = []string{"GH_TOKEN=synthetic", "BW_SESSION=synthetic", "GIT_CONFIG_COUNT=0",
+		"INFISICAL_TOKEN=synthetic", "INFISICAL_CLIENT_ID=synthetic", "INFISICAL_CLIENT_SECRET=synthetic",
+		"CTXFERRY_INFISICAL_ACCESS_TOKEN=synthetic"}
 	root := h.Dir
 	installTaskFixture(t, root, fixture, "primary")
 	h.Dir = filepath.Join(root, "app")
