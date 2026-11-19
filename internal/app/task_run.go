@@ -99,16 +99,18 @@ func (a App) PrepareTask(ctx context.Context, project, cwd, name, checkout, prof
 		return out, Fail("profile-required", "select a Profile or use --profile to resolve the Task's Resource slots")
 	}
 	for _, slot := range task.ResourceSlots {
-		i := slices.IndexFunc(cfg.ResourceMappings, func(m ResourceMapping) bool { return m.TaskID == task.ID && m.Slot == slot.Name })
-		if i < 0 {
-			return out, Fail("binding-missing", "Profile has no Resource mapping for Task "+task.Name+" slot "+slot.Name)
+		id, err := mappedResourceID(cfg, task, slot.Name)
+		if err != nil {
+			return out, err
 		}
-		id := cfg.ResourceMappings[i].ResourceID
 		if err := requireNoConflict(ctx, tx, id); err != nil {
 			return out, err
 		}
-		resource, err := loadResource(ctx, tx, r.Project.ID, id)
+		resource, err := loadMappedResource(ctx, tx, id)
 		if err != nil {
+			return out, err
+		}
+		if err := requireNoConflict(ctx, tx, resource.Scope.ID); err != nil {
 			return out, err
 		}
 		if resource.Policy.Storage != "shared" || !compatibleResource(task.TaskSpec, slot.Name, resource.ResourceSpec) {

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/whynpc9/CtxFerry/internal/provider"
 	"github.com/whynpc9/CtxFerry/internal/store"
 )
 
@@ -87,7 +88,10 @@ type InspectResult struct {
 	Bindings   []Binding   `json:"bindings"`
 	Resolution *Resolution `json:"resolution"`
 }
-type App struct{ DataDir string }
+type App struct {
+	DataDir   string
+	Providers provider.Services
+}
 
 func now() string            { return time.Now().UTC().Format(time.RFC3339Nano) }
 func newID() (string, error) { u, e := uuid.NewRandom(); return u.String(), e }
