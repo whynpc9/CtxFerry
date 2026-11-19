@@ -227,19 +227,9 @@ func (a App) BindProjectWith(ctx context.Context, path, slug, selector, reposito
 	}
 	defer release()
 	var r BindResult
-	path, e := canonical(path)
+	path, e := a.bindingPath(path)
 	if e != nil {
 		return r, e
-	}
-	root, e := filepath.Abs(a.DataDir)
-	if e != nil {
-		return r, e
-	}
-	if resolved, err := filepath.EvalSymlinks(root); err == nil {
-		root = resolved
-	}
-	if contains(path, root) {
-		return r, Fail("invalid-path", "application data directory must be outside the bound directory")
 	}
 	if selector != "" && slug != "" {
 		return r, Fail("usage", "project and slug cannot be combined")
@@ -260,24 +250,6 @@ func (a App) BindProjectWith(ctx context.Context, path, slug, selector, reposito
 	if explicit && (len(slug) > 63 || !validSlug.MatchString(slug)) {
 		return r, Fail("invalid-slug", "slug must be at most 63 lowercase letters, digits or single hyphens")
 	}
-	pid, e := newID()
-	if e != nil {
-		return r, e
-	}
-	bid, e := newID()
-	if e != nil {
-		return r, e
-	}
-	stamp := now()
-	if !explicit {
-		slug = strings.Trim(slugRuns.ReplaceAllString(strings.ToLower(filepath.Base(path)), "-"), "-")
-		if len(slug) > 63 {
-			slug = strings.TrimRight(slug[:63], "-")
-		}
-		if slug == "" {
-			slug = "project"
-		}
-	}
 	db, e := store.Open(ctx, a.DataDir, false)
 	if e != nil {
 		return r, e
@@ -287,58 +259,109 @@ func (a App) BindProjectWith(ctx context.Context, path, slug, selector, reposito
 		return r, e
 	}
 	e = store.Write(ctx, db, func(c *sql.Conn) error {
-		var did string
-		if err := c.QueryRowContext(ctx, "SELECT id FROM device WHERE singleton=1").Scan(&did); err != nil {
-			return err
-		}
-		err := c.QueryRowContext(ctx, `SELECT p.id,p.slug,p.created_at,b.id,b.project_id,b.device_id,b.path,b.created_at FROM checkout_bindings b JOIN projects p ON p.id=b.project_id WHERE b.device_id=? AND b.path=?`, did, path).Scan(&r.Project.ID, &r.Project.Slug, &r.Project.CreatedAt, &r.Binding.ID, &r.Binding.ProjectID, &r.Binding.DeviceID, &r.Binding.Path, &r.Binding.CreatedAt)
-		if err == nil {
-			if (explicit && slug != r.Project.Slug) || (selector != "" && selector != r.Project.ID && selector != r.Project.Slug) {
-				return Fail("binding-conflict", "directory is already bound to a different slug")
-			}
-			if err := registerGit(ctx, c, &r, git, repository, aliases); err != nil {
-				return err
-			}
-			return queueChanges(ctx, c)
-		}
-		if !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
-		if selector != "" {
-			p, err := selectProject(ctx, c, selector)
-			if err != nil {
-				return err
-			}
-			pid, slug, stamp = p.ID, p.Slug, p.CreatedAt
-		}
-		var count int
-		if err = c.QueryRowContext(ctx, "SELECT count(*) FROM projects WHERE slug=?", slug).Scan(&count); err != nil {
-			return err
-		}
-		if count > 0 && selector == "" {
-			if explicit {
-				return Fail("slug-conflict", "slug is already in use")
-			}
-			slug = strings.TrimRight(slug[:min(54, len(slug))], "-") + "-" + pid[:8]
-		}
-		r.Project = Project{pid, slug, stamp}
-		r.Binding = Binding{ID: bid, ProjectID: pid, DeviceID: did, Path: path, CreatedAt: now()}
-		if selector == "" {
-			if _, err = c.ExecContext(ctx, "INSERT INTO projects VALUES(?,?,?)", pid, slug, stamp); err != nil {
-				return err
-			}
-		}
-		if _, err = c.ExecContext(ctx, "INSERT INTO checkout_bindings(id,project_id,device_id,path,created_at) VALUES(?,?,?,?,?)", bid, pid, did, path, r.Binding.CreatedAt); err != nil {
-			return err
-		}
-		r.Created = true
-		if err := registerGit(ctx, c, &r, git, repository, aliases); err != nil {
+		if err := bindProject(ctx, c, &r, path, slug, selector, repository, git, aliases); err != nil {
 			return err
 		}
 		return queueChanges(ctx, c)
 	})
 	return r, e
 }
+
+func (a App) bindingPath(path string) (string, error) {
+	path, err := canonical(path)
+	if err != nil {
+		return "", err
+	}
+	root, err := filepath.Abs(a.DataDir)
+	if err != nil {
+		return "", err
+	}
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
+	if contains(path, root) {
+		return "", Fail("invalid-path", "application data directory must be outside the bound directory")
+	}
+	return path, nil
+}
+
+func defaultProjectSlug(path string) string {
+	slug := strings.Trim(slugRuns.ReplaceAllString(strings.ToLower(filepath.Base(path)), "-"), "-")
+	if len(slug) > 63 {
+		slug = strings.TrimRight(slug[:63], "-")
+	}
+	if slug == "" {
+		slug = "project"
+	}
+	return slug
+}
+
+// bindProject saves the Project and checkout association in the caller's transaction.
+func bindProject(ctx context.Context, c *sql.Conn, r *BindResult, path, slug, selector, repository string, git GitLocation, aliases []string) error {
+	explicit := slug != ""
+	if !explicit {
+		slug = defaultProjectSlug(path)
+	}
+	pid, e := newID()
+	if e != nil {
+		return e
+	}
+	bid, e := newID()
+	if e != nil {
+		return e
+	}
+	stamp := now()
+	var did string
+	if err := c.QueryRowContext(ctx, "SELECT id FROM device WHERE singleton=1").Scan(&did); err != nil {
+		return err
+	}
+	err := c.QueryRowContext(ctx, `SELECT p.id,p.slug,p.created_at,b.id,b.project_id,b.device_id,b.path,b.created_at FROM checkout_bindings b JOIN projects p ON p.id=b.project_id WHERE b.device_id=? AND b.path=?`, did, path).Scan(&r.Project.ID, &r.Project.Slug, &r.Project.CreatedAt, &r.Binding.ID, &r.Binding.ProjectID, &r.Binding.DeviceID, &r.Binding.Path, &r.Binding.CreatedAt)
+	if err == nil {
+		if (explicit && slug != r.Project.Slug) || (selector != "" && selector != r.Project.ID && selector != r.Project.Slug) {
+			return Fail("binding-conflict", "directory is already bound to a different slug")
+		}
+		if err := registerGit(ctx, c, r, git, repository, aliases); err != nil {
+			return err
+		}
+		return nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if selector != "" {
+		p, err := selectProject(ctx, c, selector)
+		if err != nil {
+			return err
+		}
+		pid, slug, stamp = p.ID, p.Slug, p.CreatedAt
+	}
+	var count int
+	if err = c.QueryRowContext(ctx, "SELECT count(*) FROM projects WHERE slug=?", slug).Scan(&count); err != nil {
+		return err
+	}
+	if count > 0 && selector == "" {
+		if explicit {
+			return Fail("slug-conflict", "slug is already in use")
+		}
+		slug = strings.TrimRight(slug[:min(54, len(slug))], "-") + "-" + pid[:8]
+	}
+	r.Project = Project{pid, slug, stamp}
+	r.Binding = Binding{ID: bid, ProjectID: pid, DeviceID: did, Path: path, CreatedAt: now()}
+	if selector == "" {
+		if _, err = c.ExecContext(ctx, "INSERT INTO projects VALUES(?,?,?)", pid, slug, stamp); err != nil {
+			return err
+		}
+	}
+	if _, err = c.ExecContext(ctx, "INSERT INTO checkout_bindings(id,project_id,device_id,path,created_at) VALUES(?,?,?,?,?)", bid, pid, did, path, r.Binding.CreatedAt); err != nil {
+		return err
+	}
+	r.Created = true
+	if err := registerGit(ctx, c, r, git, repository, aliases); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (a App) ListProjects(ctx context.Context) (ListResult, error) {
 	return a.ListProjectsAll(ctx, false)
 }
