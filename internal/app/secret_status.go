@@ -41,7 +41,11 @@ func (a App) ListSecrets(ctx context.Context, selector, cwd string) (SecretList,
 		return out, err
 	}
 	defer db.Close()
-	out.Project = project
+	return listProjectSecrets(ctx, db, project)
+}
+
+func listProjectSecrets(ctx context.Context, db *sql.DB, project Project) (SecretList, error) {
+	out := SecretList{Project: project, Bindings: []SecretBinding{}}
 	// A Project can see its own references and those explicitly mapped by its Profiles.
 	rows, err := db.QueryContext(ctx, "SELECT metadata"+liveSecretBindings+` AND
 		(project_id=? OR id IN (SELECT json_extract(m.value,'$.bindingId') FROM configurations p,

@@ -25,6 +25,10 @@ Every command supports `--format json`, emitting one object (including failures 
 
 Failures return `ok:false`, `data:null`, and an error with `code` and `message`; diagnostics go to stderr. Exit codes are 0 for success, 2 for usage errors and 1 for application/storage errors. JSON field names and schema version form the scripting contract. Text output is intended for humans.
 
+Run `ctxferry doctor` or `ctxferry doctor --format json` to inspect a device. Each check has its own status and evidence. The command succeeds when it can produce a report, including when individual capabilities are missing. A successful sync is marked stale after 24 hours, independently of queued changes and the recorded sync state.
+
+Doctor works offline. Git authentication uses historical sync evidence and local configuration hints. Provider authentication uses scoped session metadata when the OS can expose it safely. Live authentication stays unknown when that evidence cannot establish it. A recorded TCP observation reports reachability only. This release supports foreground sync.
+
 The CLI parses and renders; `internal/app` owns operations and validation, and `internal/store` owns persistence. Git is optional for discovery. Normal context queries run without a secret provider or desktop dependencies. Queries do not initialize a missing store.
 
 Run `go test -count=1 ./...` and `go vet ./...`. The reusable `internal/testcli` harness exercises the real binary with isolated data/home directories, sanitized environment, deadlines, separate streams and exact JSON decoding. CI checks Linux, macOS and Windows with CGO disabled and runs an offline Linux container smoke test.

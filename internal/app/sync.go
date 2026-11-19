@@ -876,17 +876,18 @@ func (a App) SyncStatus(ctx context.Context) (SyncResult, error) {
 		return r, err
 	}
 	defer db.Close()
+	return readSyncStatus(ctx, db)
+}
+
+func readSyncStatus(ctx context.Context, db *sql.DB) (SyncResult, error) {
+	r := SyncResult{Boundary: plaintextBoundary, State: "disabled"}
 	c, err := loadSync(ctx, db)
 	if err != nil {
 		return r, err
 	}
 	r.Config = &c
-	var pending string
-	if err = db.QueryRowContext(ctx, "SELECT confirmed_head,pending FROM sync_state WHERE singleton=1").Scan(&r.Head, &pending); err != nil {
-		return r, err
-	}
-	var stamp, outcome string
-	if err = db.QueryRowContext(ctx, "SELECT last_sync_at,outcome FROM sync_state").Scan(&stamp, &outcome); err != nil {
+	var pending, stamp, outcome string
+	if err = db.QueryRowContext(ctx, "SELECT confirmed_head,pending,last_sync_at,outcome FROM sync_state WHERE singleton=1").Scan(&r.Head, &pending, &stamp, &outcome); err != nil {
 		return r, err
 	}
 	if stamp != "" {

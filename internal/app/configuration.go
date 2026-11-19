@@ -344,6 +344,11 @@ func (a App) ExplainConfiguration(ctx context.Context, selector, cwd, name strin
 	if err != nil {
 		return out, err
 	}
+	return explainConfigurationAt(ctx, db, loc, name)
+}
+
+func explainConfigurationAt(ctx context.Context, db *sql.DB, loc configurationLocation, name string) (ConfigurationExplanation, error) {
+	out := ConfigurationExplanation{Source: "local-store", Freshness: "unknown", Values: []EffectiveValue{}}
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return out, err

@@ -40,10 +40,9 @@ type Resolution struct {
 
 func discoveryGit(ctx context.Context, path string, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", path}, args...)...)
-	for _, e := range os.Environ() {
-		name, _, _ := strings.Cut(e, "=")
-		if !strings.HasPrefix(strings.ToUpper(name), "GIT_") {
-			cmd.Env = append(cmd.Env, e)
+	for _, name := range []string{"PATH", "PATHEXT", "HOME", "USERPROFILE", "SystemRoot", "WINDIR", "TMPDIR", "TMP", "TEMP"} {
+		if value, present := os.LookupEnv(name); present {
+			cmd.Env = append(cmd.Env, name+"="+value)
 		}
 	}
 	cmd.Env = append(cmd.Env, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_TERMINAL_PROMPT=0", "LC_ALL=C")
@@ -52,6 +51,11 @@ func discoveryGit(ctx context.Context, path string, args ...string) *exec.Cmd {
 
 // Discovery never contacts a remote, invokes a shell, or trusts inherited Git locations.
 func discoverGit(ctx context.Context, path string) GitLocation {
+	return discoverGitLocation(ctx, path, true)
+}
+
+// A location-only check skips remote URLs, which may contain embedded credentials.
+func discoverGitLocation(ctx context.Context, path string, includeRemotes bool) GitLocation {
 	g := GitLocation{Status: "unavailable"}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -91,6 +95,9 @@ func discoverGit(ctx context.Context, path string) GitLocation {
 		return g
 	}
 	g = GitLocation{CheckoutRoot: root, GitDir: gd, CommonDir: common, Status: "available"}
+	if !includeRemotes {
+		return g
+	}
 	names, err := run("remote")
 	if err != nil {
 		g.Status = "unavailable"
@@ -302,7 +309,12 @@ func resolveProjectLocation(ctx context.Context, db *sql.DB, selector, cwd strin
 	if includeGit {
 		r.Git = discoverGit(ctx, path)
 	}
-	e = db.QueryRowContext(ctx, "SELECT id,name,os,arch,created_at FROM device WHERE singleton=1").Scan(&r.Device.ID, &r.Device.Name, &r.Device.OS, &r.Device.Arch, &r.Device.CreatedAt)
+	return resolveProjectAt(ctx, db, selector, r, includeGit)
+}
+
+func resolveProjectAt(ctx context.Context, db *sql.DB, selector string, r Resolution, gitDiscovered bool) (Resolution, error) {
+	path := r.Directory
+	e := db.QueryRowContext(ctx, "SELECT id,name,os,arch,created_at FROM device WHERE singleton=1").Scan(&r.Device.ID, &r.Device.Name, &r.Device.OS, &r.Device.Arch, &r.Device.CreatedAt)
 	if e != nil {
 		return r, e
 	}
@@ -341,8 +353,11 @@ func resolveProjectLocation(ctx context.Context, db *sql.DB, selector, cwd strin
 		r.Source = "path-binding"
 		return r, e
 	}
-	if !includeGit {
+	if !gitDiscovered {
 		r.Git = discoverGit(ctx, path)
+	}
+	if r.Git.CommonDir == "" {
+		return resolveCandidates(ctx, db, r, nil)
 	}
 	// Locally explicit common-dir evidence is stronger than remote candidates.
 	rows, e = db.QueryContext(ctx, `SELECT DISTINCT p.id,p.slug,p.created_at,m.repository_id,m.id,m.subdirectory FROM checkout_bindings b JOIN memberships m ON m.id=b.membership_id JOIN projects p ON p.id=m.project_id WHERE b.device_id=? AND b.git_common_dir=?`, r.Device.ID, r.Git.CommonDir)
