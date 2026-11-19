@@ -183,6 +183,8 @@ func TestCredentialedRun(t *testing.T) {
 	for name, value := range map[string]string{
 		"GH_TOKEN": "synthetic", "BW_SESSION": "synthetic", "GIT_CONFIG_COUNT": "0", "CTXFERRY_TEST_API": "synthetic",
 		"INFISICAL_TOKEN": "synthetic", "GIT_ASKPASS": "synthetic", "SSH_AUTH_SOCK": "synthetic",
+		"INFISICAL_CLIENT_ID": "synthetic", "INFISICAL_CLIENT_SECRET": "synthetic",
+		"CTXFERRY_INFISICAL_ACCESS_TOKEN": "synthetic", "CTXFERRY_INFISICAL_PROFILE": "synthetic",
 		"DATABASE_URL": "caller-value", "OTHER_URL": "caller-value",
 	} {
 		t.Setenv(name, value)
@@ -397,6 +399,33 @@ func TestCredentialedRun(t *testing.T) {
 	if len(fake.Lookups()) != lookups {
 		t.Fatal("device B used another device's session")
 	}
+	// A runtime session provisioned for exactly this workspace, device and
+	// provider profile is used without a keyring; one for another device is not.
+	session, err := fake.Login(t.Context(), p)
+	if err != nil {
+		t.Fatal("could not create the synthetic injected session")
+	}
+	defer clear(session)
+	ids := func(h *testcli.Harness) provider.SessionKey {
+		t.Helper()
+		r := h.Run(t, "init", "--format=json").Success(t)
+		return provider.SessionKey{WorkspaceID: field(t, r, "workspace"), DeviceID: field(t, r, "device"), Profile: p}
+	}
+	injectFor := func(want provider.SessionKey) cli.Services {
+		return cli.Services{Trust: trust, Providers: provider.Services{Adapters: providers.Adapters,
+			Credentials: &providertest.MemoryStore{Unavailable: true},
+			InjectedSession: func(key provider.SessionKey) []byte {
+				if key == want {
+					return bytes.Clone(session)
+				}
+				return nil
+			}}}
+	}
+	refusedTask(t, jsonl(b, injectFor(ids(a)), "integration", "--profile=dev"), "authentication-required")
+	if len(fake.Lookups()) != lookups {
+		t.Fatal("device B used a session provisioned for device A")
+	}
+	assertChildEnvironment(t, reportedEnvironment(t, jsonl(b, injectFor(ids(b)), "integration", "--profile=dev")), "DATABASE_URL", secretValue)
 	providerCommand(t, b, providers, "provider", "login", "fake", "--provider-profile=team", "--method=machine").Success(t)
 	assertChildEnvironment(t, reportedEnvironment(t, jsonl(b, trusted, "integration", "--profile=dev")), "DATABASE_URL", secretValue)
 	fake.SetState(p, provider.Locked)

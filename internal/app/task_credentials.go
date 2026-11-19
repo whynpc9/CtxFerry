@@ -190,21 +190,20 @@ func (a App) credentialEnvironment(ctx context.Context, plan TaskExecution) ([]s
 	return env, values, nil
 }
 
-// deviceSession loads this device's own provider session. Sessions from other
-// devices are never consulted and the session never reaches the child.
+// deviceSession loads this device's own provider session. Sessions for other
+// devices or profiles are never consulted and the session never reaches the
+// child.
 func (a App) deviceSession(ctx context.Context, adapter provider.Adapter, key provider.SessionKey) ([]byte, error) {
-	credentials, err := a.secureCredentials(ctx)
-	if err != nil {
-		return nil, Fail("authentication-required", "secure device credential storage is unavailable")
-	}
-	session, err := credentials.Load(ctx, key)
+	// The shared loader prefers a runtime session provisioned for exactly this
+	// workspace, device and provider profile, then secure device storage.
+	session, err := a.loadProviderSession(ctx, key)
 	if errors.Is(err, provider.ErrNoSession) || err == nil && len(session) == 0 {
 		clear(session)
 		return nil, Fail("authentication-required", "log in to the provider on this device")
 	}
 	if err != nil {
 		clear(session)
-		return nil, Fail("authentication-required", "could not read the secure device session")
+		return nil, err
 	}
 	auth, err := providerAuthentication(ctx, adapter, key.Profile, session)
 	if err == nil && auth.State != provider.Authenticated {
