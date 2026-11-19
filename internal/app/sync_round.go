@@ -43,11 +43,12 @@ type objectManifest struct {
 }
 type remoteRecord struct {
 	publishedEnvelope
-	Data     json.RawMessage `json:"-"`
-	Value    recordPayload   `json:"-"`
-	Config   configuration   `json:"-"`
-	Resource ResourceSpec    `json:"-"`
-	Task     TaskSpec        `json:"-"`
+	Data          json.RawMessage   `json:"-"`
+	Value         recordPayload     `json:"-"`
+	Config        configuration     `json:"-"`
+	Resource      ResourceSpec      `json:"-"`
+	Task          TaskSpec          `json:"-"`
+	SecretBinding SecretBindingSpec `json:"-"`
 }
 
 func strictJSON(b []byte, v any) error {
@@ -105,6 +106,8 @@ func decodeRecord(b []byte) (remoteRecord, error) {
 		return r, nil
 	case "resource":
 		err = strictJSON(raw, &r.Resource)
+	case secretBindingKind:
+		err = decodeSecretBinding(wire.Payload, &r.SecretBinding)
 	case "task":
 		if _, err = configurationFields(wire.Payload); err == nil {
 			err = strictJSON(wire.Payload, &r.Task)
@@ -240,6 +243,10 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 					return invalid()
 				}
 				summaries[r.Scope.ID] = true
+			}
+		case secretBindingKind:
+			if r.Scope.Kind != "project" || r.Policy != (Policy{"shared", "reference"}) || validateSecretBinding(r.SecretBinding) != nil {
+				return invalid()
 			}
 		case "task":
 			if r.Scope.Kind != "project" || r.Policy.AgentDisclosure != "full" || validateTask(r.Task) != nil {
@@ -453,7 +460,7 @@ func installSnapshot(ctx context.Context, c *sql.Conn, files map[string][]byte, 
 	if err != nil {
 		return err
 	}
-	for _, kind := range []string{"project", "repository", "membership", "context", "configuration", "resource", "task"} {
+	for _, kind := range []string{"project", "repository", "membership", "context", "configuration", "resource", "task", secretBindingKind} {
 		for id, r := range records {
 			if r.Kind != kind {
 				continue
@@ -494,7 +501,7 @@ func installSnapshot(ctx context.Context, c *sql.Conn, files map[string][]byte, 
 				} else {
 					err = saveConfiguration(ctx, c, id, r.Scope, r.Config)
 				}
-			case "resource", "task":
+			case "resource", "task", secretBindingKind:
 				var b []byte
 				b, err = json.Marshal(r.publishedEnvelope)
 				if err != nil {
@@ -520,7 +527,7 @@ func installSnapshot(ctx context.Context, c *sql.Conn, files map[string][]byte, 
 			if err != nil {
 				return err
 			}
-			if kind != "context" && kind != "resource" && kind != "task" {
+			if kind != "context" && kind != "resource" && kind != "task" && kind != secretBindingKind {
 				b, _ := json.Marshal(r.Payload)
 				if _, err = c.ExecContext(ctx, "INSERT INTO export_identities VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,operation_id=excluded.operation_id,fingerprint=excluded.fingerprint,previous_revision=excluded.previous_revision", id, r.Revision, r.OperationID, digest(b), r.PreviousRevision); err != nil {
 					return err

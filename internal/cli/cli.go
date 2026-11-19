@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/whynpc9/CtxFerry/internal/app"
 	"github.com/whynpc9/CtxFerry/internal/platform"
+	"github.com/whynpc9/CtxFerry/internal/provider"
 )
 
 type envelope struct {
@@ -23,6 +24,10 @@ type envelope struct {
 }
 
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	return RunWithProviders(ctx, args, stdout, stderr, provider.Services{})
+}
+
+func RunWithProviders(ctx context.Context, args []string, stdout, stderr io.Writer, providers provider.Services) int {
 	format := "text"
 	dataDir := ""
 	projectSelector := ""
@@ -49,7 +54,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			if e != nil {
 				return app.Fail("usage", e.Error())
 			}
-			result, e = fn(app.App{DataDir: dir})
+			result, e = fn(app.App{DataDir: dir, Providers: providers})
 			return e
 		}
 	}
@@ -109,10 +114,11 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 	project.AddCommand(bind, list, inspect, remote)
 	config, profile := configurationCommands(ctx, invoke, &projectSelector)
+	secrets, providerCommands := secretCommands(ctx, invoke, &projectSelector)
 	var taskExit int
 	taskRan := false
 	runTask := runCommand(ctx, invoke, &projectSelector, &format, func(code int) { taskExit, taskRan = code, true })
-	root.AddCommand(runTask, taskCommand(ctx, invoke, &projectSelector), initCmd, project, config, profile, contextCommand(ctx, invoke, &projectSelector), resourceCommand(ctx, invoke, &projectSelector), syncCommand(ctx, invoke), joinCommand(ctx, invoke))
+	root.AddCommand(secrets, providerCommands, runTask, taskCommand(ctx, invoke, &projectSelector), initCmd, project, config, profile, contextCommand(ctx, invoke, &projectSelector), resourceCommand(ctx, invoke, &projectSelector), syncCommand(ctx, invoke), joinCommand(ctx, invoke))
 
 	// Detect format before parsing so usage errors also obey the JSON contract.
 	requestedFormat := ""
@@ -250,7 +256,7 @@ func render(w io.Writer, result any) error {
 			return e
 		}
 		_, err = fmt.Fprintln(w, string(b))
-	case app.ContextResult, app.ConfigurationExplanation, app.ConfigurationReceipt, app.ProfileSelection, app.Resource, app.ResourceList, app.ResourceDetail, app.Observation, app.Task, app.TaskList, app.ResourceMapping:
+	case app.ContextResult, app.ConfigurationExplanation, app.ConfigurationReceipt, app.ProfileSelection, app.Resource, app.ResourceList, app.ResourceDetail, app.Observation, app.Task, app.TaskList, app.ResourceMapping, app.SecretList, app.SecretStatus, app.SecretBindResult, app.ProviderLoginResult:
 		b, e := json.MarshalIndent(r, "", "  ")
 		if e != nil {
 			return e

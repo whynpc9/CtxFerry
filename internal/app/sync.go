@@ -590,18 +590,26 @@ func exportConn(ctx context.Context, conn *sql.Conn, c SyncConfig) (map[string][
 			if err = rows.Scan(&id, &pid, &kind, &raw, &body); err != nil {
 				return err
 			}
-			if kind == "resource" || kind == "task" {
+			if kind == "resource" || kind == "task" || kind == secretBindingKind {
 				r, err := decodeRecord([]byte(raw))
 				if err != nil {
 					return err
 				}
-				if r.Kind != kind || r.Scope.Kind != "project" || !validPolicy(r.Policy) || r.Policy.AgentDisclosure != "full" {
+				disclosure := "full"
+				if kind == secretBindingKind {
+					disclosure = "reference"
+				}
+				if r.Kind != kind || r.Scope.Kind != "project" || !validPolicy(r.Policy) || r.Policy.AgentDisclosure != disclosure ||
+					kind == secretBindingKind && r.Policy.Storage != "shared" {
 					return Fail("invalid-record", "invalid "+kind+" record scope or policy")
 				}
-				if kind == "resource" {
+				switch kind {
+				case "resource":
 					err = validateResourceSpec(r.Resource, r.Policy.Storage == "shared")
-				} else {
+				case "task":
 					err = validateTask(r.Task)
+				case secretBindingKind:
+					err = validateSecretBinding(r.SecretBinding)
 				}
 				if err != nil {
 					return err

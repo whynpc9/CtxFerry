@@ -112,3 +112,21 @@ The shared Profile maps shared Tasks to shared Resources of the slot's kind and
 stage. Select the Profile locally with `profile select` or use `run --profile`.
 Task definitions can declare credential requirements for discovery. Runs of
 those Tasks return `credentials-required` before starting a child process.
+
+### Credential references
+
+Create a binding after registering a Task requirement and mapping its Resource slot in a Profile. The binding takes its Resource, purpose and type from that selection.
+
+```sh
+ctxferry secret bind integration-check login --profile development \
+  --alias shared-db --provider infisical --provider-profile team --method machine \
+  --backend-project team-vault --environment sandbox --path /app --key BACKEND_DB
+ctxferry secret list --format json
+ctxferry secret status integration-check login --profile development --format json
+```
+
+Use `--entry-id` in place of the four namespace and key flags when the backend provides a stable entry ID. The Task's delivery variable is independent of the backend key. To reuse a binding from another Project, map the Task's Resource slot to the same shared Resource UUID and pass `--binding <uuid>` in place of the new binding fields.
+
+`secret list` reads catalog metadata. `secret status` checks the exact reference for one Task requirement after validating its Profile mappings. Its JSON reports binding, authentication, entry retrievability and Resource reachability independently. Unknown facts are `null`. On failure the same facts are available in `error.details` when the Task and Project can be evaluated. Reachability uses the latest matching observation from `resource check` on this device.
+
+`provider login <provider> --provider-profile <name> --method <method>` uses the configured adapter and secure device credential store. This release defines the adapter and storage interfaces. Production login reports unavailable secure storage until a concrete integration is configured. Catalog sync works independently of provider login.

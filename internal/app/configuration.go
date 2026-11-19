@@ -26,6 +26,7 @@ const (
 )
 
 type configuration struct {
+	SecretMappings   []SecretMapping            `json:"secretMappings,omitempty"`
 	ResourceMappings []ResourceMapping          `json:"resourceMappings,omitempty"`
 	Profile          string                     `json:"profile,omitempty"`
 	Values           map[string]json.RawMessage `json:"values"`
@@ -131,7 +132,7 @@ func decodeConfiguration(raw []byte, local bool) (configuration, error) {
 	}
 	for field := range fields {
 		switch field {
-		case "profile", "values", "updatedAt", "revision", "resourceMappings":
+		case "profile", "values", "updatedAt", "revision", "resourceMappings", "secretMappings":
 		default:
 			return v, Fail("unsupported-schema", "unknown configuration record field")
 		}
@@ -158,6 +159,29 @@ func decodeConfiguration(raw []byte, local bool) (configuration, error) {
 			key := [2]string{m.TaskID, m.Slot}
 			if !validUUID(m.TaskID) || !validUUID(m.ResourceID) || !resourceToken.MatchString(m.Slot) || seen[key] {
 				return v, Fail("invalid-config", "Resource mappings require distinct Task slots and valid IDs")
+			}
+			seen[key] = true
+		}
+	}
+	if fields["secretMappings"] != nil {
+		if local || v.Profile == "" || v.SecretMappings == nil || len(v.SecretMappings) > 512 {
+			return v, Fail("invalid-config", "credential mappings require a shared Profile")
+		}
+		var entries []json.RawMessage
+		if err := json.Unmarshal(fields["secretMappings"], &entries); err != nil {
+			return v, Fail("invalid-config", "credential mappings must be an array")
+		}
+		seen := map[[2]string]bool{}
+		for i, m := range v.SecretMappings {
+			if err := exactSecretFields(entries[i], "taskId", "requirement", "bindingId"); err != nil {
+				return v, err
+			}
+			if !validUUID(m.TaskID) || !validUUID(m.BindingID) || !resourceToken.MatchString(m.Requirement) {
+				return v, Fail("invalid-config", "credential mappings require a Task UUID, requirement name and binding UUID")
+			}
+			key := [2]string{m.TaskID, m.Requirement}
+			if seen[key] {
+				return v, Fail("binding-conflict", "multiple bindings for the same Task requirement")
 			}
 			seen[key] = true
 		}

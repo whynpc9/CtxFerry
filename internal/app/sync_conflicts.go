@@ -61,7 +61,12 @@ func dependencies(r remoteRecord) []string {
 		ids = append(ids, r.Value.RepositoryID)
 	case "task":
 		ids = append(ids, r.Task.MembershipID)
+	case secretBindingKind:
+		ids = append(ids, r.SecretBinding.ResourceID)
 	case "configuration":
+		for _, m := range r.Config.SecretMappings {
+			ids = append(ids, m.TaskID, m.BindingID)
+		}
 		for _, m := range r.Config.ResourceMappings {
 			ids = append(ids, m.TaskID, m.ResourceID)
 		}
@@ -692,7 +697,7 @@ func retainDeferredRecords(ctx context.Context, c *sql.Conn, files map[string][]
 			table = "repositories"
 		case "membership":
 			table = "memberships"
-		case "context", "resource", "task":
+		case "context", "resource", "task", secretBindingKind:
 			table = "records"
 		case "configuration":
 			table = "configurations"
