@@ -681,7 +681,19 @@ func exportConn(ctx context.Context, conn *sql.Conn, c SyncConfig) (map[string][
 				return err
 			}
 		}
-		return rows.Err()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+		skillOps, err := exportSkills(ctx, conn, c.WorkspaceID, projects, files)
+		if err != nil {
+			return err
+		}
+		ops = append(ops, skillOps...)
+
+		return nil
 	}()
 	if err == nil {
 		err = overlayTombstones(ctx, conn, files)

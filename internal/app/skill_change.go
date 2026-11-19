@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"path/filepath"
@@ -84,6 +86,7 @@ func (a App) ChangeSkill(ctx context.Context, input SkillChangeInput) (SkillChan
 		Status: old.Status, Before: old.Package, BeforeLink: old.LinkSource, Changes: []SkillChange{}, Issues: old.Issues,
 	}
 	next := old
+	next.shared = old.receipt.Shared
 	next.Status, next.Issues = "ready", []SkillProblem{}
 	var payload skillPayload
 	if input.Rollback {
@@ -95,9 +98,23 @@ func (a App) ChangeSkill(ctx context.Context, input SkillChangeInput) (SkillChan
 			return plan, err
 		}
 	} else {
-		next.Package, payload, err = a.prepareSkillUpdate(ctx, old.Package, input)
-		if err != nil {
-			return plan, err
+		if next.shared {
+			if input.Ref != "" || input.License != "" {
+				return plan, Fail("usage", "approve a different shared pin with skill add --share")
+			}
+			pin, err := a.sharedSkillPin(ctx, input.Name)
+			if errors.Is(err, sql.ErrNoRows) {
+				return plan, Fail("skill-not-found", "there is no approved shared pin for this Skill")
+			}
+			if err != nil {
+				return plan, err
+			}
+			next.Package = pin.SkillPin
+		} else {
+			next.Package, payload, err = a.prepareSkillUpdate(ctx, old.Package, input)
+			if err != nil {
+				return plan, err
+			}
 		}
 		next.version = skillVersion(next.Package)
 		next.source = filepath.Join(next.packageDir(input.Name, next.version), "files")
@@ -138,7 +155,12 @@ func (a App) ChangeSkill(ctx context.Context, input SkillChangeInput) (SkillChan
 		return plan, Fail("skill-plan-changed", "the Skill change no longer matches the preview; run the command without --confirm again")
 	}
 	if !input.Rollback {
-		if err := saveSkillSnapshot(next.packageDir(input.Name, next.version), next.Package, payload.data); err != nil {
+		if next.shared {
+			err = a.cacheSharedSkill(ctx, next)
+		} else {
+			err = saveSkillSnapshot(next.packageDir(input.Name, next.version), next.Package, payload.data)
+		}
+		if err != nil {
 			return plan, err
 		}
 	}

@@ -260,6 +260,17 @@ func render(w io.Writer, result any) error {
 		return renderSkillPlan(w, r)
 	case app.SkillChangePlan:
 		return renderSkillChange(w, r)
+	case app.SkillGroup:
+		_, err = fmt.Fprintf(w, "%s: %s\n", r.Name, strings.Join(r.Skills, ", "))
+	case app.SkillGroupPlan:
+		if _, err := fmt.Fprintf(w, "%s (%d Skills)\n", r.Group.Name, len(r.Plans)); err != nil {
+			return err
+		}
+		for _, plan := range r.Plans {
+			if err := renderSkillPlan(w, plan); err != nil {
+				return err
+			}
+		}
 	case app.DoctorReport:
 		return renderDoctor(w, r)
 	case app.InitResult:

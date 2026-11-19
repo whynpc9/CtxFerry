@@ -186,7 +186,7 @@ const publicationBudgetReason = "publication-budget"
 // target, so large related edits can still make progress.
 func limitPublicationUnits(remote, local map[string][]byte, ops []operation, edges map[string][]string, blocked map[string]string) error {
 	eligible := map[string]operation{}
-	objects := map[string]string{}
+	objects := map[string][]string{}
 	owners := map[string]string{}
 	for _, o := range ops {
 		if blocked[o.id] != "" {
@@ -201,8 +201,8 @@ func limitPublicationUnits(remote, local map[string][]byte, ops []operation, edg
 			if err != nil {
 				return err
 			}
-			if r.Value.Body != nil && bytes.Equal(b, o.proposed) {
-				objects[o.id] = "objects/" + r.Value.Body.SHA256
+			if bytes.Equal(b, o.proposed) {
+				objects[o.id] = r.ordinaryObjectPaths()
 			}
 			key := ""
 			switch {
@@ -238,8 +238,8 @@ func limitPublicationUnits(remote, local map[string][]byte, ops []operation, edg
 			if !bytes.Equal(remote[recordPath(id)], pending.proposed) {
 				size += len(pending.proposed)
 			}
-			if path := objects[id]; path != "" && !reused[path] && !paths[path] {
-				if _, exists := remote[path]; !exists {
+			for _, path := range objects[id] {
+				if _, exists := remote[path]; !exists && !reused[path] && !paths[path] {
 					size += len(local[path])
 					paths[path] = true
 				}

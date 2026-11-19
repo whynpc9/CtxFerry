@@ -74,6 +74,12 @@ it is never overwritten. Routine sync and join use the same validated record for
 - Markdown bodies are immutable `objects/<sha256>` bytes, deduplicated by hash.
   Payload manifests carry type, size and SHA-256. Shared summary/reference bodies
   are exported without passing through the CLI disclosure projection.
+- Skill pins and groups are published as `skill-pin` and `skill-group`
+  records. A group depends on each of its shared pins and, for a Project
+  group, its Project. Public pins carry a credential-free HTTPS source,
+  an exact Git commit and a file manifest. Private pins reference selected
+  files by hash under `objects/<sha256>`, up to 1 MiB per package.
+  Install directories, link targets and ownership receipts are device-local.
 - README describes plaintext, repository-wide access, history and recovery limits.
 - Schema 4 adds local access configuration, immutable preview snapshots, stable
   structural export identities and pending/confirmed publication state. These

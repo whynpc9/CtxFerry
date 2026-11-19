@@ -89,7 +89,7 @@ func (a App) copyBackupCatalog(ctx context.Context, source *sql.DB, destination 
 		for _, table := range []string{
 			"workspace", "projects", "repositories", "repository_aliases", "memberships",
 			"sync_config", "export_identities", "sync_baselines", "sync_outbox",
-			"sync_conflicts", "sync_objects", "sync_tombstones", "sync_blocked", "configurations",
+			"sync_conflicts", "sync_objects", "sync_tombstones", "sync_blocked", "configurations", "skill_records",
 		} {
 			if _, err := conn.ExecContext(ctx, "INSERT INTO backup."+table+" SELECT * FROM main."+table); err != nil {
 				return err

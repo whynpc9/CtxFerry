@@ -376,8 +376,41 @@ The plan reports intended writes and blocking issues without changing the
 target or local state. A blocked plan is a successful query and reports
 `status: "blocked"`. Apply refuses unowned targets or externally edited
 installs. If apply is interrupted, run the same command to resume a verified
-staged install. Packages, receipts and recovery records are device-local in
-this slice.
+staged install. Installed files, local package caches, receipts and recovery
+records stay on their device.
+
+To share a Skill, explicitly approve a pin and put its name in a group:
+
+```sh
+ctxferry skill add --share public --git https://github.com/example/skills.git \
+  --ref refs/tags/v1.2.0 --subdir skills/another-example
+ctxferry skill add --share private --local ./skills/private-example
+ctxferry skill group set global another-example
+ctxferry skill group set project:my-project private-example
+ctxferry skill group set capability:review another-example private-example
+ctxferry sync
+```
+
+`group set` replaces the named group's selection. Pass no Skill names to clear
+it. A group can only contain shared pins. Project groups can be planned on
+devices subscribed to their Project. Select capability groups explicitly on each
+device. For example, after joining the same workspace:
+
+```sh
+ctxferry skill plan --group capability:review --target codex --format json
+ctxferry skill apply another-example --target codex
+```
+
+A group plan lists the local projection for each member. Review it and apply each
+Skill you want to install. Public Skills fetch from the approved HTTPS source at
+the recorded commit and verify the file manifest. Private Skills distribute up
+to 1 MiB of selected files through the workspace's private sync store and can
+be installed offline after sync. Review those files before sharing. Concurrent
+pin edits require an explicit choice with `sync conflicts` and `sync resolve`.
+A change to the shared pin leaves existing installations in place until you
+preview and confirm a local update. For a shared install, run `skill update`
+with the target to preview the approved pin. Use `skill add --share` to approve
+a different shared pin.
 
 For an installed Skill, preview an update before applying it. A local update
 reads the recorded source directory. A Git update requires a full commit hash
