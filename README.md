@@ -66,3 +66,21 @@ keeping identities and paths; repeat bind explicitly to enrich old Git bindings.
 Context commands add offline ContextDocs with independent storage and disclosure policies, revision-checked `context put`, and SQLite FTS5 search. See [context commands and decisions](docs/context.md). Schema 3 adds documents after the schema 2 Project identification migration.
 
 First private publication supports separate Git/privacy checks, an exact plaintext preview and explicit branch initialization. See [sync workflow and format](docs/sync.md).
+
+Register a Project service with an explicit storage policy. Shared endpoints use
+non-secret host and port pairs. Configure localhost endpoints and proxy addresses
+with a device-local route.
+
+```sh
+ctxferry resource add --identity dev-db --kind database --stage dev \
+  --purpose "Integration tests" --storage shared --endpoint db.example.com:5432
+ctxferry resource list
+ctxferry resource route <resource-uuid> --endpoint localhost:15432
+ctxferry resource inspect <resource-uuid> --format json
+ctxferry resource check <resource-uuid> --format json
+```
+
+Only `resource check` opens a TCP connection. It records reachability of the
+resolved endpoint, or the proxy itself when a local proxy is configured. Each
+result is appended to this device's Observation history. The check does not
+verify a service protocol or use credentials.

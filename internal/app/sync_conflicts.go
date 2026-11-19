@@ -672,7 +672,7 @@ func retainDeferredRecords(ctx context.Context, c *sql.Conn, files map[string][]
 			table = "repositories"
 		case "membership":
 			table = "memberships"
-		case "context":
+		case "context", "resource":
 			table = "records"
 		case "configuration":
 			table = "configurations"

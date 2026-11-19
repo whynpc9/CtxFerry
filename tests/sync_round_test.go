@@ -187,7 +187,7 @@ func TestOfflineSchema4PublisherUpgrade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = db.Exec(`DROP TABLE sync_baselines; DROP TABLE sync_outbox; DROP TABLE project_subscriptions; ALTER TABLE sync_state DROP COLUMN last_sync_at; ALTER TABLE sync_state DROP COLUMN outcome; PRAGMA user_version=4;`)
+	_, err = db.Exec(`DROP TABLE resource_observations; DROP TABLE resource_routes; DROP TABLE sync_baselines; DROP TABLE sync_outbox; DROP TABLE project_subscriptions; ALTER TABLE sync_state DROP COLUMN last_sync_at; ALTER TABLE sync_state DROP COLUMN outcome; PRAGMA user_version=4;`)
 	db.Close()
 	if err != nil {
 		t.Fatal(err)

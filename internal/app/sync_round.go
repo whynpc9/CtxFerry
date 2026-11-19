@@ -43,9 +43,10 @@ type objectManifest struct {
 }
 type remoteRecord struct {
 	publishedEnvelope
-	Data   json.RawMessage `json:"-"`
-	Value  recordPayload   `json:"-"`
-	Config configuration   `json:"-"`
+	Data     json.RawMessage `json:"-"`
+	Value    recordPayload   `json:"-"`
+	Config   configuration   `json:"-"`
+	Resource ResourceSpec    `json:"-"`
 }
 
 func strictJSON(b []byte, v any) error {
@@ -98,13 +99,15 @@ func decodeRecord(b []byte) (remoteRecord, error) {
 		return r, err
 	}
 	r.Data = raw
-	if r.Kind == "configuration" {
+	switch r.Kind {
+	case "configuration":
 		return r, nil
+	case "resource":
+		err = strictJSON(raw, &r.Resource)
+	default:
+		err = strictJSON(raw, &r.Value)
 	}
-	if err = strictJSON(raw, &r.Value); err != nil {
-		return r, err
-	}
-	return r, nil
+	return r, err
 }
 func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceFormat, map[string]remoteRecord, error) {
 	var w workspaceFormat
@@ -232,6 +235,10 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 					return invalid()
 				}
 				summaries[r.Scope.ID] = true
+			}
+		case "resource":
+			if r.Scope.Kind != "project" || r.Policy.AgentDisclosure != "full" || validateResourceSpec(r.Resource, true) != nil {
+				return invalid()
 			}
 		default:
 			return w, nil, Fail("unsupported-schema", "unsupported catalog record kind")
@@ -434,7 +441,7 @@ func installSnapshot(ctx context.Context, c *sql.Conn, files map[string][]byte, 
 	if err != nil {
 		return err
 	}
-	for _, kind := range []string{"project", "repository", "membership", "context", "configuration"} {
+	for _, kind := range []string{"project", "repository", "membership", "context", "configuration", "resource"} {
 		for id, r := range records {
 			if r.Kind != kind {
 				continue
@@ -475,6 +482,13 @@ func installSnapshot(ctx context.Context, c *sql.Conn, files map[string][]byte, 
 				} else {
 					err = saveConfiguration(ctx, c, id, r.Scope, r.Config)
 				}
+			case "resource":
+				var b []byte
+				b, err = json.Marshal(r.publishedEnvelope)
+				if err != nil {
+					return err
+				}
+				_, err = c.ExecContext(ctx, "INSERT INTO records VALUES(?,?,'resource',?) ON CONFLICT(id) DO UPDATE SET metadata=excluded.metadata", id, r.Scope.ID, string(b))
 			case "context":
 				d := ContextDoc{Deleted: r.Deleted, SchemaVersion: 1, ID: id, Kind: kind, WorkspaceID: r.WorkspaceID, Scope: r.Scope, Revision: r.Revision, PreviousRevision: r.PreviousRevision, OperationID: r.OperationID, DeviceID: r.Provenance.DeviceID, UpdatedAt: r.Provenance.UpdatedAt, Title: v.Title, Purpose: v.Purpose, Source: v.Source, Summary: v.Summary, ObservedAt: v.ObservedAt, ValidUntil: v.ValidUntil, Policy: r.Policy, Freshness: "unknown"}
 				b, _ := json.Marshal(d)
@@ -494,7 +508,7 @@ func installSnapshot(ctx context.Context, c *sql.Conn, files map[string][]byte, 
 			if err != nil {
 				return err
 			}
-			if kind != "context" {
+			if kind != "context" && kind != "resource" {
 				b, _ := json.Marshal(r.Payload)
 				if _, err = c.ExecContext(ctx, "INSERT INTO export_identities VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,operation_id=excluded.operation_id,fingerprint=excluded.fingerprint,previous_revision=excluded.previous_revision", id, r.Revision, r.OperationID, digest(b), r.PreviousRevision); err != nil {
 					return err
@@ -851,19 +865,17 @@ func (a App) syncRound(ctx context.Context) (result SyncResult, err error) {
 				return Fail("invalid-catalog", "published records cannot disappear or change kind or scope")
 			}
 		}
-		for id := range records {
-			var raw string
-			e := c.QueryRowContext(ctx, "SELECT metadata FROM records WHERE id=?", id).Scan(&raw)
-			if e == nil {
-				var d ContextDoc
-				if e = decodeContext(raw, &d); e != nil {
-					return e
-				}
-				if d.Policy.Storage == "local-only" {
-					return Fail("record-collision", "remote record collides with local-only work")
-				}
-			} else if e != sql.ErrNoRows {
+		for id, r := range records {
+			var kind, projectID, storage string
+			e := c.QueryRowContext(ctx, `SELECT kind,project_id,json_extract(metadata,'$.policy.storage') FROM records WHERE id=?`, id).Scan(&kind, &projectID, &storage)
+			if e == sql.ErrNoRows {
+				continue
+			}
+			if e != nil {
 				return e
+			}
+			if storage != "shared" || r.Kind != kind || r.Scope != (Scope{"project", projectID}) {
+				return Fail("record-collision", "remote record collides with local work of a different scope, kind or policy")
 			}
 		}
 		return nil

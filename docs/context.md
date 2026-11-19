@@ -57,12 +57,14 @@ observation and last-sync timestamps: an aggregate has no persisted revision and
 no claim of verified or synced state. The environment reports current device
 ID, OS, architecture and calling directory.
 
-`show` is limited to 8192 actual emitted bytes, including the JSON envelope and
-newline, or indented text rendering. Index fields and summaries are shortened
-at UTF-8 boundaries; complete entries are removed until the budget fits.
+`show` indexes documents and Resource purposes for the current Project. The
+combined response is limited to 8192 emitted bytes, including the JSON envelope
+and newline or the indented text rendering. Index fields and summaries are
+shortened at UTF-8 boundaries; complete entries are removed until the budget fits.
 `truncated:true` and `nextCursor` indicate more entries. Continue with
 `context show --cursor <nextCursor>`; `get` returns the complete approved fields.
-Ordering is by UUID. Pagination is a live view, not a snapshot across writes.
+One UUID cursor advances through both indexes. Pagination is a live view, not
+a snapshot across writes.
 
 Size decisions: structured metadata (the ContextDoc JSON excluding separately
 stored Markdown) is limited to 262144 bytes; raw UTF-8 Markdown is independently
