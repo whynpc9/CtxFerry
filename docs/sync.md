@@ -246,6 +246,44 @@ is deferred while its records remain in the published baseline. Status retains t
 uniqueness blocker; unrelated records continue to upload and download on subsequent
 syncs without violating local database constraints.
 
+## Share registered artifacts
+
+```sh
+ctxferry artifact share <artifact-id> --mode automatic
+ctxferry artifact share <artifact-id> --mode automatic --preview <preview-id>
+ctxferry sync
+ctxferry artifact fetch <artifact-id> --project <slug> --output ./report.json
+```
+
+Registration stays device-local until you approve a share preview. Review the
+manifest and payload before allowing them into the private repository as plaintext.
+The shared manifest includes the file name, content identity, sensitivity, source
+device and run summary. Full run provenance and local paths remain in the
+device catalog. A receiving device records its SHA-256 verification separately
+from the source run.
+
+Automatic mode allows up to 1 MiB of raw payload. Choose `--mode explicit` for a
+reviewed sample up to 5 MiB. The preview shows the maximum new raw payload bytes
+and the last known history size when available. Both modes use a report and sample
+media-type allow-list and exclude known raw formats, including logs, weights,
+database dumps and Git LFS pointers. Use `--mode metadata` to share a description
+alone. A sensitive classification always excludes the payload. Share approval
+does not redact or scan arbitrary file content for secrets.
+
+Routine publications target about 5 MiB of changed records and new payloads.
+Related catalog edits stay together. Artifact payloads that exceed a quota travel
+as metadata-only, with a reason visible in `artifact inspect`. The sender keeps
+its original local object and the receiver sees which payloads can be fetched.
+Identical objects reuse the existing content hash. Project subscription gates
+local artifact access. A device with repository access can still read the whole
+Git snapshot.
+
+`sync status` estimates Git history from the raw size of distinct reachable Git
+objects. Around 100 MiB it warns about retained history. At around 250 MiB new
+automatic payloads pause, while approved metadata, eligible explicit samples,
+and ordinary catalog edits continue. Removing a current record does not erase
+older plaintext from Git history.
+
 ## Workspace backup and restore
 
 Save to a new directory in a protected location. Backups are plaintext.

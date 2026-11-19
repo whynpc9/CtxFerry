@@ -44,7 +44,7 @@ func TestV1MigrationPreservesBindings(t *testing.T) {
 		t.Fatal(e)
 	}
 	// Recreate precisely the old schema rather than merely changing its version.
-	_, e = db.Exec(`DROP TABLE execution_trust; DROP TABLE resource_observations; DROP TABLE resource_routes; DROP TABLE sync_baselines; DROP TABLE sync_outbox; DROP TABLE project_subscriptions; DROP TABLE sync_config; DROP TABLE sync_state; DROP TABLE sync_previews; DROP TABLE export_identities; DROP TABLE context_fts; DROP TABLE context_bodies; DROP TABLE records; DROP TABLE checkout_bindings; DROP TABLE memberships; DROP TABLE repository_aliases; DROP TABLE repositories;` + schema + `
+	_, e = db.Exec(`DROP TABLE artifact_observations; DROP TABLE execution_trust; DROP TABLE resource_observations; DROP TABLE resource_routes; DROP TABLE sync_baselines; DROP TABLE sync_outbox; DROP TABLE project_subscriptions; DROP TABLE sync_config; DROP TABLE sync_state; DROP TABLE sync_previews; DROP TABLE export_identities; DROP TABLE context_fts; DROP TABLE context_bodies; DROP TABLE records; DROP TABLE checkout_bindings; DROP TABLE memberships; DROP TABLE repository_aliases; DROP TABLE repositories;` + schema + `
  INSERT INTO projects VALUES('project','old','time');
  INSERT INTO checkout_bindings VALUES('binding','project','device','/old/path','time');`)
 	if e != nil {
@@ -76,7 +76,8 @@ func TestV5MigrationPreservesPendingOperations(t *testing.T) {
 	}
 	_, e = db.Exec(`DROP TABLE resource_observations; DROP TABLE resource_routes; DROP TABLE sync_conflicts; DROP TABLE sync_objects; DROP TABLE sync_tombstones; DROP TABLE sync_blocked;
  INSERT INTO sync_state(singleton,epoch,pending) VALUES(1,'epoch','pinned candidate');
- INSERT INTO sync_outbox VALUES('record',x'62617365',x'6c6f63616c','operation','epoch'); PRAGMA user_version=5;`)
+ INSERT INTO sync_outbox VALUES('record',x'62617365',x'6c6f63616c','operation','epoch');
+ DROP TABLE artifact_observations; ALTER TABLE sync_state DROP COLUMN history_bytes; PRAGMA user_version=5;`)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -106,7 +107,8 @@ func TestV8MigrationStartsWithoutApprovals(t *testing.T) {
 	}
 	_, e = db.Exec(`DROP TABLE execution_trust;
  INSERT INTO sync_state(singleton,epoch,pending) VALUES(1,'epoch','');
- INSERT INTO sync_outbox VALUES('record',x'62617365',x'6c6f63616c','operation','epoch'); PRAGMA user_version=8;`)
+ INSERT INTO sync_outbox VALUES('record',x'62617365',x'6c6f63616c','operation','epoch');
+ DROP TABLE artifact_observations; ALTER TABLE sync_state DROP COLUMN history_bytes; PRAGMA user_version=8;`)
 	if e != nil {
 		t.Fatal(e)
 	}

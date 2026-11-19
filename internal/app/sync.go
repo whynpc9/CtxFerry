@@ -40,6 +40,7 @@ type UploadFile struct {
 	SHA256 string `json:"sha256"`
 }
 type SyncResult struct {
+	History    *SyncHistory    `json:"history,omitempty"`
 	Conflicts  []ConflictInfo  `json:"conflicts,omitempty"`
 	Blocked    []BlockedRecord `json:"blocked,omitempty"`
 	Config     *SyncConfig     `json:"config,omitempty"`
@@ -599,6 +600,23 @@ func exportConn(ctx context.Context, conn *sql.Conn, c SyncConfig) (map[string][
 			if err = rows.Scan(&id, &pid, &kind, &raw, &body); err != nil {
 				return err
 			}
+			if kind == artifactKind {
+				r, err := decodeRecord([]byte(raw))
+				if err != nil {
+					return err
+				}
+				if !validUUID(id) || r.ID != id || r.Kind != kind || r.Scope != (Scope{"project", pid}) ||
+					!projects[pid] || r.WorkspaceID != c.WorkspaceID || r.Policy != (Policy{"shared", "reference"}) ||
+					!validArtifactPublication(r.Artifact) || body.Valid {
+					return Fail("invalid-reference", "shared artifact has invalid metadata or Project dependency")
+				}
+				if _, exists := files[recordPath(id)]; exists {
+					return Fail("record-collision", "shared artifact ID collides with another record")
+				}
+				files[recordPath(id)] = []byte(raw)
+				ops = append(ops, r.OperationID)
+				continue
+			}
 			if kind == "resource" || kind == "task" || kind == secretBindingKind {
 				r, err := decodeRecord([]byte(raw))
 				if err != nil {
@@ -702,6 +720,9 @@ func (a App) PreviewSync(ctx context.Context) (SyncResult, error) {
 	if err != nil {
 		return r, err
 	}
+	if err := a.stageInitialArtifacts(files); err != nil {
+		return r, err
+	}
 	fingerprint := snapshotFingerprint(files, c)
 	r.PreviewID = fingerprint
 	paths := []string{}
@@ -799,7 +820,37 @@ func (a App) initSync(ctx context.Context, previewID string) (r SyncResult, err 
 	if err != nil {
 		return r, err
 	}
-	files, ops, err := exportSnapshot(ctx, db, c)
+	var epoch, confirmed, raw string
+	if err = db.QueryRowContext(ctx, "SELECT epoch,confirmed_head,pending FROM sync_state WHERE singleton=1").Scan(&epoch, &confirmed, &raw); err != nil {
+		return r, err
+	}
+	if confirmed != "" {
+		return r, Fail("already-published", "workspace already initialized; use routine sync when available")
+	}
+	var files map[string][]byte
+	var ops []string
+	var pending pendingPush
+	if raw != "" {
+		if json.Unmarshal([]byte(raw), &pending) != nil || pending.ExpectedHead != "" || pending.Epoch != epoch || !validCommitID(pending.Candidate) {
+			return r, Fail("invalid-pending", "pending push is invalid; preserving local state")
+		}
+		if pending.PreviewID != previewID {
+			return r, Fail("push-pending", "a prior push must be reconciled before publishing another snapshot")
+		}
+		files, err = readSnapshot(ctx, dir, pending.Candidate)
+		if err != nil {
+			return r, err
+		}
+	} else {
+		files, ops, err = exportSnapshot(ctx, db, c)
+		if err != nil {
+			return r, err
+		}
+		if err := a.stageInitialArtifacts(files); err != nil {
+			return r, err
+		}
+	}
+	_, records, err := validateSnapshot(files, c.WorkspaceID, "")
 	if err != nil {
 		return r, err
 	}
@@ -819,22 +870,7 @@ func (a App) initSync(ctx context.Context, previewID string) (r SyncResult, err 
 		}
 		return r, &Error{Code: code, Message: "upload refused: Git reachability and authenticated private repository identity are required", Details: check}
 	}
-	var epoch, confirmed, raw string
-	if err = db.QueryRowContext(ctx, "SELECT epoch,confirmed_head,pending FROM sync_state WHERE singleton=1").Scan(&epoch, &confirmed, &raw); err != nil {
-		return r, err
-	}
-	if confirmed != "" {
-		return r, Fail("already-published", "workspace already initialized; use routine sync when available")
-	}
-	var pending pendingPush
-	if raw != "" {
-		if json.Unmarshal([]byte(raw), &pending) != nil {
-			return r, Fail("invalid-pending", "pending push is invalid; preserving local state")
-		}
-		if pending.PreviewID != previewID {
-			return r, Fail("push-pending", "a prior push must be reconciled before publishing another snapshot")
-		}
-	} else {
+	if raw == "" {
 		candidate, err := candidateCommit(ctx, dir, files)
 		if err != nil {
 			return r, err
@@ -871,11 +907,28 @@ func (a App) initSync(ctx context.Context, previewID string) (r SyncResult, err 
 			return r, err
 		}
 	}
-	if err = store.Write(ctx, db, func(conn *sql.Conn) error { return saveBaseline(ctx, conn, files, pending.Candidate, true) }); err != nil {
+	history, err := measureSyncHistory(ctx, dir, pending.Candidate)
+	if err != nil {
+		return r, err
+	}
+	if err = store.Write(ctx, db, func(conn *sql.Conn) error {
+		for _, record := range records {
+			if record.Kind == artifactKind {
+				if err := installArtifactPublication(ctx, conn, record); err != nil {
+					return err
+				}
+			}
+		}
+		if err := saveSyncHistory(ctx, conn, history); err != nil {
+			return err
+		}
+		return saveBaseline(ctx, conn, files, pending.Candidate, true)
+	}); err != nil {
 		return r, err
 	}
 	r.State = "synced"
 	r.Head = pending.Candidate
+	r.History = syncHistory(history)
 	return r, nil
 }
 func (a App) SyncStatus(ctx context.Context) (SyncResult, error) {
@@ -896,8 +949,12 @@ func readSyncStatus(ctx context.Context, db *sql.DB) (SyncResult, error) {
 	}
 	r.Config = &c
 	var pending, stamp, outcome string
-	if err = db.QueryRowContext(ctx, "SELECT confirmed_head,epoch,pending,last_sync_at,outcome FROM sync_state WHERE singleton=1").Scan(&r.Head, &r.Epoch, &pending, &stamp, &outcome); err != nil {
+	var history sql.NullInt64
+	if err = db.QueryRowContext(ctx, "SELECT confirmed_head,epoch,pending,last_sync_at,outcome,history_bytes FROM sync_state WHERE singleton=1").Scan(&r.Head, &r.Epoch, &pending, &stamp, &outcome, &history); err != nil {
 		return r, err
+	}
+	if history.Valid {
+		r.History = syncHistory(history.Int64)
 	}
 	if stamp != "" {
 		r.LastSyncAt = &stamp
