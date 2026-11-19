@@ -53,6 +53,23 @@ type remoteRecord struct {
 	Task          TaskSpec            `json:"-"`
 	SecretBinding SecretBindingSpec   `json:"-"`
 	Artifact      artifactPublication `json:"-"`
+	SkillPin      SkillPackage        `json:"-"`
+	SkillGroup    SkillGroup          `json:"-"`
+}
+
+// Ordinary objects are staged with their records before artifact payloads are budgeted.
+func (r remoteRecord) ordinaryObjectPaths() []string {
+	if r.Value.Body != nil {
+		return []string{"objects/" + r.Value.Body.SHA256}
+	}
+	return r.skillObjects()
+}
+
+func (r remoteRecord) publishedObjectPaths() []string {
+	if r.Kind == artifactKind && r.Artifact.Omitted == "" {
+		return []string{r.Artifact.objectPath()}
+	}
+	return r.ordinaryObjectPaths()
 }
 
 func strictJSON(b []byte, v any) error {
@@ -132,6 +149,10 @@ func decodeRecord(b []byte) (remoteRecord, error) {
 			}
 		}
 		err = decodeSecretBinding(wire.Payload, &r.SecretBinding)
+	case skillPinKind:
+		err = strictJSON(wire.Payload, &r.SkillPin)
+	case skillGroupKind:
+		err = strictJSON(wire.Payload, &r.SkillGroup)
 	case "task":
 		if _, err = configurationFields(wire.Payload); err == nil {
 			err = strictJSON(wire.Payload, &r.Task)
@@ -162,6 +183,7 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 	slugs := map[string]bool{}
 	summaries := map[string]bool{}
 	artifactObjects := map[string]bool{}
+	ordinaryObjects := map[string]bool{}
 	runs := map[string]remoteRecord{}
 	for path, b := range files {
 		if path == "workspace.json" || path == "README.md" {
@@ -287,6 +309,20 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 				}
 				artifactObjects[p.objectPath()] = true
 			}
+		case skillPinKind, skillGroupKind:
+			if err := r.validateSkillRecord(w.WorkspaceID); err != nil {
+				return w, nil, err
+			}
+			if r.Kind == skillPinKind && r.SkillPin.SourceKind == "private" {
+				if _, err := privateSkillData(r.SkillPin, func(path string) ([]byte, error) {
+					if data, ok := files[path]; ok {
+						return data, nil
+					}
+					return nil, Fail("incomplete", "private Skill object is missing")
+				}); err != nil {
+					return w, nil, err
+				}
+			}
 		case secretBindingKind:
 			if r.Scope.Kind != "project" || r.Policy != (Policy{"shared", "reference"}) || validateSecretBinding(r.SecretBinding) != nil {
 				return invalid()
@@ -302,13 +338,18 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 		default:
 			return w, nil, Fail("unsupported-schema", "unsupported catalog record kind")
 		}
+		for _, path := range r.ordinaryObjectPaths() {
+			ordinaryObjects[path] = true
+		}
 		records[r.ID] = r
 	}
 	var ordinaryBytes, artifactBytes int
 	for path, b := range files {
 		if artifactObjects[path] {
 			artifactBytes += len(b)
-			continue
+			if !ordinaryObjects[path] {
+				continue
+			}
 		}
 		if strings.HasPrefix(path, "objects/") && len(b) > BodyLimit {
 			return invalid()
@@ -324,6 +365,11 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 		}
 		if r.Scope.Kind == "project" {
 			if p, ok := records[r.Scope.ID]; !ok || p.Kind != "project" || p.Deleted {
+				return invalid()
+			}
+		}
+		for _, id := range skillGroupDependencies(r) {
+			if pin := records[id]; pin.Kind != skillPinKind || pin.Deleted {
 				return invalid()
 			}
 		}
@@ -567,7 +613,7 @@ func saveBaseline(ctx context.Context, c *sql.Conn, files map[string][]byte, hea
 		}
 	}
 	for path, b := range files {
-		if _, err := c.ExecContext(ctx, `INSERT INTO sync_baselines VALUES(?,?) ON CONFLICT(path)
+		if _, err := c.ExecContext(ctx, `INSERT INTO sync_baselines VALUES(?,COALESCE(?,X'')) ON CONFLICT(path)
 			DO UPDATE SET data=excluded.data WHERE sync_baselines.data IS NOT excluded.data`, path, b); err != nil {
 			return err
 		}
@@ -586,7 +632,7 @@ func installSnapshot(ctx context.Context, c *sql.Conn, files map[string][]byte, 
 	if err != nil {
 		return err
 	}
-	for _, kind := range []string{"project", "repository", "membership", "context", "configuration", "resource", "task", secretBindingKind, artifactKind} {
+	for _, kind := range []string{"project", "repository", "membership", "context", "configuration", "resource", "task", secretBindingKind, artifactKind, skillPinKind, skillGroupKind} {
 		for id, r := range records {
 			if r.Kind != kind {
 				continue
@@ -629,6 +675,16 @@ func installSnapshot(ctx context.Context, c *sql.Conn, files map[string][]byte, 
 				} else {
 					err = saveConfiguration(ctx, c, id, r.Scope, r.Config)
 				}
+			case skillPinKind, skillGroupKind:
+				for _, path := range r.skillObjects() {
+					if _, err := c.ExecContext(ctx, "INSERT OR IGNORE INTO sync_objects VALUES(?,COALESCE(?,X''))", path, files[path]); err != nil {
+						return err
+					}
+				}
+				if err := installSkillRecord(ctx, c, r); err != nil {
+					return err
+				}
+				continue
 			case "resource", "task", secretBindingKind:
 				var b []byte
 				b, err = json.Marshal(r.publishedEnvelope)
@@ -1261,7 +1317,7 @@ func (a App) prepareBaseline(ctx context.Context, db *sql.DB) error {
 	}
 	return store.Write(ctx, db, func(c *sql.Conn) error {
 		for path, b := range files {
-			if _, err := c.ExecContext(ctx, "INSERT INTO sync_baselines VALUES(?,?)", path, b); err != nil {
+			if _, err := c.ExecContext(ctx, "INSERT INTO sync_baselines VALUES(?,COALESCE(?,X''))", path, b); err != nil {
 				return err
 			}
 		}

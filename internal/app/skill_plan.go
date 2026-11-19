@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -48,6 +49,7 @@ type skillProjection struct {
 	root, local, source, receiptPath string
 	version                          string
 	receipt                          skillReceipt
+	shared                           bool
 }
 
 func skillTarget(target string) (string, error) {
@@ -117,7 +119,10 @@ func resolveSkillDirectory(path string) (string, error) {
 }
 
 func (a App) PlanSkill(name, target string, symlink bool) (SkillPlan, error) {
-	projection, err := a.planSkill(name, target, symlink)
+	projection, err := a.openSkillProjection(name, target)
+	if err == nil {
+		err = a.planSelectedSkill(context.Background(), &projection, name, symlink)
+	}
 	return projection.SkillPlan, err
 }
 
@@ -152,6 +157,10 @@ func (p *skillProjection) planInstalled(name string, symlink bool) error {
 	if err := p.loadPackage(name, p.receipt.Version, symlink); err != nil {
 		return err
 	}
+	return p.planProjection(symlink)
+}
+
+func (p *skillProjection) planProjection(symlink bool) error {
 	installed, err := p.inspectTarget()
 	if err != nil {
 		return err

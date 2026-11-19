@@ -16,6 +16,7 @@ func skillCommand(ctx context.Context, invoke func(func(app.App) (any, error)) f
 	add.Flags().StringVar(&input.Local, "local", "", "Local directory containing SKILL.md")
 	add.Flags().StringVar(&input.Git, "git", "", "Git URL or absolute repository path")
 	add.Flags().StringVar(&input.Subdir, "subdir", "", "Git path containing SKILL.md (default: repository root)")
+	add.Flags().StringVar(&input.Share, "share", "", "Share a public Git pin or a private package (public or private)")
 	add.Flags().StringVar(&input.Ref, "ref", "", "Full Git commit hash or refs/tags/<release>")
 	add.Flags().StringVar(&input.License, "license", "", "License identifier (defaults to SKILL.md license or NOASSERTION)")
 	add.Flags().StringArrayVar(&input.Platforms, "platform", nil, "Supported OS or OS/architecture (repeatable)")
@@ -24,20 +25,41 @@ func skillCommand(ctx context.Context, invoke func(func(app.App) (any, error)) f
 	group.AddCommand(add)
 	group.AddCommand(skillBootstrapCommand(ctx, invoke))
 
+	skillGroup := &cobra.Command{Use: "group", Short: "Manage shared Skill selections"}
+	set := &cobra.Command{Use: "set <group> [name...]", Short: "Replace a global, project:<project>, or capability:<name> selection", Args: cobra.MinimumNArgs(1)}
+	set.RunE = func(cmd *cobra.Command, args []string) error {
+		return invoke(func(a app.App) (any, error) {
+			return a.SetSkillGroup(ctx, args[0], args[1:])
+		})(cmd, args)
+	}
+	skillGroup.AddCommand(set)
+	group.AddCommand(skillGroup)
+
 	for _, action := range []struct {
 		name, help string
 	}{
 		{"plan", "Preview files, collisions and requirements without writing"},
 		{"apply", "Install or resume installation of a pinned Skill"},
 	} {
-		var target string
+		var target, selection string
 		var symlink bool
 		command := &cobra.Command{Use: action.name + " <name>", Short: action.help, Args: cobra.ExactArgs(1)}
 		command.Flags().StringVar(&target, "target", "", "User-level target: codex or claude-code")
 		command.Flags().BoolVar(&symlink, "symlink", false, "Project a verified link to the local Skill package")
+		if action.name == "plan" {
+			command.Use = "plan [name]"
+			command.Args = cobra.MaximumNArgs(1)
+			command.Flags().StringVar(&selection, "group", "", "Plan a global, project:<project>, or capability:<name> selection")
+		}
 		command.RunE = func(cmd *cobra.Command, args []string) error {
 			return invoke(func(a app.App) (any, error) {
 				if action.name == "plan" {
+					if selection != "" && len(args) == 0 {
+						return a.PlanSkillGroup(ctx, selection, target, symlink)
+					}
+					if selection != "" || len(args) != 1 {
+						return nil, app.Fail("usage", "choose one Skill name or --group")
+					}
 					return a.PlanSkill(args[0], target, symlink)
 				}
 				return a.ApplySkill(ctx, args[0], target, symlink)
@@ -56,7 +78,7 @@ func skillCommand(ctx context.Context, invoke func(func(app.App) (any, error)) f
 		command.Flags().StringVar(&input.Target, "target", "", "User-level target: codex or claude-code")
 		command.Flags().StringVar(&input.Confirm, "confirm", "", "Confirmation from the exact preview of this change")
 		if !input.Rollback {
-			command.Flags().StringVar(&input.Ref, "ref", "", "Full Git commit hash or refs/tags/<release> (required for Git)")
+			command.Flags().StringVar(&input.Ref, "ref", "", "Full Git commit hash or refs/tags/<release> (required for a local Git install)")
 			command.Flags().StringVar(&input.License, "license", "", "License identifier (defaults to the new Skill's license or NOASSERTION)")
 		}
 		command.RunE = func(cmd *cobra.Command, args []string) error {

@@ -29,8 +29,8 @@ const (
 )
 
 type SkillImport struct {
-	Local, Git, Subdir, Ref, License string
-	Platforms, Dependencies          []string
+	Local, Git, Subdir, Ref, License, Share string
+	Platforms, Dependencies                 []string
 }
 
 type SkillFile struct {
@@ -245,24 +245,40 @@ func (a App) lockSkills(ctx context.Context) (func(), error) {
 	return unlock, err
 }
 
+func validateSkillRequirements(platforms, dependencies []string) error {
+	for _, value := range platforms {
+		osName, arch, hasArch := strings.Cut(value, "/")
+		if !validSlug.MatchString(osName) || hasArch && !validSlug.MatchString(arch) {
+			return Fail("usage", "platforms must be OS or OS/architecture names")
+		}
+	}
+	for _, dependency := range dependencies {
+		if !validateSkillPath(dependency) || strings.Contains(dependency, "/") {
+			return Fail("usage", "dependencies must be executable names on PATH")
+		}
+	}
+	return nil
+}
+
 func (a App) AddSkill(ctx context.Context, input SkillImport) (SkillPackage, error) {
 	pkg := SkillPackage{SchemaVersion: 1, Subdir: ".", Platforms: []string{}, Dependencies: []string{}}
 	if (input.Local == "") == (input.Git == "") || input.Local != "" && (input.Ref != "" || input.Subdir != "") {
 		return pkg, Fail("usage", "choose either --local or --git with --ref and an optional --subdir")
 	}
-	for _, value := range input.Platforms {
-		osName, arch, hasArch := strings.Cut(value, "/")
-		if osName == "" || !validSlug.MatchString(osName) || hasArch && !validSlug.MatchString(arch) {
-			return pkg, Fail("usage", "platforms must be OS or OS/architecture names")
+	switch input.Share {
+	case "", "private":
+	case "public":
+		if !validPublicSkillURL(input.Git) {
+			return pkg, Fail("usage", "public Skills require a credential-free HTTPS Git URL")
 		}
-		pkg.Platforms = append(pkg.Platforms, value)
+	default:
+		return pkg, Fail("usage", "choose --share public or --share private")
 	}
-	for _, dependency := range input.Dependencies {
-		if !validateSkillPath(dependency) || strings.Contains(dependency, "/") {
-			return pkg, Fail("usage", "dependencies must be executable names on PATH")
-		}
-		pkg.Dependencies = append(pkg.Dependencies, dependency)
+	if err := validateSkillRequirements(input.Platforms, input.Dependencies); err != nil {
+		return pkg, err
 	}
+	pkg.Platforms = append(pkg.Platforms, input.Platforms...)
+	pkg.Dependencies = append(pkg.Dependencies, input.Dependencies...)
 	slices.Sort(pkg.Platforms)
 	slices.Sort(pkg.Dependencies)
 	pkg.Platforms = slices.Compact(pkg.Platforms)
@@ -275,6 +291,18 @@ func (a App) AddSkill(ctx context.Context, input SkillImport) (SkillPackage, err
 	if err != nil {
 		return pkg, err
 	}
+	if input.Share != "" {
+		if input.Share == "private" {
+			pkg.SourceKind, pkg.SourceURL, pkg.Subdir, pkg.Commit, pkg.Release = "private", "", ".", "", ""
+		}
+		if pkg.SourceKind == "git" {
+			if err := a.cacheImportedPublicSkill(ctx, pkg, payload.data); err != nil {
+				return pkg, err
+			}
+		}
+		return pkg, a.saveSharedSkill(ctx, pkg, payload)
+	}
+
 	unlock, err := a.lockSkills(ctx)
 	if err != nil {
 		return pkg, err

@@ -71,7 +71,7 @@ func dependencies(r remoteRecord) []string {
 			ids = append(ids, m.TaskID, m.ResourceID)
 		}
 	}
-	return ids
+	return append(ids, skillGroupDependencies(r)...)
 }
 
 // Pending dependencies form commit units; unchanged parents do not couple unrelated edits.
@@ -240,10 +240,9 @@ func planOperations(remote, local map[string][]byte, ops []operation) (map[strin
 		if blocked[o.id] == "" {
 			selected = append(selected, o)
 			r, _ := decodeRecord(o.proposed)
-			if r.Value.Body != nil {
-				p := "objects/" + r.Value.Body.SHA256
-				if b, ok := local[p]; ok {
-					f[p] = b
+			for _, path := range r.ordinaryObjectPaths() {
+				if b, ok := local[path]; ok {
+					f[path] = b
 				}
 			}
 		}
@@ -292,28 +291,21 @@ func persistConflicts(ctx context.Context, c *sql.Conn, ops []operation, conflic
 			if err != nil {
 				return err
 			}
-			var path string
-			switch {
-			case r.Value.Body != nil:
-				path = "objects/" + r.Value.Body.SHA256
-			case r.Kind == artifactKind && r.Artifact.Omitted == "":
-				path = r.Artifact.objectPath()
-			default:
-				continue
-			}
-			data, ok := version.files[path]
-			if !ok {
-				err := c.QueryRowContext(ctx, "SELECT data FROM sync_baselines WHERE path=?", path).Scan(&data)
-				if err == sql.ErrNoRows {
-					// An unpublished artifact intent may only have a local object.
-					continue
+			for _, path := range r.publishedObjectPaths() {
+				data, ok := version.files[path]
+				if !ok {
+					err := c.QueryRowContext(ctx, "SELECT data FROM sync_baselines WHERE path=?", path).Scan(&data)
+					if err == sql.ErrNoRows {
+						// An unpublished artifact intent may only have a local object.
+						continue
+					}
+					if err != nil {
+						return err
+					}
 				}
-				if err != nil {
+				if _, err := c.ExecContext(ctx, "INSERT OR IGNORE INTO sync_objects VALUES(?,COALESCE(?,X''))", path, data); err != nil {
 					return err
 				}
-			}
-			if _, err := c.ExecContext(ctx, "INSERT OR IGNORE INTO sync_objects VALUES(?,?)", path, data); err != nil {
-				return err
 			}
 		}
 	}
@@ -800,6 +792,8 @@ func retainDeferredRecords(ctx context.Context, c *sql.Conn, files map[string][]
 			table = "records"
 		case "configuration":
 			table = "configurations"
+		case skillPinKind, skillGroupKind:
+			table = "skill_records"
 		}
 		if table == "" {
 			continue
@@ -810,13 +804,12 @@ func retainDeferredRecords(ctx context.Context, c *sql.Conn, files map[string][]
 		}
 		if n == 0 {
 			files[path] = b
-			if r.Value.Body != nil {
-				p := "objects/" + r.Value.Body.SHA256
+			for _, object := range r.ordinaryObjectPaths() {
 				var data []byte
-				if e := c.QueryRowContext(ctx, "SELECT data FROM sync_baselines WHERE path=?", p).Scan(&data); e != nil {
+				if e := c.QueryRowContext(ctx, "SELECT data FROM sync_baselines WHERE path=?", object).Scan(&data); e != nil {
 					return e
 				}
-				files[p] = data
+				files[object] = data
 			}
 		}
 	}

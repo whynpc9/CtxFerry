@@ -24,6 +24,7 @@ type skillReceipt struct {
 	Files         []SkillFile   `json:"files"`
 	State         string        `json:"state"`
 	Stage         string        `json:"stage,omitempty"`
+	Shared        bool          `json:"shared,omitempty"`
 	Version       string        `json:"version,omitempty"`
 	Previous      *string       `json:"previous,omitempty"`
 	Replaces      *skillReceipt `json:"replaces,omitempty"`
@@ -45,6 +46,7 @@ func (r skillReceipt) validateTarget(path string) error {
 		(r.Mode != "copy" && r.Mode != "symlink") ||
 		(r.State != "installed" && r.State != "pending") ||
 		(r.State == "pending" && !validStage) || (r.State == "installed" && r.Stage != "") ||
+		r.Shared && r.Version == "" ||
 		r.Version != "" && !validSkillVersion(r.Version) ||
 		r.Previous != nil && *r.Previous != "" && !validSkillVersion(*r.Previous) ||
 		r.Replaces != nil && r.State != "pending" {
@@ -71,7 +73,8 @@ func (a App) ApplySkill(ctx context.Context, name, target string, symlink bool) 
 	if err != nil {
 		return p.SkillPlan, err
 	}
-	if p.receipt.Replaces != nil {
+	recovering := p.receipt.Replaces != nil
+	if recovering {
 		mode := "copy"
 		if symlink {
 			mode = "symlink"
@@ -80,7 +83,11 @@ func (a App) ApplySkill(ctx context.Context, name, target string, symlink bool) 
 			return p.SkillPlan, err
 		}
 	}
-	err = p.planInstalled(name, symlink)
+	if recovering {
+		err = p.planInstalled(name, symlink)
+	} else {
+		err = a.planSelectedSkill(ctx, &p, name, symlink)
+	}
 	if err != nil {
 		return p.SkillPlan, err
 	}
@@ -94,6 +101,11 @@ func (a App) ApplySkill(ctx context.Context, name, target string, symlink bool) 
 		return p.SkillPlan, nil
 	}
 	if p.receipt.State == "" {
+		if p.shared {
+			if err := a.cacheSharedSkill(ctx, p); err != nil {
+				return p.SkillPlan, err
+			}
+		}
 		if err := p.stage(device); err != nil {
 			return p.SkillPlan, err
 		}
@@ -134,7 +146,7 @@ func (p *skillProjection) stageReplacing(device string, old *skillReceipt) error
 	p.receipt = skillReceipt{
 		SchemaVersion: 1, DeviceID: device, Path: p.Path, Mode: p.Mode,
 		PackageDigest: p.Package.Digest, Files: p.Package.Files, State: "pending", Stage: filepath.Base(stage),
-		Version: p.version, Replaces: old,
+		Version: p.version, Shared: p.shared, Replaces: old,
 	}
 	if old != nil {
 		p.receipt.Previous = &old.Version
