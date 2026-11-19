@@ -10,7 +10,7 @@ import (
 )
 
 func artifactCommand(ctx context.Context, invoke func(func(app.App) (any, error)) func(*cobra.Command, []string) error, selector *string) *cobra.Command {
-	group := &cobra.Command{Use: "artifact", Short: "Register and retrieve local run artifacts"}
+	group := &cobra.Command{Use: "artifact", Short: "Register, share and retrieve run artifacts"}
 	run := func(cmd *cobra.Command, args []string, fn func(app.App, string) (any, error)) error {
 		return invoke(func(a app.App) (any, error) {
 			cwd, err := os.Getwd()
@@ -98,6 +98,18 @@ func artifactCommand(ctx context.Context, invoke func(func(app.App) (any, error)
 			return a.FetchArtifact(ctx, *selector, cwd, args[0], output)
 		})
 	}
-	group.AddCommand(add, list, inspect, fetch)
+	var mode, approval string
+	share := &cobra.Command{Use: "share <artifact-uuid>", Short: "Preview or allow-list one registered artifact for sync", Args: cobra.ExactArgs(1)}
+	share.Flags().StringVar(&mode, "mode", "automatic", "Publication mode: automatic, explicit or metadata")
+	share.Flags().StringVar(&approval, "preview", "", "Approve the inspected artifact share preview ID")
+	share.RunE = func(cmd *cobra.Command, args []string) error {
+		return run(cmd, args, func(a app.App, cwd string) (any, error) {
+			if cmd.Flags().Changed("preview") && approval == "" {
+				return nil, app.Fail("usage", "preview ID must not be empty")
+			}
+			return a.ShareArtifact(ctx, *selector, cwd, args[0], mode, approval)
+		})
+	}
+	group.AddCommand(add, list, inspect, fetch, share)
 	return group
 }

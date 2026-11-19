@@ -96,7 +96,7 @@ func (a App) copyBackupCatalog(ctx context.Context, source *sql.DB, destination 
 			}
 		}
 		statements := []string{
-			"INSERT INTO backup.sync_state(singleton,epoch,confirmed_head) SELECT singleton,epoch,confirmed_head FROM main.sync_state",
+			"INSERT INTO backup.sync_state(singleton,epoch,confirmed_head,history_bytes) SELECT singleton,epoch,confirmed_head,history_bytes FROM main.sync_state",
 			"INSERT INTO backup.device SELECT singleton,id,'',os,arch,created_at FROM main.device",
 			"INSERT INTO backup.records SELECT * FROM main.records WHERE json_extract(metadata,'$.policy.storage')='shared'",
 			"INSERT INTO backup.context_bodies SELECT b.* FROM main.context_bodies b JOIN backup.records r ON r.id=b.record_id",
@@ -104,7 +104,7 @@ func (a App) copyBackupCatalog(ctx context.Context, source *sql.DB, destination 
 		if includeLocal {
 			statements[1] = "INSERT INTO backup.device SELECT * FROM main.device"
 			statements[2] = "INSERT INTO backup.records SELECT * FROM main.records"
-			for _, table := range []string{"checkout_bindings", "local_configurations", "profile_selections", "project_subscriptions", "resource_routes", "resource_observations", "artifact_runs", "artifacts"} {
+			for _, table := range []string{"checkout_bindings", "local_configurations", "profile_selections", "project_subscriptions", "resource_routes", "resource_observations", "artifact_runs", "artifacts", "artifact_observations"} {
 				statements = append(statements, "INSERT INTO backup."+table+" SELECT * FROM main."+table)
 			}
 		}
