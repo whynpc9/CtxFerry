@@ -258,7 +258,9 @@ ctxferry workspace backup --to /protected/ctxferry-device-backup --include-local
 The command works offline. It bundles the last locally confirmed published
 Git history, if any, and takes a standalone SQLite snapshot of the catalog,
 including unpublished edits, their original bases, and referenced objects.
-Objects and conflict evidence are stored inside SQLite. If a publication is
+Context bodies and conflict evidence are stored inside SQLite. Registered
+artifact payloads are stored separately in the backup's `artifacts/` directory
+when local-only data is included. If a publication is
 awaiting reconciliation, run `ctxferry sync` before backing up. A completed
 backup has a `manifest.json` with checksums for its files. Keep the directory
 together. A failed backup may leave an incomplete directory.
@@ -266,10 +268,12 @@ together. A failed backup may leave an incomplete directory.
 By default the snapshot includes shared records, workspace and device IDs,
 and credential-free sync repository information. Use `--include-local-only`
 to save device-only records, checkout bindings, local configuration, Profile
-selections, subscriptions, route facts, and observations. Both modes exclude
+selections, subscriptions, route facts, observations, and local artifact
+manifests and their verified payloads. Both modes exclude
 credential stores, provider sessions, Git authentication, and execution trust.
 Secret references can appear in shared records. Review authored content for
-secrets pasted into notes or other fields before backing it up.
+secrets in notes, artifact payloads, and run provenance before backing them
+up. Artifact sensitivity labels do not inspect or redact file contents.
 
 To recover the saved device's offline state, choose a new application data
 directory. The command keeps the original device ID and pending queue. Use

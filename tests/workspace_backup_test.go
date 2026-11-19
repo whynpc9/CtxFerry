@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/whynpc9/CtxFerry/internal/app"
 	"github.com/whynpc9/CtxFerry/internal/store"
 	"github.com/whynpc9/CtxFerry/internal/testcli"
 )
@@ -265,5 +266,70 @@ func TestWorkspaceEpochReplansUnacknowledgedOldPush(t *testing.T) {
 		if got := obj(t, detail, side)["payload"].(map[string]any)["body"]; got != want {
 			t.Fatalf("lost %s while reconciling old push: %v", side, got)
 		}
+	}
+}
+
+func TestWorkspaceBackupIncludesOnlyVerifiedRegisteredArtifactObjects(t *testing.T) {
+	a := contextHarness(t)
+	const payload = "synthetic artifact body"
+	const tampered = "corrupted artifact body"
+	filename := filepath.Join(a.Dir, "report.json")
+	writeArtifactFile(t, filename, payload)
+	first := artifactData[app.ArtifactManifest](t, a.Run(t, artifactAddArgs(filename)...).Success(t))
+	a.Run(t, artifactAddArgs(filename)...).Success(t)
+	root := filepath.Join(filepath.Dir(store.Path(a.DataDir)), "artifacts")
+	object := filepath.Join(root, filepath.FromSlash(first.Payload.Location))
+	orphan := filepath.Join(filepath.Dir(object), strings.Repeat("a", 64))
+	writeArtifactFile(t, orphan, "unreferenced artifact body")
+
+	defaultBackup := filepath.Join(t.TempDir(), "default")
+	a.Run(t, "workspace", "backup", "--to", defaultBackup, "--format=json").Success(t)
+	if _, err := os.Stat(filepath.Join(defaultBackup, "artifacts")); !os.IsNotExist(err) {
+		t.Fatal("default backup included artifact objects", err)
+	}
+	db, err := store.OpenBackupCatalog(t.Context(), filepath.Join(defaultBackup, "catalog.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := db.QueryRow("SELECT (SELECT count(*) FROM artifacts)+(SELECT count(*) FROM artifact_runs)").Scan(&count); err != nil || count != 0 {
+		t.Fatalf("default backup included artifact catalog entries: %d %v", count, err)
+	}
+	db.Close()
+
+	withArtifacts := filepath.Join(t.TempDir(), "with-artifacts")
+	a.Run(t, "workspace", "backup", "--to", withArtifacts, "--include-local-only", "--format=json").Success(t)
+	saved := filepath.Join(withArtifacts, "artifacts", filepath.FromSlash(first.Payload.Location))
+	entries, err := os.ReadDir(filepath.Dir(saved))
+	if err != nil || len(entries) != 1 || entries[0].Name() != first.Payload.SHA256 {
+		t.Fatalf("expected a single referenced object: %v %v", entries, err)
+	}
+	if len(payload) != len(tampered) {
+		t.Fatal("test payload must preserve size when tampered")
+	}
+	writeArtifactFile(t, object, tampered)
+	badBackup := filepath.Join(t.TempDir(), "failed")
+	failure(t, a.Run(t, "workspace", "backup", "--to", badBackup, "--include-local-only", "--format=json"), "artifact-hash-mismatch")
+	if _, err := os.Stat(filepath.Join(badBackup, "manifest.json")); !os.IsNotExist(err) {
+		t.Fatal("failed artifact snapshot published a completion manifest", err)
+	}
+
+	a.DataDir = filepath.Join(t.TempDir(), "recovered")
+	a.Run(t, "workspace", "recover-local", "--from", withArtifacts, "--format=json").Success(t)
+	list := artifactData[app.ArtifactList](t, a.Run(t, "artifact", "list", "--project", "checkout", "--format=json").Success(t))
+	if len(list.Artifacts) != 2 {
+		t.Fatal("recovery lost artifact manifests")
+	}
+	fetched := filepath.Join(t.TempDir(), "fetched.json")
+	a.Run(t, "artifact", "fetch", first.ID, "--project", "checkout", "--output", fetched, "--format=json").Success(t)
+	if b, err := os.ReadFile(fetched); err != nil || string(b) != payload {
+		t.Fatalf("recovery lost artifact payload: %q %v", b, err)
+	}
+
+	writeArtifactFile(t, saved, tampered)
+	a.DataDir = filepath.Join(t.TempDir(), "no-partial-recovery")
+	failure(t, a.Run(t, "workspace", "recover-local", "--from", withArtifacts, "--format=json"), "artifact-hash-mismatch")
+	if _, err := os.Stat(store.Path(a.DataDir)); !os.IsNotExist(err) {
+		t.Fatal("recovery exposed a catalog with corrupt payloads", err)
 	}
 }

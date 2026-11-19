@@ -14,11 +14,12 @@ import (
 )
 
 const (
-	backupCatalog  = "catalog.sqlite"
-	backupBundle   = "published.bundle"
-	backupManifest = "manifest.json"
-	backupRef      = "refs/ctxferry/backup"
-	backupBoundary = "Plaintext backup. Protect the destination. Credential stores, provider sessions, Git authentication and execution trust are excluded. Review user-authored content for pasted secrets."
+	backupCatalog   = "catalog.sqlite"
+	backupBundle    = "published.bundle"
+	backupArtifacts = "artifacts"
+	backupManifest  = "manifest.json"
+	backupRef       = "refs/ctxferry/backup"
+	backupBoundary  = "Plaintext backup. Protect the destination. Credential stores, provider sessions, Git authentication and execution trust are excluded. Review user-authored content for pasted secrets."
 )
 
 type WorkspaceBackup struct {
@@ -40,7 +41,7 @@ type WorkspaceBackupResult struct {
 // The snapshot is built from an allowlist in a new database. Objects are stored
 // inline in context_bodies, sync_baselines and sync_objects. Rebuild the derived
 // FTS index so shadow tables cannot carry content excluded by the row filter.
-func copyBackupCatalog(ctx context.Context, source *sql.DB, destination string, includeLocal bool) (WorkspaceBackup, error) {
+func (a App) copyBackupCatalog(ctx context.Context, source *sql.DB, destination string, includeLocal bool) (WorkspaceBackup, error) {
 	m := WorkspaceBackup{Format: 1, IncludesLocalOnly: includeLocal}
 	snapshot, err := store.OpenCatalog(ctx, destination, true)
 	if err != nil {
@@ -59,7 +60,7 @@ func copyBackupCatalog(ctx context.Context, source *sql.DB, destination string, 
 	}
 	defer conn.ExecContext(context.Background(), "DETACH DATABASE backup")
 	err = func() error {
-		if _, err := conn.ExecContext(ctx, "BEGIN"); err != nil {
+		if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
 			return err
 		}
 		defer conn.ExecContext(context.Background(), "ROLLBACK")
@@ -103,12 +104,23 @@ func copyBackupCatalog(ctx context.Context, source *sql.DB, destination string, 
 		if includeLocal {
 			statements[1] = "INSERT INTO backup.device SELECT * FROM main.device"
 			statements[2] = "INSERT INTO backup.records SELECT * FROM main.records"
-			for _, table := range []string{"checkout_bindings", "local_configurations", "profile_selections", "project_subscriptions", "resource_routes", "resource_observations"} {
+			for _, table := range []string{"checkout_bindings", "local_configurations", "profile_selections", "project_subscriptions", "resource_routes", "resource_observations", "artifact_runs", "artifacts"} {
 				statements = append(statements, "INSERT INTO backup."+table+" SELECT * FROM main."+table)
 			}
 		}
 		for _, statement := range statements {
 			if _, err := conn.ExecContext(ctx, statement); err != nil {
+				return err
+			}
+		}
+		if includeLocal {
+			// The catalog write lock also excludes artifact additions and
+			// reclamation until all objects in the snapshot are verified.
+			rows, err := conn.QueryContext(ctx, backupArtifactQuery)
+			if err != nil {
+				return err
+			}
+			if err = copyBackupArtifacts(rows, a.artifactRoot(), filepath.Join(filepath.Dir(destination), backupArtifacts)); err != nil {
 				return err
 			}
 		}
@@ -185,7 +197,7 @@ func (a App) BackupWorkspace(ctx context.Context, destination string, includeLoc
 	}
 	// The manifest is the completion marker. Failed copies cannot be restored.
 	catalog := filepath.Join(destination, backupCatalog)
-	m, err := copyBackupCatalog(ctx, db, catalog, includeLocal)
+	m, err := a.copyBackupCatalog(ctx, db, catalog, includeLocal)
 	if err != nil {
 		return result, err
 	}

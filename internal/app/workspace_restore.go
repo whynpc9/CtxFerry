@@ -138,7 +138,12 @@ func (a App) RecoverLocalWorkspace(ctx context.Context, source string) (Workspac
 	if h != m.CatalogSHA256 {
 		return result, Fail("invalid-backup", "backup catalog changed during recovery")
 	}
-	// Create the live catalog only after the history and snapshot are complete.
+	if m.IncludesLocalOnly {
+		if err = a.recoverBackupArtifacts(ctx, temp, source); err != nil {
+			return result, err
+		}
+	}
+	// Create the live catalog only after its history, snapshot and objects are complete.
 	if err = os.Link(temp, dest); err != nil {
 		return result, err
 	}
