@@ -100,6 +100,26 @@ func (f *Fake) Resolve(_ context.Context, p provider.Profile, session []byte, l 
 	return []byte(value), nil
 }
 
+func (f *Fake) Import(_ context.Context, p provider.Profile, session []byte, l provider.Locator, value []byte) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !slices.ContainsFunc(f.Methods, func(m provider.MethodCapabilities) bool { return m.Method == p.Method && m.CreateImport }) {
+		return provider.ErrImportRejected
+	}
+	if f.authState(p, session) != provider.Authenticated {
+		return provider.ErrAuthenticationRequired
+	}
+	ref := Reference{p, l}
+	if _, exists := f.Entries[ref]; exists {
+		return provider.ErrImportCollision
+	}
+	if f.Entries == nil {
+		f.Entries = make(map[Reference]string)
+	}
+	f.Entries[ref] = string(value)
+	return nil
+}
+
 // MemoryStore represents the secure-store seam in tests. It never writes files.
 type MemoryStore struct {
 	Unavailable bool

@@ -307,7 +307,7 @@ func render(w io.Writer, result any) error {
 		_, err = fmt.Fprintln(w, string(b))
 	case app.OnboardingState:
 		return renderOnboarding(w, r)
-	case app.ArtifactManifest, app.ArtifactList, app.ArtifactFetch, app.ArtifactSharePreview, app.NoteScan, app.NoteImportReceipt, app.ContextResult, app.ConfigurationExplanation, app.ConfigurationReceipt, app.ProfileSelection, app.Resource, app.ResourceList, app.ResourceDetail, app.Observation, app.Task, app.TaskList, app.ResourceMapping, app.SecretList, app.SecretStatus, app.SecretBindResult, app.ProviderLoginResult, app.ExecutionReview:
+	case app.EnvScan, app.EnvImportPlan, app.EnvImportReceipt, app.ArtifactManifest, app.ArtifactList, app.ArtifactFetch, app.ArtifactSharePreview, app.NoteScan, app.NoteImportReceipt, app.ContextResult, app.ConfigurationExplanation, app.ConfigurationReceipt, app.ProfileSelection, app.Resource, app.ResourceList, app.ResourceDetail, app.Observation, app.Task, app.TaskList, app.ResourceMapping, app.SecretList, app.SecretStatus, app.SecretBindResult, app.ProviderLoginResult, app.ExecutionReview:
 		b, e := json.MarshalIndent(r, "", "  ")
 		if e != nil {
 			return e
