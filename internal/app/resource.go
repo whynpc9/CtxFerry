@@ -165,22 +165,6 @@ func resourceRecord(raw []byte) (remoteRecord, error) {
 	return r, validateResourceSpec(r.Resource, r.Policy.Storage == "shared")
 }
 
-func (a App) openResourceProject(ctx context.Context, selector, cwd string) (*sql.DB, Project, error) {
-	result, err := a.InspectProject(ctx, selector, cwd)
-	if err != nil {
-		return nil, Project{}, err
-	}
-	db, err := store.Open(ctx, a.DataDir, false)
-	if err != nil {
-		return nil, Project{}, err
-	}
-	if err = requireSubscription(ctx, db, result.Project.ID); err != nil {
-		db.Close()
-		return nil, Project{}, err
-	}
-	return db, result.Project, nil
-}
-
 func (a App) AddResource(ctx context.Context, selector, cwd, storage string, spec ResourceSpec) (Resource, error) {
 	var out Resource
 	if storage != "shared" && storage != "local-only" {
@@ -203,7 +187,7 @@ func (a App) AddResource(ctx context.Context, selector, cwd, storage string, spe
 		}
 		defer release()
 	}
-	db, project, err := a.openResourceProject(ctx, selector, cwd)
+	db, project, err := a.openSubscribedProject(ctx, selector, cwd)
 	if err != nil {
 		return out, err
 	}
@@ -246,7 +230,7 @@ const liveResources = ` FROM records WHERE kind='resource' AND project_id=? AND 
 
 func (a App) ListResources(ctx context.Context, selector, cwd string) (ResourceList, error) {
 	out := ResourceList{Resources: []Resource{}}
-	db, project, err := a.openResourceProject(ctx, selector, cwd)
+	db, project, err := a.openSubscribedProject(ctx, selector, cwd)
 	if err != nil {
 		return out, err
 	}
@@ -300,7 +284,7 @@ func (a App) SetResourceRoute(ctx context.Context, selector, cwd, id, endpoint, 
 			}
 		}
 	}
-	db, project, err := a.openResourceProject(ctx, selector, cwd)
+	db, project, err := a.openSubscribedProject(ctx, selector, cwd)
 	if err != nil {
 		return out, err
 	}
@@ -377,7 +361,7 @@ func resolveResourceRoute(spec ResourceSpec, env Environment, local ResourceRout
 }
 
 func (a App) InspectResource(ctx context.Context, selector, cwd, id string) (ResourceDetail, error) {
-	db, project, err := a.openResourceProject(ctx, selector, cwd)
+	db, project, err := a.openSubscribedProject(ctx, selector, cwd)
 	if err != nil {
 		return ResourceDetail{}, err
 	}
@@ -414,7 +398,7 @@ const resourceCheckTimeout = 2 * time.Second
 
 func (a App) CheckResource(ctx context.Context, selector, cwd, id string) (Observation, error) {
 	var out Observation
-	db, project, err := a.openResourceProject(ctx, selector, cwd)
+	db, project, err := a.openSubscribedProject(ctx, selector, cwd)
 	if err != nil {
 		return out, err
 	}

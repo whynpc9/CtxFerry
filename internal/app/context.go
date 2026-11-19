@@ -64,6 +64,7 @@ type ContextResult struct {
 	Document    *ContextDoc       `json:"document,omitempty"`
 	Documents   []ContextDoc      `json:"documents"`
 	Resources   []ResourcePurpose `json:"resources,omitempty"`
+	Tasks       []TaskEntry       `json:"tasks,omitempty"`
 	Summary     *string           `json:"summary"`
 	Environment *Environment      `json:"environment,omitempty"`
 	Profile     *SelectedProfile  `json:"profile,omitempty"`
@@ -292,8 +293,8 @@ func (a App) QueryContext(ctx context.Context, selector, cwd, mode, arg, cursor 
 	}
 	query := `SELECT r.kind,r.metadata,` + bodyColumn + ` FROM records r LEFT JOIN context_bodies b ON b.record_id=r.id WHERE r.project_id=? AND coalesce(json_extract(r.metadata,'$.deleted'),0)=0`
 	if mode == "show" {
-		query += " AND (r.kind='resource' OR (r.kind='context' AND b.record_id IS NOT NULL))"
-	} else {
+		query += " AND (r.kind IN ('resource','task') OR (r.kind='context' AND b.record_id IS NOT NULL))"
+	} else if mode == "get" {
 		query += " AND r.kind='context' AND b.record_id IS NOT NULL"
 	}
 	args := []any{r.Project.ID}
@@ -309,11 +310,18 @@ func (a App) QueryContext(ctx context.Context, selector, cwd, mode, arg, cursor 
 			return r, Fail("usage", "search requires 1 to 1024 bytes of keywords")
 		}
 		terms := strings.Fields(arg)
-		for i, t := range terms {
-			terms[i] = `"` + strings.ReplaceAll(t, `"`, `""`) + `"`
+		fts := make([]string, 0, len(terms))
+		for _, term := range terms {
+			fts = append(fts, `"`+strings.ReplaceAll(term, `"`, `""`)+`"`)
 		}
-		query += ` AND r.id IN (SELECT id FROM context_fts WHERE context_fts MATCH ? AND project_id=?)`
-		args = append(args, strings.Join(terms, " AND "), r.Project.ID)
+		query += ` AND ((r.kind='context' AND b.record_id IS NOT NULL AND r.id IN
+			(SELECT id FROM context_fts WHERE context_fts MATCH ? AND project_id=?)) OR (r.kind='task'`
+		args = append(args, strings.Join(fts, " AND "), r.Project.ID)
+		for _, term := range terms {
+			query += ` AND instr(json_extract(r.metadata,'$.payload.name'),?)>0`
+			args = append(args, strings.ToLower(term))
+		}
+		query += "))"
 	default:
 		return r, Fail("usage", "unknown context query")
 	}
@@ -326,7 +334,7 @@ func (a App) QueryContext(ctx context.Context, selector, cwd, mode, arg, cursor 
 	r.Documents = []ContextDoc{}
 	lastID := ""
 	for rows.Next() {
-		if len(r.Documents)+len(r.Resources) == 100 {
+		if len(r.Documents)+len(r.Resources)+len(r.Tasks) == 100 {
 			r.Truncated = true
 			r.NextCursor = lastID
 			break
@@ -334,6 +342,15 @@ func (a App) QueryContext(ctx context.Context, selector, cwd, mode, arg, cursor 
 		var kind, raw, body string
 		if e = rows.Scan(&kind, &raw, &body); e != nil {
 			return r, e
+		}
+		if kind == "task" {
+			record, err := decodeRecord([]byte(raw))
+			if err != nil {
+				return r, err
+			}
+			r.Tasks = append(r.Tasks, TaskEntry{ID: record.ID, Name: record.Task.Name, Purpose: shortText(record.Task.Purpose, 160)})
+			lastID = record.ID
+			continue
 		}
 		if kind == "resource" {
 			record, err := resourceRecord([]byte(raw))

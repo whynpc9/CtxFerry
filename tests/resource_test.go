@@ -244,8 +244,10 @@ func TestResourceRouteConditions(t *testing.T) {
 	}
 }
 
-func TestContextShowPaginatesDocumentsAndResourcesTogether(t *testing.T) {
-	h := contextHarness(t)
+func TestContextShowPaginatesDocumentsResourcesAndTasksTogether(t *testing.T) {
+	h := gitHarness(t)
+	binding := obj(t, bind(t, h), "binding")
+	membership := binding["membershipId"].(string)
 	h.Run(t, "profile", "create", "development", "--format=json").Success(t)
 	h.Run(t, "profile", "select", "development", "--format=json").Success(t)
 	setConfig(t, h, "profile", "parallelism", "3", "--profile=development")
@@ -269,7 +271,8 @@ func TestContextShowPaginatesDocumentsAndResourcesTogether(t *testing.T) {
 		purpose := strings.Repeat("&", 160)
 		r := addResource(t, h, title, purpose, "local-only").Success(t)
 		d := obj(t, putDoc(t, h, title, "body", "local-only", "full", "--purpose", purpose).Success(t), "document")
-		wantIDs = append(wantIDs, resourceString(t, r, "id"), d["id"].(string))
+		task := addTask(t, h, fmt.Sprintf("task-%d", i), membership, "unused", "local-only", "--purpose", purpose).Success(t)
+		wantIDs = append(wantIDs, resourceString(t, r, "id"), d["id"].(string), resourceString(t, task, "id"))
 	}
 	slices.Sort(wantIDs)
 	for _, format := range []string{"json", "text"} {
@@ -282,10 +285,10 @@ func TestContextShowPaginatesDocumentsAndResourcesTogether(t *testing.T) {
 					t.Fatalf("page %d, exit %d, size %d, stderr %s", page, r.ExitCode, len(r.Stdout), r.Stderr)
 				}
 				var data struct {
-					Documents, Resources []struct{ ID string }
-					Profile              struct{ Name string }
-					Truncated            bool
-					NextCursor           string
+					Documents, Resources, Tasks []struct{ ID string }
+					Profile                     struct{ Name string }
+					Truncated                   bool
+					NextCursor                  string
 				}
 				raw := []byte(r.Stdout)
 				if format == "json" {
@@ -308,6 +311,9 @@ func TestContextShowPaginatesDocumentsAndResourcesTogether(t *testing.T) {
 				}
 				for _, resource := range data.Resources {
 					pageIDs = append(pageIDs, resource.ID)
+				}
+				for _, task := range data.Tasks {
+					pageIDs = append(pageIDs, task.ID)
 				}
 				slices.Sort(pageIDs)
 				if len(pageIDs) == 0 || pageIDs[0] <= cursor {

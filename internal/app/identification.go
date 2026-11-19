@@ -38,20 +38,25 @@ type Resolution struct {
 	Candidates []Candidate `json:"candidates"`
 }
 
+func discoveryGit(ctx context.Context, path string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", path}, args...)...)
+	for _, e := range os.Environ() {
+		name, _, _ := strings.Cut(e, "=")
+		if !strings.HasPrefix(strings.ToUpper(name), "GIT_") {
+			cmd.Env = append(cmd.Env, e)
+		}
+	}
+	cmd.Env = append(cmd.Env, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_TERMINAL_PROMPT=0", "LC_ALL=C")
+	return cmd
+}
+
 // Discovery never contacts a remote, invokes a shell, or trusts inherited Git locations.
 func discoverGit(ctx context.Context, path string) GitLocation {
 	g := GitLocation{Status: "unavailable"}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	run := func(args ...string) (string, error) {
-		cmd := exec.CommandContext(ctx, "git", append([]string{"-C", path}, args...)...)
-		for _, e := range os.Environ() {
-			if !strings.HasPrefix(e, "GIT_") {
-				cmd.Env = append(cmd.Env, e)
-			}
-		}
-		cmd.Env = append(cmd.Env, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_TERMINAL_PROMPT=0", "LC_ALL=C")
-		out, err := cmd.Output()
+		out, err := discoveryGit(ctx, path, args...).Output()
 		return strings.TrimSpace(string(out)), err
 	}
 	root, err := run("rev-parse", "--show-toplevel")
@@ -283,13 +288,20 @@ func (a App) AddRemote(ctx context.Context, repository, raw string) (map[string]
 }
 
 func resolveProject(ctx context.Context, db *sql.DB, selector, cwd string) (Resolution, error) {
+	return resolveProjectLocation(ctx, db, selector, cwd, true)
+}
+
+// Task preflight can resolve explicit and directly bound Projects without using Git.
+func resolveProjectLocation(ctx context.Context, db *sql.DB, selector, cwd string, includeGit bool) (Resolution, error) {
 	r := Resolution{Source: "unbound", Candidates: []Candidate{}}
 	path, e := canonical(cwd)
 	if e != nil {
 		return r, e
 	}
 	r.Directory = path
-	r.Git = discoverGit(ctx, path)
+	if includeGit {
+		r.Git = discoverGit(ctx, path)
+	}
 	e = db.QueryRowContext(ctx, "SELECT id,name,os,arch,created_at FROM device WHERE singleton=1").Scan(&r.Device.ID, &r.Device.Name, &r.Device.OS, &r.Device.Arch, &r.Device.CreatedAt)
 	if e != nil {
 		return r, e
@@ -328,6 +340,9 @@ func resolveProject(ctx context.Context, db *sql.DB, selector, cwd string) (Reso
 		r.Project = &p
 		r.Source = "path-binding"
 		return r, e
+	}
+	if !includeGit {
+		r.Git = discoverGit(ctx, path)
 	}
 	// Locally explicit common-dir evidence is stronger than remote candidates.
 	rows, e = db.QueryContext(ctx, `SELECT DISTINCT p.id,p.slug,p.created_at,m.repository_id,m.id,m.subdirectory FROM checkout_bindings b JOIN memberships m ON m.id=b.membership_id JOIN projects p ON p.id=m.project_id WHERE b.device_id=? AND b.git_common_dir=?`, r.Device.ID, r.Git.CommonDir)

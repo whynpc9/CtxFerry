@@ -47,6 +47,7 @@ type remoteRecord struct {
 	Value    recordPayload   `json:"-"`
 	Config   configuration   `json:"-"`
 	Resource ResourceSpec    `json:"-"`
+	Task     TaskSpec        `json:"-"`
 }
 
 func strictJSON(b []byte, v any) error {
@@ -104,6 +105,10 @@ func decodeRecord(b []byte) (remoteRecord, error) {
 		return r, nil
 	case "resource":
 		err = strictJSON(raw, &r.Resource)
+	case "task":
+		if _, err = configurationFields(wire.Payload); err == nil {
+			err = strictJSON(wire.Payload, &r.Task)
+		}
 	default:
 		err = strictJSON(raw, &r.Value)
 	}
@@ -144,8 +149,8 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 		}
 		r, err := decodeRecord(b)
 		if err != nil {
-			if r.Kind == "configuration" && Classify(err).Code != "unsupported-schema" {
-				return w, nil, Fail("incomplete", "invalid configuration record: "+Classify(err).Message)
+			if (r.Kind == "configuration" || r.Kind == "task") && Classify(err).Code != "unsupported-schema" {
+				return w, nil, Fail("incomplete", "invalid "+r.Kind+" record: "+Classify(err).Message)
 			}
 			return w, nil, err
 		}
@@ -236,6 +241,10 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 				}
 				summaries[r.Scope.ID] = true
 			}
+		case "task":
+			if r.Scope.Kind != "project" || r.Policy.AgentDisclosure != "full" || validateTask(r.Task) != nil {
+				return invalid()
+			}
 		case "resource":
 			if r.Scope.Kind != "project" || r.Policy.AgentDisclosure != "full" || validateResourceSpec(r.Resource, true) != nil {
 				return invalid()
@@ -253,6 +262,9 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 			if p, ok := records[r.Scope.ID]; !ok || p.Kind != "project" || p.Deleted {
 				return invalid()
 			}
+		}
+		if len(invalidTaskDependencies(r, records)) != 0 {
+			return invalid()
 		}
 		if r.Kind == "membership" {
 			if p, ok := records[r.Value.RepositoryID]; !ok || p.Kind != "repository" || p.Deleted {
@@ -441,7 +453,7 @@ func installSnapshot(ctx context.Context, c *sql.Conn, files map[string][]byte, 
 	if err != nil {
 		return err
 	}
-	for _, kind := range []string{"project", "repository", "membership", "context", "configuration", "resource"} {
+	for _, kind := range []string{"project", "repository", "membership", "context", "configuration", "resource", "task"} {
 		for id, r := range records {
 			if r.Kind != kind {
 				continue
@@ -482,13 +494,13 @@ func installSnapshot(ctx context.Context, c *sql.Conn, files map[string][]byte, 
 				} else {
 					err = saveConfiguration(ctx, c, id, r.Scope, r.Config)
 				}
-			case "resource":
+			case "resource", "task":
 				var b []byte
 				b, err = json.Marshal(r.publishedEnvelope)
 				if err != nil {
 					return err
 				}
-				_, err = c.ExecContext(ctx, "INSERT INTO records VALUES(?,?,'resource',?) ON CONFLICT(id) DO UPDATE SET metadata=excluded.metadata", id, r.Scope.ID, string(b))
+				_, err = c.ExecContext(ctx, "INSERT INTO records VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET metadata=excluded.metadata", id, r.Scope.ID, kind, string(b))
 			case "context":
 				d := ContextDoc{Deleted: r.Deleted, SchemaVersion: 1, ID: id, Kind: kind, WorkspaceID: r.WorkspaceID, Scope: r.Scope, Revision: r.Revision, PreviousRevision: r.PreviousRevision, OperationID: r.OperationID, DeviceID: r.Provenance.DeviceID, UpdatedAt: r.Provenance.UpdatedAt, Title: v.Title, Purpose: v.Purpose, Source: v.Source, Summary: v.Summary, ObservedAt: v.ObservedAt, ValidUntil: v.ValidUntil, Policy: r.Policy, Freshness: "unknown"}
 				b, _ := json.Marshal(d)
@@ -508,7 +520,7 @@ func installSnapshot(ctx context.Context, c *sql.Conn, files map[string][]byte, 
 			if err != nil {
 				return err
 			}
-			if kind != "context" && kind != "resource" {
+			if kind != "context" && kind != "resource" && kind != "task" {
 				b, _ := json.Marshal(r.Payload)
 				if _, err = c.ExecContext(ctx, "INSERT INTO export_identities VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,operation_id=excluded.operation_id,fingerprint=excluded.fingerprint,previous_revision=excluded.previous_revision", id, r.Revision, r.OperationID, digest(b), r.PreviousRevision); err != nil {
 					return err

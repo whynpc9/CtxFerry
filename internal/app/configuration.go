@@ -26,10 +26,11 @@ const (
 )
 
 type configuration struct {
-	Profile   string                     `json:"profile,omitempty"`
-	Values    map[string]json.RawMessage `json:"values"`
-	UpdatedAt string                     `json:"updatedAt"`
-	Revision  string                     `json:"revision"`
+	ResourceMappings []ResourceMapping          `json:"resourceMappings,omitempty"`
+	Profile          string                     `json:"profile,omitempty"`
+	Values           map[string]json.RawMessage `json:"values"`
+	UpdatedAt        string                     `json:"updatedAt"`
+	Revision         string                     `json:"revision"`
 }
 
 type ConfigOrigin struct {
@@ -130,7 +131,7 @@ func decodeConfiguration(raw []byte, local bool) (configuration, error) {
 	}
 	for field := range fields {
 		switch field {
-		case "profile", "values", "updatedAt", "revision":
+		case "profile", "values", "updatedAt", "revision", "resourceMappings":
 		default:
 			return v, Fail("unsupported-schema", "unknown configuration record field")
 		}
@@ -147,6 +148,19 @@ func decodeConfiguration(raw []byte, local bool) (configuration, error) {
 	}
 	if _, err := time.Parse(time.RFC3339Nano, v.UpdatedAt); err != nil {
 		return v, Fail("invalid-config", "invalid configuration timestamp")
+	}
+	if fields["resourceMappings"] != nil {
+		if local || v.Profile == "" || v.ResourceMappings == nil || len(v.ResourceMappings) > 512 {
+			return v, Fail("invalid-config", "Resource mappings require a shared Profile")
+		}
+		seen := map[[2]string]bool{}
+		for _, m := range v.ResourceMappings {
+			key := [2]string{m.TaskID, m.Slot}
+			if !validUUID(m.TaskID) || !validUUID(m.ResourceID) || !resourceToken.MatchString(m.Slot) || seen[key] {
+				return v, Fail("invalid-config", "Resource mappings require distinct Task slots and valid IDs")
+			}
+			seen[key] = true
+		}
 	}
 	for field, value := range v.Values {
 		if _, err := configValue(field, value, local); err != nil {

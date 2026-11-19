@@ -590,8 +590,19 @@ func exportConn(ctx context.Context, conn *sql.Conn, c SyncConfig) (map[string][
 			if err = rows.Scan(&id, &pid, &kind, &raw, &body); err != nil {
 				return err
 			}
-			if kind == "resource" {
-				r, err := resourceRecord([]byte(raw))
+			if kind == "resource" || kind == "task" {
+				r, err := decodeRecord([]byte(raw))
+				if err != nil {
+					return err
+				}
+				if r.Kind != kind || r.Scope.Kind != "project" || !validPolicy(r.Policy) || r.Policy.AgentDisclosure != "full" {
+					return Fail("invalid-record", "invalid "+kind+" record scope or policy")
+				}
+				if kind == "resource" {
+					err = validateResourceSpec(r.Resource, r.Policy.Storage == "shared")
+				} else {
+					err = validateTask(r.Task)
+				}
 				if err != nil {
 					return err
 				}
@@ -599,10 +610,10 @@ func exportConn(ctx context.Context, conn *sql.Conn, c SyncConfig) (map[string][
 					continue
 				}
 				if !validUUID(r.ID) || r.ID != id || r.Scope.ID != pid || !projects[pid] || r.WorkspaceID != c.WorkspaceID || body.Valid {
-					return Fail("invalid-reference", "shared Resource has an invalid Project dependency")
+					return Fail("invalid-reference", "shared "+kind+" has an invalid Project dependency")
 				}
 				if _, exists := files[recordPath(id)]; exists {
-					return Fail("record-collision", "shared Resource ID collides with another record")
+					return Fail("record-collision", "shared "+kind+" ID collides with another record")
 				}
 				if err = addJSON(recordPath(id), r.publishedEnvelope); err != nil {
 					return err

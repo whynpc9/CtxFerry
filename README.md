@@ -84,3 +84,31 @@ Only `resource check` opens a TCP connection. It records reachability of the
 resolved endpoint, or the proxy itself when a local proxy is configured. Each
 result is appended to this device's Observation history. The check does not
 verify a service protocol or use credentials.
+
+Register a Task with the membership UUID shown by `project bind` or
+`project inspect`. Pass each program argument separately.
+
+```sh
+ctxferry task add unit-tests --purpose "Run the Go unit tests" \
+  --membership <membership-uuid> --working-directory . --program go \
+  --arg=test --arg=./... --storage shared
+ctxferry task list --format json
+ctxferry task inspect unit-tests --format json
+ctxferry run unit-tests --format jsonl
+```
+
+`run` resolves the Task's working directory from the membership root.
+When several locally registered checkouts or worktrees can run the Task, pass
+`--checkout <git-root>`. The default text format streams the child output.
+JSONL limits each serialized event to 8 KiB and the stream to 64 KiB. Output
+events carry `data`, with `encoding: "base64"` for chunks containing invalid
+UTF-8. The final result includes `truncated` and distinguishes child exit codes
+from control-plane errors.
+
+Declare a Resource slot with
+`--resource-slot '{"name":"db","kind":"database","stage":"dev"}'`. Map it
+explicitly with `ctxferry profile map-resource development <task> db <resource-uuid>`.
+The shared Profile maps shared Tasks to shared Resources of the slot's kind and
+stage. Select the Profile locally with `profile select` or use `run --profile`.
+Task definitions can declare credential requirements for discovery. Runs of
+those Tasks return `credentials-required` before starting a child process.
