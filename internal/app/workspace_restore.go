@@ -288,6 +288,10 @@ func (a App) RestoreWorkspace(ctx context.Context, source, expected string, newE
 			path := "objects/" + r.Value.Body.SHA256
 			files[path] = current[path]
 		}
+		if r.Kind == artifactKind && r.Artifact.Omitted == "" {
+			path := r.Artifact.objectPath()
+			files[path] = current[path]
+		}
 	}
 	if _, _, err = validateSnapshot(files, conf.WorkspaceID, w.Epoch); err != nil {
 		return result, err

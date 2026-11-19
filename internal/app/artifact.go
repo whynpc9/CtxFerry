@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -48,10 +49,12 @@ type ArtifactPayload struct {
 }
 
 type ArtifactManifest struct {
-	ID        string          `json:"id"`
-	CreatedAt string          `json:"createdAt"`
-	Run       ArtifactRun     `json:"run"`
-	Payload   ArtifactPayload `json:"payload"`
+	ID           string                `json:"id"`
+	CreatedAt    string                `json:"createdAt"`
+	Run          ArtifactRun           `json:"run"`
+	Payload      ArtifactPayload       `json:"payload"`
+	Sync         *ArtifactSyncStatus   `json:"sync,omitempty"`
+	Observations []ArtifactObservation `json:"observations,omitempty"`
 }
 
 type ArtifactList struct {
@@ -223,25 +226,7 @@ func (a App) ListArtifacts(ctx context.Context, selector, cwd, runID string) (Ar
 		return out, err
 	}
 	defer db.Close()
-	query := artifactQuery
-	args := []any{resolution.Project.ID}
-	if runID != "" {
-		query += " AND r.id=?"
-		args = append(args, runID)
-	}
-	rows, err := db.QueryContext(ctx, query+" ORDER BY a.rowid", args...)
-	if err != nil {
-		return out, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		m, err := scanArtifact(rows)
-		if err != nil {
-			return out, err
-		}
-		out.Artifacts = append(out.Artifacts, m)
-	}
-	return out, rows.Err()
+	return listArtifactManifests(ctx, db, resolution.Project.ID, runID, "")
 }
 
 func (a App) InspectArtifact(ctx context.Context, selector, cwd, id string) (ArtifactManifest, error) {
@@ -250,25 +235,41 @@ func (a App) InspectArtifact(ctx context.Context, selector, cwd, id string) (Art
 		return ArtifactManifest{}, err
 	}
 	defer db.Close()
-	m, err := scanArtifact(db.QueryRowContext(ctx, artifactQuery+" AND a.id=?", resolution.Project.ID, id))
-	if errors.Is(err, sql.ErrNoRows) {
-		return m, Fail("artifact-not-found", "artifact was not found in this Project")
-	}
-	return m, err
+	return inspectArtifactManifest(ctx, db, resolution.Project.ID, id)
 }
 
 func (a App) FetchArtifact(ctx context.Context, selector, cwd, id, output string) (ArtifactFetch, error) {
 	if output == "" {
 		return ArtifactFetch{}, Fail("usage", "artifact fetch requires an output file")
 	}
-	m, err := a.InspectArtifact(ctx, selector, cwd, id)
+	db, resolution, err := a.artifactProject(ctx, selector, cwd)
+	if err != nil {
+		return ArtifactFetch{}, err
+	}
+	defer db.Close()
+	m, err := inspectArtifactManifest(ctx, db, resolution.Project.ID, id)
 	if err != nil {
 		return ArtifactFetch{}, err
 	}
 	if !filepath.IsAbs(output) {
 		output = filepath.Join(cwd, output)
 	}
-	if err := a.fetchArtifactObject(m.Payload, output); err != nil {
+	switch m.Payload.Storage {
+	case "local-only":
+		err = a.fetchArtifactObject(m.Payload, output)
+	case "shared":
+		var data []byte
+		err = db.QueryRowContext(ctx, "SELECT data FROM sync_baselines WHERE path=?", m.Payload.Location).Scan(&data)
+		if errors.Is(err, sql.ErrNoRows) {
+			err = Fail("artifact-unavailable", "verified artifact payload is missing from the local snapshot")
+		}
+		if err == nil {
+			err = a.writeArtifactOutput(bytes.NewReader(data), m.Payload, output)
+		}
+	default:
+		err = Fail("artifact-unavailable", "this device has only the artifact metadata")
+	}
+	if err != nil {
 		return ArtifactFetch{}, err
 	}
 	return ArtifactFetch{ID: id, Output: output, Size: m.Payload.Size, SHA256: m.Payload.SHA256}, nil

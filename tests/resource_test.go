@@ -258,7 +258,7 @@ func TestContextShowPaginatesDocumentsResourcesAndTasksTogether(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = db.Exec(`DROP TABLE resource_observations; DROP TABLE resource_routes; PRAGMA user_version=7;`)
+	_, err = db.Exec(`DROP TABLE artifact_observations; ALTER TABLE sync_state DROP COLUMN history_bytes; DROP TABLE resource_observations; DROP TABLE resource_routes; PRAGMA user_version=7;`)
 	db.Close()
 	if err != nil {
 		t.Fatal(err)
