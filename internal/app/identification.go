@@ -163,6 +163,11 @@ type queryer interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }
 
+type projectReader interface {
+	queryer
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
 func selectProject(ctx context.Context, q queryer, selector string) (Project, error) {
 	var p Project
 	e := q.QueryRowContext(ctx, "SELECT id,slug,created_at FROM projects WHERE (id=? OR slug=?) AND id NOT IN (SELECT id FROM sync_tombstones) ORDER BY CASE WHEN id=? THEN 0 ELSE 1 END LIMIT 1", selector, selector, selector).Scan(&p.ID, &p.Slug, &p.CreatedAt)
@@ -312,7 +317,7 @@ func resolveProjectLocation(ctx context.Context, db *sql.DB, selector, cwd strin
 	return resolveProjectAt(ctx, db, selector, r, includeGit)
 }
 
-func resolveProjectAt(ctx context.Context, db *sql.DB, selector string, r Resolution, gitDiscovered bool) (Resolution, error) {
+func resolveProjectAt(ctx context.Context, db projectReader, selector string, r Resolution, gitDiscovered bool) (Resolution, error) {
 	path := r.Directory
 	e := db.QueryRowContext(ctx, "SELECT id,name,os,arch,created_at FROM device WHERE singleton=1").Scan(&r.Device.ID, &r.Device.Name, &r.Device.OS, &r.Device.Arch, &r.Device.CreatedAt)
 	if e != nil {
@@ -382,7 +387,7 @@ func resolveProjectAt(ctx context.Context, db *sql.DB, selector string, r Resolu
 	return resolveCandidates(ctx, db, r, common)
 }
 
-func resolveCandidates(ctx context.Context, db *sql.DB, r Resolution, common []Candidate) (Resolution, error) {
+func resolveCandidates(ctx context.Context, db projectReader, r Resolution, common []Candidate) (Resolution, error) {
 	if len(common) > 0 {
 		depth := -1
 		selected := []Candidate{}
