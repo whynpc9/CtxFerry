@@ -51,6 +51,14 @@ type skillProjection struct {
 }
 
 func skillTarget(target string) (string, error) {
+	base, err := skillTargetHome(target)
+	if err != nil {
+		return "", err
+	}
+	return resolveSkillDirectory(filepath.Join(base, "skills"))
+}
+
+func skillTargetHome(target string) (string, error) {
 	switch target {
 	case "codex", "claude-code":
 	default:
@@ -73,7 +81,7 @@ func skillTarget(target string) (string, error) {
 			base = config
 		}
 	}
-	return resolveSkillDirectory(filepath.Join(base, "skills"))
+	return base, nil
 }
 
 // Resolve existing ancestors so a changed home or adapter symlink selects a

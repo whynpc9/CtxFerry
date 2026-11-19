@@ -402,3 +402,29 @@ The previous complete version remains available offline for rollback. If a
 replacement is interrupted, rerun `skill apply` with the target and its
 installed mode to restore the last committed version. The recovery staging
 directory and local version cache retain displaced data.
+
+### Global agent entry
+
+After `ctxferry init`, preview the built-in `ctxferry` Skill and the small
+global instruction block for one agent:
+
+```sh
+ctxferry skill bootstrap install --target codex
+ctxferry skill bootstrap install --target codex --preview <token-from-preview>
+```
+
+Use `--target claude-code` for Claude Code. The Skill uses the user-level
+targets above. The instruction block goes in `~/.codex/AGENTS.md` (or
+`$CODEX_HOME/AGENTS.md`) for Codex, using a nonempty `AGENTS.override.md`
+when present. For Claude Code it goes in `~/.claude/CLAUDE.md` (or
+`$CLAUDE_CONFIG_DIR/CLAUDE.md`). The preview shows the proposed
+changes and CtxFerry's text without exposing your existing instructions.
+Use `--format json` to read the token from `data.preview`.
+
+Repeat install to verify the entry or preview changes again. A complete
+installation reports `unchanged`. If the files change between preview and
+apply, run a fresh preview. To remove the entry, preview and apply in the same
+way with `skill bootstrap uninstall`. Uninstall preserves other instruction
+text and files. An edited managed block, edited Skill or unowned name collision
+is reported for manual resolution. Ownership and recovery records stay local
+to the CtxFerry data root.

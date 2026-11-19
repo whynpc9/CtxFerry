@@ -254,6 +254,8 @@ func render(w io.Writer, result any) error {
 	switch r := result.(type) {
 	case app.SkillPackage:
 		_, err = fmt.Fprintf(w, "%s (%s)\nSource: %s\nLicense: %s\n", r.Name, r.Digest, r.SourceURL, r.License)
+	case app.AgentEntryPlan:
+		return renderAgentEntry(w, r)
 	case app.SkillPlan:
 		return renderSkillPlan(w, r)
 	case app.SkillChangePlan:
