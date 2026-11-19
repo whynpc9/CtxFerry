@@ -285,3 +285,19 @@ func TestSharedPrivateSkillRejectsIncompletePackage(t *testing.T) {
 	failure(t, b.Run(t, "skill", "plan", "private-incoming", "--target", "codex", "--format=json"), "skill-not-found")
 	b.Run(t, "skill", "apply", "private-base", "--target", "codex", "--format=json").Success(t)
 }
+
+func TestSharedSkillAndAgentBootstrapKeepSeparateOwnership(t *testing.T) {
+	h := testcli.New(t, binary)
+	h.Run(t, "init", "--format=json").Success(t)
+	const body = "explicitly shared package"
+	addSharedSkillFixture(t, h, "private", "ctxferry", body)
+
+	preview := bootstrapPlan(t, bootstrapRun(t, h, "codex", "install"))
+	bootstrapPlan(t, bootstrapRun(t, h, "codex", "install", "--preview", preview.Preview))
+	failure(t, h.Run(t, "skill", "apply", "ctxferry", "--target", "codex", "--format=json"), "skill-apply-blocked")
+	assertBootstrapFile(t, preview.Writes[0].Path, preview.Writes[0].Content)
+
+	installed := skillPlan(t, h.Run(t, "skill", "apply", "ctxferry", "--target", "claude-code", "--format=json"))
+	failure(t, bootstrapRun(t, h, "claude-code", "install"), "skill-name-collision")
+	assertBootstrapFile(t, filepath.Join(installed.Path, "SKILL.md"), skillFixtureBody("ctxferry", body))
+}
