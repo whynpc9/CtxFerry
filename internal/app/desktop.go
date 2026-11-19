@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"database/sql"
+	"time"
 
 	"github.com/whynpc9/CtxFerry/internal/store"
 )
@@ -10,6 +11,7 @@ import (
 // DesktopSnapshot is a local observation. Reading it never initializes or migrates
 // a workspace, contacts the remote, or consults a provider for a credential.
 type DesktopSnapshot struct {
+	ReadAt     time.Time
 	Device     Device
 	Bindings   []DesktopBinding
 	Sync       SyncResult
@@ -79,5 +81,9 @@ func (a App) ReadDesktopSnapshot(ctx context.Context) (DesktopSnapshot, error) {
 		return result, err
 	}
 	result.Sync.Pending = len(result.PendingIDs)
-	return result, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return result, err
+	}
+	result.ReadAt = time.Now().UTC()
+	return result, nil
 }

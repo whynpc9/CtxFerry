@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/whynpc9/CtxFerry/internal/app"
@@ -33,11 +34,12 @@ func TestNavigateOverviewAndSync(t *testing.T) {
 
 func TestSyncWithoutRemoteShowsLocalEvidence(t *testing.T) {
 	d := desktop{page: "同步", data: app.DesktopSnapshot{
+		ReadAt:     time.Date(2026, 11, 20, 12, 34, 56, 0, time.Local),
 		Sync:       app.SyncResult{State: "disabled", Pending: 1},
 		PendingIDs: []string{"local-pending-record"},
 	}}
 	window := ui.NewTester(d.view, 1180, 750)
-	for _, label := range []string{"尚未配置同步仓库", "local-pending-record", "连接私有仓库"} {
+	for _, label := range []string{"尚未配置同步仓库", "local-pending-record", "连接私有仓库", "本机快照读取于 2026-11-20 12:34:56", "ctxferry sync init --preview PREVIEW_ID"} {
 		if _, ok := window.Access(label); !ok {
 			t.Errorf("missing %q", label)
 		}

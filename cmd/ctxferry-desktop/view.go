@@ -43,6 +43,9 @@ func (d *desktop) view(c *ui.Context) {
 			ui.Row(c).FillWidth().Padding(10, 20).Children(func() {
 				ui.Text(c, "本地工作区").TextColor(muted)
 				ui.Spacer(c)
+				if !d.data.ReadAt.IsZero() && d.err == nil {
+					ui.Text(c, "本机快照读取于 "+d.data.ReadAt.Local().Format("2006-01-02 15:04:05")).Margin(0, 12, 0, 0).TextColor(muted)
+				}
 				if ui.Button(c, "刷新本地视图").Disabled(d.loading).Clicked() {
 					d.refresh()
 				}
@@ -118,7 +121,8 @@ func (d *desktop) syncPage(c *ui.Context) {
 		section(c, "连接私有仓库")
 		ui.Text(c, "准备好专用的私有 GitHub 仓库后，在终端替换仓库地址并运行：")
 		ui.Text(c, "ctxferry sync enable --remote git@github.com:OWNER/REPO.git").Font("monospace").TextColor(ink)
-		ui.Text(c, "配置成功后刷新本地视图。首次发布需要单独确认。").TextColor(muted)
+		ui.Text(c, "配置成功后刷新本地视图。").TextColor(muted)
+		firstPublishHelp(c)
 		return
 	}
 	ui.Text(c, "发布后，共享正文将以明文保留在远端 Git 历史中。").TextColor(ink)
@@ -142,6 +146,9 @@ func (d *desktop) syncPage(c *ui.Context) {
 	}
 	detail(c, "Git 历史体积", size)
 	detail(c, "最近备份", "本机目录未提供备份回执")
+	if s.Head == "" && (s.State == "enabled" || s.State == "pending") {
+		firstPublishHelp(c)
+	}
 	ui.Divider(c)
 	d.queue(c)
 }
@@ -160,4 +167,12 @@ func (d *desktop) queue(c *ui.Context) {
 	for _, item := range s.Blocked {
 		detail(c, "已阻塞", item.ID+" · "+item.Reason)
 	}
+}
+
+func firstPublishHelp(c *ui.Context) {
+	section(c, "首次发布")
+	ui.Text(c, "启用同步后，在终端预览将发布的记录和对象：")
+	ui.Text(c, "ctxferry sync preview --format json").Font("monospace").TextColor(ink)
+	ui.Text(c, "核对范围后，用返回的 previewId 替换 PREVIEW_ID，执行首次发布：")
+	ui.Text(c, "ctxferry sync init --preview PREVIEW_ID").Font("monospace").TextColor(ink)
 }
