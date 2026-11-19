@@ -18,7 +18,7 @@ var ErrNotInitialized = errors.New("workspace is not initialized; run ctxferry i
 var ErrUnsupportedSchema = errors.New("unsupported local schema")
 var ErrMigrationRequired = errors.New("local schema requires migration")
 
-const schemaVersion = 10
+const schemaVersion = 11
 
 func Path(root string) string { return filepath.Join(root, "workspaces", "default", "catalog.sqlite") }
 
@@ -120,7 +120,13 @@ func Open(ctx context.Context, root string, create bool) (*sql.DB, error) {
 				v = 9
 			}
 			if v == 9 {
-				_, err := c.ExecContext(ctx, syncProgressSchema)
+				if _, err := c.ExecContext(ctx, syncProgressSchema); err != nil {
+					return err
+				}
+				v = 10
+			}
+			if v == 10 {
+				_, err := c.ExecContext(ctx, artifactSchema)
 				return err
 			}
 			return nil
@@ -302,3 +308,22 @@ CREATE TABLE IF NOT EXISTS sync_progress (
 );
 INSERT OR IGNORE INTO sync_progress(singleton) VALUES (1);
 PRAGMA user_version=10;`
+
+// Artifact manifests are local catalog data. Payload bytes live in the object cache.
+const artifactSchema = `
+CREATE TABLE IF NOT EXISTS artifact_runs (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    provenance TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS artifact_run_project ON artifact_runs(project_id,id);
+CREATE TABLE IF NOT EXISTS artifacts (
+    id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL REFERENCES artifact_runs(id),
+    created_at TEXT NOT NULL,
+    sha256 TEXT NOT NULL,
+    payload TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS artifacts_run ON artifacts(run_id);
+CREATE INDEX IF NOT EXISTS artifacts_hash ON artifacts(sha256);
+PRAGMA user_version=11;`

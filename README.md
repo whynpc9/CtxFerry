@@ -243,3 +243,33 @@ The command can read and exfiltrate the delivered values.
 Clients older than this release do not know the `allowCustomCommand` field.
 Once a shared Task with the opt-in is published, they stop syncing with
 `unsupported-schema` until they are upgraded; they never drop the field.
+
+### Local artifacts
+
+Register one explicit file for a new run, or append another artifact to an
+existing run using its UUID. Supply provenance from the original execution.
+Use `none` for an unused Profile and `unknown` for an unavailable source
+revision. Repeat `--command` in argv order, and repeat `--tool`, `--input`,
+`--completed` and `--uncompleted` as needed. For dirty source, `--diff-id`
+can reference a diff you already have.
+
+```sh
+ctxferry artifact add report.json --project api --type application/json \
+  --sensitivity internal --source-revision "$revision" --dirty=false \
+  --profile development --tool 'go@1.27.4' --command go --command test \
+  --command=./... --exit-code 0 --summary 'Unit tests passed' --completed unit \
+  --format json
+ctxferry artifact add summary.txt --project api --run <run-uuid> \
+  --type text/plain --sensitivity internal
+ctxferry artifact list --project api --run <run-uuid>
+ctxferry artifact inspect <artifact-uuid> --project api --format json
+ctxferry artifact fetch <artifact-uuid> --project api --output retrieved.json
+```
+
+Each manifest and its run provenance are immutable. Payloads are stored once per
+SHA-256 in the workspace's local artifact cache. Fetch verifies the cached bytes
+before publishing a new file. All sensitivity classes (`public`, `internal`,
+`sensitive`) are local-only in this release. The local cache admits up to 1 GiB
+of unique payload bytes by default. Set `CTXFERRY_ARTIFACT_CACHE_BYTES` to a
+positive byte count to adjust the limit. At capacity, new content is rejected
+and existing registrations remain retrievable.
