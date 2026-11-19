@@ -32,7 +32,19 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	})
 }
 
+// Services are the device-local seams behind the CLI.
+type Services struct {
+	Providers provider.Services
+	// Trust is the pre-execution decision for credentialed runs. Nil refuses
+	// them with execution-definition-changed.
+	Trust app.ExecutionTrust
+}
+
 func RunWithProviders(ctx context.Context, args []string, stdout, stderr io.Writer, providers provider.Services) int {
+	return RunWithServices(ctx, args, stdout, stderr, Services{Providers: providers})
+}
+
+func RunWithServices(ctx context.Context, args []string, stdout, stderr io.Writer, services Services) int {
 	format := "text"
 	dataDir := ""
 	projectSelector := ""
@@ -59,7 +71,7 @@ func RunWithProviders(ctx context.Context, args []string, stdout, stderr io.Writ
 			if e != nil {
 				return app.Fail("usage", e.Error())
 			}
-			result, e = fn(app.App{DataDir: dir, Providers: providers})
+			result, e = fn(app.App{DataDir: dir, Providers: services.Providers, Trust: services.Trust})
 			return e
 		}
 	}
@@ -138,7 +150,14 @@ func RunWithProviders(ctx context.Context, args []string, stdout, stderr io.Writ
 			requestedFormat = args[i+1]
 		}
 	}
-	root.SetHelpFunc(func(cmd *cobra.Command, _ []string) { ran = true; result = map[string]any{"help": cmd.UsageString()} })
+	root.SetHelpFunc(func(cmd *cobra.Command, _ []string) {
+		ran = true
+		help := cmd.UsageString()
+		if cmd.Long != "" {
+			help = cmd.Long + "\n\n" + help
+		}
+		result = map[string]any{"help": help}
+	})
 	root.RunE = func(cmd *cobra.Command, _ []string) error {
 		ran = true
 		result = map[string]any{"help": cmd.UsageString()}

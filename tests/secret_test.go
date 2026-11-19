@@ -250,7 +250,7 @@ func TestSecretBindingsAcrossDevices(t *testing.T) {
 	if facts["bound"] != true || facts["authenticated"] != false || facts["entryRetrievable"] != nil || facts["resourceReachable"] != nil || len(fake.Lookups()) != before {
 		t.Fatal("provider session or resource observation crossed devices", facts)
 	}
-	refusedTask(t, b.Run(t, "run", peerTask, "--project=peer", "--profile=dev", "--format=jsonl"), "credentials-required")
+	refusedTask(t, b.Run(t, "run", peerTask, "--project=peer", "--profile=dev", "--format=jsonl"), "checkout-not-found")
 
 	head := git(t, a, "--git-dir", remote, "rev-parse", "ctxferry-v1")
 	b.Run(t, "sync", "--format=json").Success(t)

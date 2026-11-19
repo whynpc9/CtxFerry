@@ -1,0 +1,356 @@
+package app
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"slices"
+	"strings"
+
+	"github.com/whynpc9/CtxFerry/internal/provider"
+	"github.com/whynpc9/CtxFerry/internal/store"
+)
+
+// ExecutionCredential describes one credential delivery of a reviewed
+// execution definition. It holds references only, never values.
+type ExecutionCredential struct {
+	Requirement     string           `json:"requirement"`
+	Env             string           `json:"env"`
+	Purpose         string           `json:"purpose"`
+	Type            string           `json:"type"`
+	ResourceSlot    string           `json:"resourceSlot"`
+	ResourceID      string           `json:"resourceId"`
+	ResourcePurpose string           `json:"resourcePurpose"`
+	BindingID       string           `json:"bindingId"`
+	BindingRevision string           `json:"bindingRevision"`
+	ProviderProfile provider.Profile `json:"providerProfile"`
+	Locator         provider.Locator `json:"locator"`
+}
+
+// ExecutionDefinition is what a credentialed run would execute on this device:
+// the Task's execution fields, the membership root in the resolved local
+// checkout, the working directory, and the Profile's credential mapping chain.
+type ExecutionDefinition struct {
+	TaskID           string                `json:"taskId"`
+	TaskRevision     string                `json:"taskRevision"`
+	MembershipID     string                `json:"membershipId"`
+	Program          string                `json:"program"`
+	Argv             []string              `json:"argv"`
+	MembershipRoot   string                `json:"membershipRoot"`
+	WorkingDirectory string                `json:"workingDirectory"`
+	ProfileID        string                `json:"profileId"`
+	Profile          string                `json:"profile"`
+	Credentials      []ExecutionCredential `json:"credentials"`
+}
+
+// ExecutionTrust is the device-local decision that a credentialed execution
+// definition was reviewed and enabled here. It runs before any provider call.
+// Enabled returns nil only when exactly this definition may receive
+// credentials. Without an implementation credentialed runs fail closed.
+type ExecutionTrust interface {
+	Enabled(context.Context, ExecutionDefinition) error
+}
+
+type plannedCredential struct {
+	ExecutionCredential
+	resource Resource
+}
+
+func credentialFailure(err error, task Task, req CredentialRequirement, profile string) error {
+	var failure *Error
+	if !errors.As(err, &failure) || failure.Details != nil {
+		return err
+	}
+	out := *failure
+	out.Message += " for Task " + task.Name + " requirement " + req.Name
+	out.Details = map[string]string{"taskId": task.ID, "task": task.Name, "requirement": req.Name,
+		"resourceSlot": req.ResourceSlot, "profile": profile}
+	return &out
+}
+
+// planCredentials follows only the Task's own requirements through the
+// Profile's explicit mappings. It never searches for similar bindings.
+func planCredentials(ctx context.Context, q rowQuerier, task Task, profile *SelectedProfile, cfg configuration) ([]plannedCredential, error) {
+	out := make([]plannedCredential, 0, len(task.CredentialRequirements))
+	if err := requireNoBindingConflict(ctx, q, task.ID, profile.ID); err != nil {
+		return nil, err
+	}
+	for _, req := range task.CredentialRequirements {
+		c, err := planCredential(ctx, q, task, req, cfg)
+		if err != nil {
+			return nil, credentialFailure(err, task, req, profile.Name)
+		}
+		out = append(out, c)
+	}
+	return out, nil
+}
+
+func planCredential(ctx context.Context, q rowQuerier, task Task, req CredentialRequirement, cfg configuration) (plannedCredential, error) {
+	resource, err := secretResource(ctx, q, cfg, task, req)
+	if err != nil {
+		return plannedCredential{}, err
+	}
+	i := slices.IndexFunc(cfg.SecretMappings, func(m SecretMapping) bool { return m.TaskID == task.ID && m.Requirement == req.Name })
+	if i < 0 {
+		return plannedCredential{}, Fail("binding-missing", "Profile has no SecretBinding mapping")
+	}
+	id := cfg.SecretMappings[i].BindingID
+	if err := requireNoBindingConflict(ctx, q, id); err != nil {
+		return plannedCredential{}, err
+	}
+	binding, err := loadSecretBinding(ctx, q, id)
+	if err != nil {
+		return plannedCredential{}, err
+	}
+	if err := requireNoBindingConflict(ctx, q, binding.Scope.ID); err != nil {
+		return plannedCredential{}, err
+	}
+	if !compatibleSecret(req, resource.ID, binding.SecretBindingSpec) {
+		return plannedCredential{}, Fail("incompatible", "SecretBinding does not match the requirement purpose, type and selected Resource")
+	}
+	return plannedCredential{ExecutionCredential{
+		Requirement: req.Name, Env: req.Env, Purpose: req.Purpose, Type: req.Type, ResourceSlot: req.ResourceSlot,
+		ResourceID: resource.ID, ResourcePurpose: resource.Purpose, BindingID: binding.ID, BindingRevision: binding.Revision,
+		ProviderProfile: binding.ProviderProfile, Locator: binding.Locator,
+	}, resource}, nil
+}
+
+// credentialEnvironment authorizes, checks reachability and resolves each
+// delivered variable. Values exist only in memory for this invocation.
+func (a App) credentialEnvironment(ctx context.Context, plan TaskExecution) ([]string, [][]byte, error) {
+	if a.Trust == nil {
+		return nil, nil, Fail("execution-definition-changed", "credentialed execution of this Task definition is not enabled on this device")
+	}
+	if err := a.Trust.Enabled(ctx, plan.Definition); err != nil {
+		var failure *Error
+		if errors.As(err, &failure) {
+			return nil, nil, err
+		}
+		return nil, nil, Fail("execution-definition-changed", "credentialed execution of this Task definition is not enabled on this device")
+	}
+	if err := a.requireReachable(ctx, plan); err != nil {
+		return nil, nil, err
+	}
+	db, err := store.Open(ctx, a.DataDir, false)
+	if err != nil {
+		return nil, nil, err
+	}
+	var workspace, device string
+	err = db.QueryRowContext(ctx, "SELECT workspace.id, device.id FROM workspace CROSS JOIN device").Scan(&workspace, &device)
+	db.Close()
+	if err != nil {
+		return nil, nil, err
+	}
+	sessions := map[provider.Profile][]byte{}
+	defer func() {
+		for _, session := range sessions {
+			clear(session)
+		}
+	}()
+	env := make([]string, 0, len(plan.credentials))
+	values := make([][]byte, 0, len(plan.credentials))
+	fail := func(err error, c plannedCredential) ([]string, [][]byte, error) {
+		for _, value := range values {
+			clear(value)
+		}
+		req := CredentialRequirement{Name: c.Requirement, ResourceSlot: c.ResourceSlot}
+		return nil, nil, credentialFailure(err, plan.Task, req, plan.Profile)
+	}
+	for _, c := range plan.credentials {
+		adapter, _, err := a.providerAdapter(c.ProviderProfile)
+		if err != nil {
+			return fail(Fail("secret-unavailable", Classify(err).Message), c)
+		}
+		session, ok := sessions[c.ProviderProfile]
+		if !ok {
+			key := provider.SessionKey{WorkspaceID: workspace, DeviceID: device, Profile: c.ProviderProfile}
+			session, err = a.deviceSession(ctx, adapter, key)
+			if err != nil {
+				return fail(err, c)
+			}
+			sessions[c.ProviderProfile] = session
+		}
+		value, err := adapter.Resolve(ctx, c.ProviderProfile, session, c.Locator)
+		if err != nil {
+			clear(value)
+			if errors.Is(err, provider.ErrAuthenticationRequired) {
+				return fail(Fail("authentication-required", "provider session is no longer usable"), c)
+			}
+			return fail(Fail("secret-unavailable", "provider could not retrieve the referenced entry"), c)
+		}
+		values = append(values, value)
+		if bytes.IndexByte(value, 0) >= 0 {
+			return fail(Fail("secret-unavailable", "provider entry cannot be delivered as an environment variable"), c)
+		}
+		env = append(env, c.Env+"="+string(value))
+	}
+	return env, values, nil
+}
+
+// deviceSession loads this device's own provider session. Sessions from other
+// devices are never consulted and the session never reaches the child.
+func (a App) deviceSession(ctx context.Context, adapter provider.Adapter, key provider.SessionKey) ([]byte, error) {
+	credentials, err := a.secureCredentials(ctx)
+	if err != nil {
+		return nil, Fail("authentication-required", "secure device credential storage is unavailable")
+	}
+	session, err := credentials.Load(ctx, key)
+	if errors.Is(err, provider.ErrNoSession) || err == nil && len(session) == 0 {
+		clear(session)
+		return nil, Fail("authentication-required", "log in to the provider on this device")
+	}
+	if err != nil {
+		clear(session)
+		return nil, Fail("authentication-required", "could not read the secure device session")
+	}
+	auth, err := providerAuthentication(ctx, adapter, key.Profile, session)
+	if err == nil && auth.State != provider.Authenticated {
+		err = Fail("authentication-required", "provider session requires login or unlock")
+	}
+	if err != nil {
+		clear(session)
+		return nil, err
+	}
+	return session, nil
+}
+
+// requireReachable probes the selected Resources on this device's resolved
+// route. It never substitutes another Resource with the same identity.
+func (a App) requireReachable(ctx context.Context, plan TaskExecution) error {
+	db, err := store.Open(ctx, a.DataDir, false)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	seen := map[string]bool{}
+	for _, c := range plan.credentials {
+		if seen[c.ResourceID] {
+			continue
+		}
+		seen[c.ResourceID] = true
+		detail, err := resourceDetail(ctx, db, c.resource.Scope.ID, plan.Dir, c.ResourceID)
+		if err != nil {
+			return err
+		}
+		facts := map[string]string{"resourceId": c.ResourceID, "identity": detail.Resource.Identity,
+			"route": detail.Route.Status, "network": detail.Route.Network}
+		switch detail.Route.Status {
+		case "resolved":
+		case "route-missing":
+			// No TCP endpoint is declared for this Resource; nothing to diagnose.
+			continue
+		case "platform-unsupported":
+			return Fail("platform-unsupported", "mapped Resource does not apply to the current platform")
+		default:
+			return &Error{Code: "resource-unreachable", Message: "Resource " + detail.Resource.Identity +
+				" has no usable route from this execution environment (" + detail.Route.Status + ")", Details: facts}
+		}
+		observation, err := probeResource(ctx, db, detail)
+		if ctx.Err() != nil {
+			return Fail("interrupted", "Task execution was interrupted")
+		}
+		if err != nil {
+			return err
+		}
+		if observation.Status != "reachable" {
+			facts["target"], facts["observedAt"] = observation.Scope.Target, observation.ObservedAt
+			return &Error{Code: "resource-unreachable", Message: "Resource " + detail.Resource.Identity +
+				" is unreachable at " + observation.Scope.Target + " from this device", Details: facts}
+		}
+	}
+	return nil
+}
+
+const redactionMarker = "[REDACTED]"
+
+// redactor replaces delivered values in a child output stream. It holds back
+// only the bytes that could begin a value until more output or Flush arrives.
+// This reduces accidental disclosure; it cannot stop a program that encodes or
+// transmits what it was given.
+type redactor struct {
+	w       io.Writer
+	values  [][]byte
+	pending []byte
+	err     error
+}
+
+func newRedactor(w io.Writer, values [][]byte) *redactor {
+	r := &redactor{w: w}
+	for _, value := range values {
+		if len(value) != 0 && !slices.ContainsFunc(r.values, func(v []byte) bool { return bytes.Equal(v, value) }) {
+			r.values = append(r.values, value)
+		}
+	}
+	// Prefer the longest value when several match at one position.
+	slices.SortFunc(r.values, func(a, b []byte) int { return len(b) - len(a) })
+	return r
+}
+
+func (r *redactor) Write(p []byte) (int, error) {
+	if r.err != nil {
+		return 0, r.err
+	}
+	r.pending = append(r.pending, p...)
+	var out []byte
+	i := 0
+scan:
+	for i < len(r.pending) {
+		rest := r.pending[i:]
+		for _, value := range r.values {
+			if bytes.HasPrefix(rest, value) {
+				out = append(out, redactionMarker...)
+				i += len(value)
+				continue scan
+			}
+		}
+		for _, value := range r.values {
+			if len(rest) < len(value) && bytes.HasPrefix(value, rest) {
+				break scan
+			}
+		}
+		out = append(out, r.pending[i])
+		i++
+	}
+	r.pending = append(r.pending[:0], r.pending[i:]...)
+	if len(out) != 0 {
+		_, r.err = r.w.Write(out)
+	}
+	if r.err != nil {
+		return 0, r.err
+	}
+	return len(p), nil
+}
+
+// Flush emits a held partial prefix once the stream has ended.
+func (r *redactor) Flush() error {
+	if r.err == nil && len(r.pending) != 0 {
+		_, r.err = r.w.Write(r.pending)
+	}
+	clear(r.pending)
+	r.pending = nil
+	return r.err
+}
+
+func (r *redactor) wipe() {
+	clear(r.pending)
+	r.pending, r.values = nil, nil
+}
+
+// childEnvironment combines the neutral base with the Task's delivered
+// variables. A delivered variable replaces a base entry of the same name.
+func childEnvironment(delivered []string) []string {
+	names := map[string]bool{}
+	for _, entry := range delivered {
+		name, _, _ := strings.Cut(entry, "=")
+		names[strings.ToUpper(name)] = true
+	}
+	env := []string{}
+	for _, entry := range taskEnvironment() {
+		name, _, _ := strings.Cut(entry, "=")
+		if !names[strings.ToUpper(name)] {
+			env = append(env, entry)
+		}
+	}
+	return append(env, delivered...)
+}

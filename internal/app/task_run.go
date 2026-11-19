@@ -19,6 +19,9 @@ type TaskExecution struct {
 	Task    Task
 	Dir     string
 	Profile string
+	// Definition is set for Tasks with credential requirements.
+	Definition  ExecutionDefinition
+	credentials []plannedCredential
 }
 
 func (a App) PrepareTask(ctx context.Context, project, cwd, name, checkout, profile string) (TaskExecution, error) {
@@ -43,9 +46,6 @@ func (a App) PrepareTask(ctx context.Context, project, cwd, name, checkout, prof
 	task, err := loadTask(ctx, tx, r.Project.ID, name)
 	if err != nil {
 		return out, err
-	}
-	if len(task.CredentialRequirements) != 0 {
-		return out, Fail("credentials-required", "this Task declares credential requirements and cannot run in credential-free mode")
 	}
 	if len(task.Platforms) != 0 && !slices.Contains(task.Platforms, runtime.GOOS) &&
 		!slices.Contains(task.Platforms, runtime.GOOS+"/"+runtime.GOARCH) {
@@ -118,6 +118,18 @@ func (a App) PrepareTask(ctx context.Context, project, cwd, name, checkout, prof
 		}
 		if len(resource.Platforms) > 0 && !slices.Contains(resource.Platforms, runtime.GOOS+"/"+runtime.GOARCH) {
 			return out, Fail("platform-unsupported", "mapped Resource does not apply to the current platform")
+		}
+	}
+	if len(task.CredentialRequirements) != 0 {
+		out.credentials, err = planCredentials(ctx, tx, task, selected, cfg)
+		if err != nil {
+			return out, err
+		}
+		out.Definition = ExecutionDefinition{TaskID: task.ID, TaskRevision: task.Revision, MembershipID: task.MembershipID,
+			Program: task.Program, Argv: slices.Clone(task.Argv), MembershipRoot: root, WorkingDirectory: dir,
+			ProfileID: selected.ID, Profile: selected.Name, Credentials: make([]ExecutionCredential, 0, len(out.credentials))}
+		for _, c := range out.credentials {
+			out.Definition.Credentials = append(out.Definition.Credentials, c.ExecutionCredential)
 		}
 	}
 	out.Task, out.Dir = task, dir
@@ -203,11 +215,42 @@ func taskCheckout(ctx context.Context, q taskReader, device, repository, subdir,
 	return "", &Error{Code: "ambiguous-checkout", Message: "multiple local checkouts match the Task; choose a Git checkout root with --checkout", Details: paths}
 }
 
-// ExecuteTask runs only a prepared credential-free Task and forwards byte streams.
-func ExecuteTask(ctx context.Context, plan TaskExecution, stdin io.Reader, stdout, stderr io.Writer, started func()) (int, error) {
-	if len(plan.Task.CredentialRequirements) != 0 {
-		return 0, Fail("credentials-required", "this Task declares credential requirements and cannot run in credential-free mode")
+// ExecuteTask runs a prepared Task and forwards byte streams. A Task with
+// credential requirements runs only after the device trust decision, a
+// reachability check and device-local provider resolution. Its child receives
+// the neutral base environment and the Task's delivered variables only, and
+// delivered values are replaced in its output.
+func (a App) ExecuteTask(ctx context.Context, plan TaskExecution, stdin io.Reader, stdout, stderr io.Writer, started func()) (int, error) {
+	if len(plan.Task.CredentialRequirements) != len(plan.credentials) {
+		return 0, Fail("credentials-required", "this Task's credential requirements were not resolved")
 	}
+	env := taskEnvironment()
+	if len(plan.credentials) != 0 {
+		delivered, values, err := a.credentialEnvironment(ctx, plan)
+		if err != nil {
+			return 0, err
+		}
+		defer func() {
+			for _, value := range values {
+				clear(value)
+			}
+		}()
+		env = childEnvironment(delivered)
+		out, diagnostics := newRedactor(stdout, values), newRedactor(stderr, values)
+		defer out.wipe()
+		defer diagnostics.wipe()
+		code, err := runChild(ctx, plan, env, stdin, out, diagnostics, started)
+		// Held partial prefixes are released only after the child has exited.
+		flushOut, flushDiagnostics := out.Flush(), diagnostics.Flush()
+		if err == nil && (flushOut != nil || flushDiagnostics != nil) {
+			err = Fail("execution-failed", "could not write Task output")
+		}
+		return code, err
+	}
+	return runChild(ctx, plan, env, stdin, stdout, stderr, started)
+}
+
+func runChild(ctx context.Context, plan TaskExecution, env []string, stdin io.Reader, stdout, stderr io.Writer, started func()) (int, error) {
 	program, err := filepath.Localize(strings.TrimPrefix(plan.Task.Program, "./"))
 	if err != nil {
 		return 0, Fail("launch-failed", "Task program path is invalid on this platform")
@@ -220,7 +263,7 @@ func ExecuteTask(ctx context.Context, plan TaskExecution, stdin io.Reader, stdou
 		return 0, Fail("launch-failed", "Task program must resolve to an absolute executable path")
 	}
 	cmd.Dir, cmd.Stdin, cmd.Stdout, cmd.Stderr = plan.Dir, stdin, stdout, stderr
-	cmd.Env = taskEnvironment()
+	cmd.Env = env
 	cmd.WaitDelay = 2 * time.Second
 	if err := cmd.Start(); err != nil {
 		return 0, Fail("launch-failed", err.Error())

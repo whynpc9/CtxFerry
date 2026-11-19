@@ -110,8 +110,7 @@ Declare a Resource slot with
 explicitly with `ctxferry profile map-resource development <task> db <resource-uuid>`.
 The shared Profile maps shared Tasks to shared Resources of the slot's kind and
 stage. Select the Profile locally with `profile select` or use `run --profile`.
-Task definitions can declare credential requirements for discovery. Runs of
-those Tasks return `credentials-required` before starting a child process.
+Tasks can declare credential requirements; see Credentialed runs below.
 
 ### Credential references
 
@@ -137,3 +136,34 @@ Use `--entry-id` in place of the four namespace and key flags when the backend p
 Both login methods store the access token in the OS credential store (Secret Service, Keychain or Credential Manager). Login reports `credential-storage-unavailable` if the store is inaccessible. On a headless host without a keyring, a protected launcher can instead supply a current machine token as `CTXFERRY_INFISICAL_ACCESS_TOKEN` for `secret status`. Set `CTXFERRY_INFISICAL_WORKSPACE_ID`, `CTXFERRY_INFISICAL_DEVICE_ID` and `CTXFERRY_INFISICAL_PROFILE` to the exact local workspace, device and provider profile. Find the workspace and device IDs with `ctxferry init --format json`. The matching token is used for that invocation and remains under the launcher's control. Without either source, status reports `authentication-required`.
 
 Session checks and reads require a connection. Both methods report token expiry, and Infisical can revoke or restrict access before that time. Reads use the stable secret ID when specified. A named read requires the explicit Infisical project ID, environment slug, folder and exact shared key. The Resource stage is independent, and the adapter disables imported secrets and reference expansion. The adapter reports no offline read, native execution or file delivery capability. Catalog sync works independently of provider login.
+
+### Credentialed runs
+
+`run` resolves only the requirements of the Task being run, through the
+checkout's Project, the Task, the selected Profile, its explicit mappings, the
+SecretBinding and its locator, and this device's own provider login. Before
+each run the requirement, the selected Resource and the binding must agree on
+purpose, type and Resource; otherwise the run stops with `incompatible`. A
+missing mapping reports `binding-missing`; similar bindings are never
+substituted.
+
+Credentialed execution also requires this device to have enabled the Task's
+execution definition. Until that review is available, credentialed runs stop
+with `execution-definition-changed` before any provider call. The run then
+opens one TCP connection to the selected Resource's route on this device and
+stops with `resource-unreachable` when it fails; a local Resource with the same
+identity is never used in its place. Login is per device: a session on another
+device does not count (`authentication-required`), and a missing or denied
+entry reports `secret-unavailable` without its value.
+
+The child receives a minimal base environment (`PATH`, `HOME`, temporary
+directories, locale and terminal variables) plus the Task's delivered
+variables. Variables of other Tasks, Git and provider authentication material
+and the rest of the caller's environment are not passed. Values never appear
+in arguments, shell strings or files, and are held only in memory for the
+invocation; there is no secret cache. CtxFerry builds the child environment
+itself even when a provider reports a native execution capability. Delivered
+values in forwarded stdout and stderr are replaced with `[REDACTED]`.
+
+The target program can still read, encode, print or exfiltrate anything it is
+given. Output replacement is not a guarantee and a Task is not OS isolation.
