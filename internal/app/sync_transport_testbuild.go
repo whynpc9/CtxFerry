@@ -6,6 +6,7 @@ import (
 	"context"
 	"net/url"
 	"os"
+	"time"
 )
 
 // The executable scenario seam is absent from production builds.
@@ -52,7 +53,10 @@ func (b faultSyncBackend) Publish(ctx context.Context, dir string, conf SyncConf
 			}
 		}
 	}
-	return b.syncBackend.Publish(ctx, dir, conf, p)
+	if err := b.syncBackend.Publish(ctx, dir, conf, p); err != nil {
+		return err
+	}
+	return waitForTestGate(ctx, "CTXFERRY_TEST_PUSH_GATE")
 }
 
 func (b faultSyncBackend) Fetch(ctx context.Context, dir string, conf SyncConfig) (string, map[string][]byte, error) {
@@ -66,7 +70,34 @@ func (b faultSyncBackend) Fetch(ctx context.Context, dir string, conf SyncConfig
 	if code := os.Getenv("CTXFERRY_TEST_FETCH_FAILURE"); code != "" {
 		return "", nil, Fail(code, "injected fetch failure")
 	}
+	if err := waitForTestGate(ctx, "CTXFERRY_TEST_FETCH_GATE"); err != nil {
+		return "", nil, err
+	}
 	return b.syncBackend.Fetch(ctx, dir, conf)
+}
+
+func waitForTestGate(ctx context.Context, key string) error {
+	gate := os.Getenv(key)
+	if gate == "" {
+		return nil
+	}
+	if err := os.WriteFile(gate+".entered", nil, 0600); err != nil {
+		return err
+	}
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if _, err := os.Stat(gate); err == nil {
+			return nil
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
 }
 func syncReadResult(args []string, out string) string {
 	mode := os.Getenv("CTXFERRY_TEST_PARTIAL_READ")

@@ -160,7 +160,34 @@ catalog incompatibility/damage stop immediately. A failed push also reads the ex
 reconciliation round, independently of Git diagnostic wording. If its outcome
 remains uncertain it stays journaled as `pending`; the next invocation checks
 candidate ancestry before any further publication. Permanent push rejection also keeps the journal for explicit retry.
-There is no background scheduler in this phase.
+
+## Background sync
+
+Run `ctxferry sync serve` for a foreground sync loop, or run
+`ctxferry sync install-service` to register it for your user session. Install
+from a stable executable path. The installer uses systemd user units on Linux
+(including WSL when its user manager is usable), LaunchAgents on macOS, and
+interactive Task Scheduler jobs on Windows. It reports foreground or
+on-invocation sync when it cannot activate a user service.
+`ctxferry doctor` checks the manager for the current store and distinguishes a
+running service, an installed but stopped service, foreground-only sync, and
+an unavailable manager.
+
+The service catches up on startup, coalesces shared edits after one second of
+quiet (up to five seconds from the start of a burst), and checks for remote
+changes every 30 seconds while healthy. Transient errors back off up to one
+minute between retry cycles. After repairing an authentication or catalog
+failure, run `ctxferry sync` to resume immediately. The service uses the
+session's noninteractive Git and GitHub authentication. Installation does
+not copy authentication environment variables into the service definition.
+
+Each local store has one sync driver. Explicit `ctxferry sync` and context
+queries with `--sync` wait for the active driver's result. If the driver
+exits, a waiting invocation can take over. Without a service, `ctxferry sync`
+performs one sync cycle. The service recovers the existing outbox and pending
+publication journal after interruption. First publication still requires
+`sync init` with a preview. The service accepts no remote commands and
+executes no Tasks.
 
 The `ctxferry_test` binary wraps the real backend to lose push responses, publish a
 competing candidate immediately before the lease, fail ancestry/fetch, or truncate

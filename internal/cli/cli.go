@@ -287,6 +287,8 @@ func render(w io.Writer, result any) error {
 			return e
 		}
 		_, err = fmt.Fprintln(w, string(b))
+	case platform.SyncService:
+		_, err = fmt.Fprintln(w, r.Message)
 	case app.SyncResult:
 		b, e := json.MarshalIndent(r, "", "  ")
 		if e != nil {

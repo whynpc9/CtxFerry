@@ -52,8 +52,7 @@ func TestDoctorHealthyAndStaleSync(t *testing.T) {
 		fresh.PathResolution.Status != "available" || fresh.PathResolution.GitCheckout == "" ||
 		fresh.PathResolution.WorkingDirectory.Status != "available" || fresh.Dependencies[0].Status != "available" ||
 		fresh.LastSync.Status != "available" || fresh.LastSync.LastSyncAt == nil || fresh.LastSync.State != "synced" ||
-		fresh.GitAuth.Status != "unknown" || fresh.GitAuth.LastSyncState != "synced" ||
-		fresh.BackgroundSync.Status != "unavailable" {
+		fresh.GitAuth.Status != "unknown" || fresh.GitAuth.LastSyncState != "synced" {
 		t.Fatalf("healthy local and historical checks: %+v", fresh)
 	}
 
@@ -191,4 +190,53 @@ func TestDoctorResourceIdentityAndReadOnlyCatalog(t *testing.T) {
 	if got := doctor(t, h).Catalog; got.Status != "unavailable" || !strings.Contains(got.Evidence, "migration") {
 		t.Fatalf("doctor migrated the catalog or failed to identify its schema: %+v", got)
 	}
+}
+
+func TestDoctorBackgroundSyncServiceStates(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("uses an isolated systemd user-manager fixture")
+	}
+	h := testcli.New(t, binary)
+	h.Run(t, "init", "--format=json").Success(t)
+	check := func(status string) {
+		t.Helper()
+		if got := doctor(t, h).BackgroundSync; got.Status != status {
+			t.Fatalf("background sync: got %+v, want %s", got, status)
+		}
+	}
+	check("unavailable")
+
+	manager := t.TempDir()
+	tool := filepath.Join(manager, "systemctl")
+	script := `#!/bin/sh
+[ "$1" = "--user" ] || exit 2
+case "$2" in
+  show|daemon-reload) exit 0 ;;
+  enable) : > "$CTXFERRY_TEST_MANAGER/enabled" ;;
+  restart) : > "$CTXFERRY_TEST_MANAGER/running" ;;
+  is-enabled) test -f "$CTXFERRY_TEST_MANAGER/enabled" ;;
+  is-active) test -f "$CTXFERRY_TEST_MANAGER/running" ;;
+  *) exit 2 ;;
+esac
+`
+	if err := os.WriteFile(tool, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	h.GitPath = manager
+	h.ExtraEnv = []string{"CTXFERRY_TEST_MANAGER=" + manager, "XDG_CONFIG_HOME=" + h.Home}
+	check("foreground-only")
+	if files, err := os.ReadDir(h.Home); err != nil || len(files) != 0 {
+		t.Fatalf("doctor wrote service configuration: %v %v", files, err)
+	}
+
+	installed := h.Run(t, "sync", "install-service", "--format=json").Success(t)
+	if string(installed.Data["manager"]) != `"systemd"` ||
+		string(installed.Data["installed"]) != "true" || string(installed.Data["running"]) != "true" {
+		t.Fatal(installed)
+	}
+	check("running")
+	if err := os.Remove(filepath.Join(manager, "running")); err != nil {
+		t.Fatal(err)
+	}
+	check("installed")
 }

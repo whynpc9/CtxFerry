@@ -10,6 +10,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/whynpc9/CtxFerry/internal/platform"
 	"github.com/whynpc9/CtxFerry/internal/provider"
 	"github.com/whynpc9/CtxFerry/internal/store"
 )
@@ -114,7 +115,7 @@ func (a App) Doctor(ctx context.Context, selector, cwd string) DoctorReport {
 			doctorDependency("gh", "Optional GitHub metadata authentication via GitHub CLI"),
 			doctorDependency("infisical", "Optional adoption of a personal Infisical CLI session"),
 		},
-		BackgroundSync: backgroundSyncStatus(),
+		BackgroundSync: a.backgroundSyncStatus(ctx),
 		Resources:      DoctorResources{DoctorCheck: unknown, Items: []DoctorResource{}},
 	}
 	if r.Dependencies[0].Status == "unavailable" {
@@ -417,4 +418,19 @@ func doctorResources(ctx context.Context, db *sql.DB, project *Project, cwd stri
 		out.Items = append(out.Items, fact)
 	}
 	return out
+}
+
+// Observe the current user's service manager without starting or installing a job.
+func (a App) backgroundSyncStatus(ctx context.Context) DoctorCheck {
+	service := platform.SyncServiceStatus(ctx, a.DataDir)
+	switch {
+	case service.Running:
+		return DoctorCheck{"running", service.Message}
+	case service.Installed:
+		return DoctorCheck{"installed", service.Message}
+	case service.Available:
+		return DoctorCheck{"foreground-only", service.Message}
+	default:
+		return DoctorCheck{"unavailable", service.Message}
+	}
 }
