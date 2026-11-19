@@ -42,6 +42,25 @@ func (a App) secureCredentials(ctx context.Context) (provider.CredentialStore, e
 	return credentials, nil
 }
 
+// loadProviderSession loads the exact device profile's runtime or stored session.
+func (a App) loadProviderSession(ctx context.Context, key provider.SessionKey) ([]byte, error) {
+	if a.Providers.InjectedSession != nil {
+		if session := a.Providers.InjectedSession(key); len(session) != 0 {
+			return session, nil
+		}
+	}
+	credentials, err := a.secureCredentials(ctx)
+	if err != nil {
+		return nil, Fail("authentication-required", "secure device credential storage is unavailable")
+	}
+	session, err := credentials.Load(ctx, key)
+	if err != nil && !errors.Is(err, provider.ErrNoSession) {
+		clear(session)
+		return nil, Fail("authentication-required", "could not read the secure device session")
+	}
+	return session, err
+}
+
 func providerAuthentication(ctx context.Context, adapter provider.Adapter, p provider.Profile, session []byte) (provider.Authentication, error) {
 	auth, err := adapter.Authentication(ctx, p, session)
 	if errors.Is(err, provider.ErrAuthenticationRequired) {

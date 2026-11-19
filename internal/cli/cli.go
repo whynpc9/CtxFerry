@@ -14,6 +14,7 @@ import (
 	"github.com/whynpc9/CtxFerry/internal/app"
 	"github.com/whynpc9/CtxFerry/internal/platform"
 	"github.com/whynpc9/CtxFerry/internal/provider"
+	"github.com/whynpc9/CtxFerry/internal/provider/infisical"
 )
 
 type envelope struct {
@@ -24,7 +25,11 @@ type envelope struct {
 }
 
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
-	return RunWithProviders(ctx, args, stdout, stderr, provider.Services{Credentials: platform.SystemCredentials()})
+	return RunWithProviders(ctx, args, stdout, stderr, provider.Services{
+		Adapters:        map[string]provider.Adapter{infisical.Name: infisical.New()},
+		Credentials:     platform.SystemCredentials(),
+		InjectedSession: infisical.InjectedSession,
+	})
 }
 
 func RunWithProviders(ctx context.Context, args []string, stdout, stderr io.Writer, providers provider.Services) int {

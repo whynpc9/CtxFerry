@@ -169,6 +169,24 @@ func TestSecretBindingsAcrossDevices(t *testing.T) {
 	if r := providerCommand(t, a, services, "secret", "list", "--project=peer").Success(t); string(r.Data["bindings"]) != "[]" {
 		t.Fatal("unmapped cross-Project binding listed", r)
 	}
+	// A protected injected session can be used on a device without a keyring.
+	session, err := fake.Login(t.Context(), p)
+	if err != nil {
+		t.Fatal("could not create the synthetic injected session")
+	}
+	defer clear(session)
+	unavailable.InjectedSession = func(key provider.SessionKey) []byte {
+		if key.Profile == p && key.DeviceID == facts["deviceId"] {
+			return bytes.Clone(session)
+		}
+		return nil
+	}
+	injected := providerCommand(t, a, unavailable, "secret", "status", taskID, "login", "--project=checkout", "--profile=dev")
+	if facts := secretFacts(t, injected, ""); facts["entryRetrievable"] != true {
+		t.Fatal("the injected session did not resolve the entry")
+	}
+	failure(t, providerCommand(t, a, unavailable, login...), "credential-storage-unavailable")
+
 	reuse := func(h *testcli.Harness, task, binding string) testcli.Result {
 		return h.Run(t, "secret", "bind", task, "login", "--profile=dev", "--binding", binding, "--format=json")
 	}
