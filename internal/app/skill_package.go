@@ -271,20 +271,33 @@ func (a App) AddSkill(ctx context.Context, input SkillImport) (SkillPackage, err
 		return pkg, err
 	}
 
+	pkg, payload, err := a.prepareSkillPackage(ctx, pkg, input)
+	if err != nil {
+		return pkg, err
+	}
+	unlock, err := a.lockSkills(ctx)
+	if err != nil {
+		return pkg, err
+	}
+	defer unlock()
+	return pkg, a.saveSkillPackage(pkg, payload.data)
+}
+
+func (a App) prepareSkillPackage(ctx context.Context, pkg SkillPackage, input SkillImport) (SkillPackage, skillPayload, error) {
 	var payload skillPayload
 	var err error
 	if input.Local != "" {
 		var dir string
 		dir, err = canonical(input.Local)
 		if err != nil {
-			return pkg, err
+			return pkg, payload, err
 		}
 		root, err := canonical(a.DataDir)
 		if err != nil {
-			return pkg, err
+			return pkg, payload, err
 		}
 		if contains(dir, root) || contains(root, dir) {
-			return pkg, Fail("invalid-skill", "select a Skill directory outside the application data directory")
+			return pkg, payload, Fail("invalid-skill", "select a Skill directory outside the application data directory")
 		}
 		pkg.SourceKind, pkg.SourceURL = "local", skillFileURL(dir)
 		payload, _, err = readSkillDirectory(dir, true)
@@ -292,14 +305,14 @@ func (a App) AddSkill(ctx context.Context, input SkillImport) (SkillPackage, err
 		payload, err = readGitSkill(ctx, &pkg, input)
 	}
 	if err != nil {
-		return pkg, err
+		return pkg, payload, err
 	}
 	if err := payload.finish(); err != nil {
-		return pkg, err
+		return pkg, payload, err
 	}
 	pkg.Name, pkg.License, pkg.Compatibility, err = skillFrontMatter(payload.data["SKILL.md"])
 	if err != nil {
-		return pkg, err
+		return pkg, payload, err
 	}
 	if input.License != "" {
 		pkg.License = input.License
@@ -310,21 +323,24 @@ func (a App) AddSkill(ctx context.Context, input SkillImport) (SkillPackage, err
 	pkg.Files = payload.files
 	wire, err := json.Marshal(pkg.Files)
 	if err != nil {
-		return pkg, err
+		return pkg, payload, err
 	}
 	pkg.Digest = digest(wire)
 
-	unlock, err := a.lockSkills(ctx)
-	if err != nil {
-		return pkg, err
-	}
-	defer unlock()
-	return pkg, a.saveSkillPackage(pkg, payload.data)
+	return pkg, payload, nil
 }
 
 func (a App) saveSkillPackage(pkg SkillPackage, data map[string][]byte) error {
-	base := filepath.Join(a.skillDir(), "packages")
-	path := filepath.Join(base, pkg.Name)
+	return saveSkillSnapshot(filepath.Join(a.skillDir(), "packages", pkg.Name), pkg, data)
+}
+
+func saveSkillSnapshot(path string, pkg SkillPackage, data map[string][]byte) error {
+	base := filepath.Dir(path)
+	if info, err := os.Lstat(base); err == nil && !info.IsDir() {
+		return Fail("invalid-skill-state", "the Skill snapshot store must be a directory")
+	} else if err != nil && !os.IsNotExist(err) {
+		return err
+	}
 	if info, err := os.Lstat(path); err == nil {
 		if !info.IsDir() {
 			return Fail("skill-name-collision", "the local package name is already in use")

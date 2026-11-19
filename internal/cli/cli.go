@@ -256,6 +256,8 @@ func render(w io.Writer, result any) error {
 		_, err = fmt.Fprintf(w, "%s (%s)\nSource: %s\nLicense: %s\n", r.Name, r.Digest, r.SourceURL, r.License)
 	case app.SkillPlan:
 		return renderSkillPlan(w, r)
+	case app.SkillChangePlan:
+		return renderSkillChange(w, r)
 	case app.DoctorReport:
 		return renderDoctor(w, r)
 	case app.InitResult:

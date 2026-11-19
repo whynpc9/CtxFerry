@@ -330,3 +330,27 @@ target or local state. A blocked plan is a successful query and reports
 installs. If apply is interrupted, run the same command to resume a verified
 staged install. Packages, receipts and recovery records are device-local in
 this slice.
+
+For an installed Skill, preview an update before applying it. A local update
+reads the recorded source directory. A Git update requires a full commit hash
+or tag and displays the exact resolved commit.
+
+```sh
+ctxferry skill update example --target codex
+ctxferry skill update example --target codex --confirm <confirmation-from-preview>
+ctxferry skill rollback example --target codex
+ctxferry skill rollback example --target codex --confirm <confirmation-from-preview>
+```
+
+Repeat the same flags with the confirmation. For Git updates include the same
+`--ref` both times. The confirmation covers the exact pins, installed entry,
+and file additions, removals, content digests and executable bits in the
+preview. If the source changes in the meantime, preview again. Updates and
+rollbacks retain the target's copy or symlink mode and operate on that target's
+local receipt. A target with external edits or unowned files is blocked and
+left intact. Neither command executes Skill scripts.
+
+The previous complete version remains available offline for rollback. If a
+replacement is interrupted, rerun `skill apply` with the target and its
+installed mode to restore the last committed version. The recovery staging
+directory and local version cache retain displaced data.
