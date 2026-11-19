@@ -22,6 +22,7 @@ func skillCommand(ctx context.Context, invoke func(func(app.App) (any, error)) f
 	add.Flags().StringArrayVar(&input.Dependencies, "depends-on", nil, "Executable required on PATH (repeatable)")
 	add.RunE = invoke(func(a app.App) (any, error) { return a.AddSkill(ctx, input) })
 	group.AddCommand(add)
+	group.AddCommand(skillBootstrapCommand(ctx, invoke))
 
 	for _, action := range []struct {
 		name, help string
