@@ -15,24 +15,39 @@ import (
 const skillStagePrefix = ".ctxferry-stage-"
 
 type skillReceipt struct {
-	SchemaVersion int         `json:"schemaVersion"`
-	DeviceID      string      `json:"deviceId"`
-	Path          string      `json:"path"`
-	Mode          string      `json:"mode"`
-	Identity      string      `json:"identity"`
-	PackageDigest string      `json:"packageDigest"`
-	Files         []SkillFile `json:"files"`
-	State         string      `json:"state"`
-	Stage         string      `json:"stage,omitempty"`
+	SchemaVersion int           `json:"schemaVersion"`
+	DeviceID      string        `json:"deviceId"`
+	Path          string        `json:"path"`
+	Mode          string        `json:"mode"`
+	Identity      string        `json:"identity"`
+	PackageDigest string        `json:"packageDigest"`
+	Files         []SkillFile   `json:"files"`
+	State         string        `json:"state"`
+	Stage         string        `json:"stage,omitempty"`
+	Version       string        `json:"version,omitempty"`
+	Previous      *string       `json:"previous,omitempty"`
+	Replaces      *skillReceipt `json:"replaces,omitempty"`
 }
 
 func (r skillReceipt) validate(p *skillProjection) error {
+	if err := r.validateTarget(p.Path); err != nil {
+		return err
+	}
+	if r.Version != p.version || r.PackageDigest != p.Package.Digest || !slices.Equal(r.Files, p.Package.Files) {
+		return Fail("invalid-skill-state", "the local Skill receipt does not match the package pin")
+	}
+	return nil
+}
+
+func (r skillReceipt) validateTarget(path string) error {
 	validStage := strings.HasPrefix(r.Stage, skillStagePrefix) && validateSkillPath(r.Stage) && !strings.Contains(r.Stage, "/")
-	if _, err := uuid.Parse(r.DeviceID); err != nil || r.SchemaVersion != 1 || r.Path != p.Path || r.Identity == "" ||
+	if _, err := uuid.Parse(r.DeviceID); err != nil || r.SchemaVersion != 1 || r.Path != path || r.Identity == "" ||
 		(r.Mode != "copy" && r.Mode != "symlink") ||
 		(r.State != "installed" && r.State != "pending") ||
 		(r.State == "pending" && !validStage) || (r.State == "installed" && r.Stage != "") ||
-		r.PackageDigest != p.Package.Digest || !slices.Equal(r.Files, p.Package.Files) {
+		r.Version != "" && !validSkillVersion(r.Version) ||
+		r.Previous != nil && *r.Previous != "" && !validSkillVersion(*r.Previous) ||
+		r.Replaces != nil && r.State != "pending" {
 		return Fail("invalid-skill-state", "the local Skill receipt is inconsistent with this package and target")
 	}
 	return nil
@@ -52,7 +67,20 @@ func (a App) ApplySkill(ctx context.Context, name, target string, symlink bool) 
 		return SkillPlan{}, err
 	}
 	defer unlock()
-	p, err := a.planSkill(name, target, symlink)
+	p, err := a.openSkillProjection(name, target)
+	if err != nil {
+		return p.SkillPlan, err
+	}
+	if p.receipt.Replaces != nil {
+		mode := "copy"
+		if symlink {
+			mode = "symlink"
+		}
+		if err := p.recoverReplacement(device, mode); err != nil {
+			return p.SkillPlan, err
+		}
+	}
+	err = p.planInstalled(name, symlink)
 	if err != nil {
 		return p.SkillPlan, err
 	}
@@ -81,6 +109,10 @@ func (a App) ApplySkill(ctx context.Context, name, target string, symlink bool) 
 }
 
 func (p *skillProjection) stage(device string) error {
+	return p.stageReplacing(device, nil)
+}
+
+func (p *skillProjection) stageReplacing(device string, old *skillReceipt) error {
 	if err := mkdirSkillDirs(p.root); err != nil {
 		return err
 	}
@@ -102,6 +134,10 @@ func (p *skillProjection) stage(device string) error {
 	p.receipt = skillReceipt{
 		SchemaVersion: 1, DeviceID: device, Path: p.Path, Mode: p.Mode,
 		PackageDigest: p.Package.Digest, Files: p.Package.Files, State: "pending", Stage: filepath.Base(stage),
+		Version: p.version, Replaces: old,
+	}
+	if old != nil {
+		p.receipt.Previous = &old.Version
 	}
 	payload := p.receipt.stagePath(p)
 	if p.Mode == "symlink" {
@@ -194,11 +230,13 @@ func (p *skillProjection) finalize() error {
 		return err
 	}
 	stage := filepath.Dir(p.receipt.stagePath(p))
-	p.receipt.State, p.receipt.Stage = "installed", ""
-	if err := writeSkillJSON(p.receiptPath, p.receipt); err != nil {
+	installed := p.receipt
+	installed.State, installed.Stage, installed.Replaces = "installed", "", nil
+	if err := writeSkillJSON(p.receiptPath, installed); err != nil {
 		return err
 	}
-	// The payload was moved. Only remove the empty staging directory.
+	p.receipt = installed
+	// The payload was moved. A replacement retains its previous tree here.
 	_ = os.Remove(stage)
 	return nil
 }

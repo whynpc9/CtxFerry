@@ -44,6 +44,28 @@ func skillCommand(ctx context.Context, invoke func(func(app.App) (any, error)) f
 		}
 		group.AddCommand(command)
 	}
+	for _, action := range []struct {
+		name, help string
+	}{
+		{"update", "Preview or confirm an explicit Skill pin change"},
+		{"rollback", "Preview or confirm restoration of the previous installed Skill"},
+	} {
+		input := app.SkillChangeInput{Rollback: action.name == "rollback"}
+		command := &cobra.Command{Use: action.name + " <name>", Short: action.help, Args: cobra.ExactArgs(1)}
+		command.Flags().StringVar(&input.Target, "target", "", "User-level target: codex or claude-code")
+		command.Flags().StringVar(&input.Confirm, "confirm", "", "Confirmation from the exact preview of this change")
+		if !input.Rollback {
+			command.Flags().StringVar(&input.Ref, "ref", "", "Full Git commit hash or refs/tags/<release> (required for Git)")
+			command.Flags().StringVar(&input.License, "license", "", "License identifier (defaults to the new Skill's license or NOASSERTION)")
+		}
+		command.RunE = func(cmd *cobra.Command, args []string) error {
+			return invoke(func(a app.App) (any, error) {
+				input.Name = args[0]
+				return a.ChangeSkill(ctx, input)
+			})(cmd, args)
+		}
+		group.AddCommand(command)
+	}
 	return group
 }
 
@@ -66,7 +88,66 @@ func renderSkillPlan(w io.Writer, p app.SkillPlan) error {
 			return err
 		}
 	}
-	for _, problem := range p.Issues {
+	return renderSkillProblems(w, p.Issues)
+}
+
+func renderSkillChange(w io.Writer, p app.SkillChangePlan) error {
+	if _, err := fmt.Fprintf(w, "%s %s → %s (%s, %s)\n", p.Action, p.Before.Name, p.Path, p.Mode, p.Status); err != nil {
+		return err
+	}
+	for _, pin := range []struct {
+		label string
+		pkg   *app.SkillPackage
+		link  string
+	}{{"Before", &p.Before, p.BeforeLink}, {"After", p.After, p.AfterLink}} {
+		if pin.pkg == nil {
+			continue
+		}
+		pkg := pin.pkg
+		if _, err := fmt.Fprintf(w, "  %s: %s [%s] sha256:%s (license %s, compatibility %q)\n",
+			pin.label, pkg.SourceURL, pkg.Subdir, pkg.Digest, pkg.License, pkg.Compatibility); err != nil {
+			return err
+		}
+		if pin.link != "" {
+			if _, err := fmt.Fprintf(w, "    symlink → %s\n", pin.link); err != nil {
+				return err
+			}
+		}
+		if pkg.Commit != "" {
+			if _, err := fmt.Fprintf(w, "    commit %s  release %q\n", pkg.Commit, pkg.Release); err != nil {
+				return err
+			}
+		}
+	}
+	for _, change := range p.Changes {
+		if change.Before != nil {
+			if err := renderSkillChangeFile(w, "-", change.Before); err != nil {
+				return err
+			}
+		}
+		if change.After != nil {
+			if err := renderSkillChangeFile(w, "+", change.After); err != nil {
+				return err
+			}
+		}
+	}
+	if err := renderSkillProblems(w, p.Issues); err != nil {
+		return err
+	}
+	if p.Confirmation != "" {
+		_, err := fmt.Fprintf(w, "  Confirm with --confirm %s\n", p.Confirmation)
+		return err
+	}
+	return nil
+}
+
+func renderSkillChangeFile(w io.Writer, prefix string, file *app.SkillFile) error {
+	_, err := fmt.Fprintf(w, "  %s %s sha256:%s (executable=%t)\n", prefix, file.Path, file.Digest, file.Executable)
+	return err
+}
+
+func renderSkillProblems(w io.Writer, issues []app.SkillProblem) error {
+	for _, problem := range issues {
 		if _, err := fmt.Fprintf(w, "  %s: %s\n", problem.Code, problem.Message); err != nil {
 			return err
 		}
