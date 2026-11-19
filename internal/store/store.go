@@ -16,6 +16,9 @@ import (
 
 var ErrNotInitialized = errors.New("workspace is not initialized; run ctxferry init")
 var ErrUnsupportedSchema = errors.New("unsupported local schema")
+var ErrMigrationRequired = errors.New("local schema requires migration")
+
+const schemaVersion = 9
 
 func Path(root string) string { return filepath.Join(root, "workspaces", "default", "catalog.sqlite") }
 
@@ -38,30 +41,11 @@ func Open(ctx context.Context, root string, create bool) (*sql.DB, error) {
 		}
 		return nil, err
 	}
-	uriPath := filepath.ToSlash(path)
-	if !strings.HasPrefix(uriPath, "/") {
-		uriPath = "/" + uriPath
-	}
-	u := url.URL{Scheme: "file", Path: uriPath}
-	q := u.Query()
-	q.Set("mode", "rw")
-	q.Add("_pragma", "busy_timeout(5000)")
-	q.Add("_pragma", "foreign_keys(1)")
-	q.Add("_pragma", "synchronous(FULL)")
-	u.RawQuery = q.Encode()
-	db, err := sql.Open("sqlite", u.String())
+	db, version, err := openCatalog(ctx, path, "rw")
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(1)
 	fail := func(err error) (*sql.DB, error) { db.Close(); return nil, err }
-	var version int
-	if err = db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
-		return fail(err)
-	}
-	if version > 9 {
-		return fail(ErrUnsupportedSchema)
-	}
 	if version == 0 && !create {
 		return fail(ErrNotInitialized)
 	}
@@ -72,13 +56,13 @@ func Open(ctx context.Context, root string, create bool) (*sql.DB, error) {
 	if mode != "wal" {
 		return fail(fmt.Errorf("WAL unavailable: %s", mode))
 	}
-	if version < 9 {
+	if version < schemaVersion {
 		err = Write(ctx, db, func(c *sql.Conn) error {
 			var v int
 			if err := c.QueryRowContext(ctx, "PRAGMA user_version").Scan(&v); err != nil {
 				return err
 			}
-			if v > 9 {
+			if v > schemaVersion {
 				return ErrUnsupportedSchema
 			}
 			if v == 0 {
@@ -158,6 +142,57 @@ func Write(ctx context.Context, db *sql.DB, fn func(*sql.Conn) error) error {
 	}
 	_, err = c.ExecContext(ctx, "COMMIT")
 	return err
+}
+
+// OpenReadOnly observes the current catalog without creating or migrating it.
+func OpenReadOnly(ctx context.Context, root string) (*sql.DB, error) {
+	path := Path(root)
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return nil, ErrNotInitialized
+		}
+		return nil, err
+	}
+	db, version, err := openCatalog(ctx, path, "ro")
+	if err != nil {
+		return nil, err
+	}
+	if version < schemaVersion {
+		db.Close()
+		if version == 0 {
+			return nil, ErrNotInitialized
+		}
+		return nil, ErrMigrationRequired
+	}
+	return db, nil
+}
+
+func openCatalog(ctx context.Context, path, mode string) (*sql.DB, int, error) {
+	uriPath := filepath.ToSlash(path)
+	if !strings.HasPrefix(uriPath, "/") {
+		uriPath = "/" + uriPath
+	}
+	u := url.URL{Scheme: "file", Path: uriPath}
+	q := u.Query()
+	q.Set("mode", mode)
+	q.Add("_pragma", "busy_timeout(5000)")
+	q.Add("_pragma", "foreign_keys(1)")
+	q.Add("_pragma", "synchronous(FULL)")
+	u.RawQuery = q.Encode()
+	db, err := sql.Open("sqlite", u.String())
+	if err != nil {
+		return nil, 0, err
+	}
+	db.SetMaxOpenConns(1)
+	fail := func(err error) (*sql.DB, int, error) { db.Close(); return nil, 0, err }
+	var version int
+	if err = db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
+		return fail(err)
+	}
+	if version > schemaVersion {
+		return fail(ErrUnsupportedSchema)
+	}
+	return db, version, nil
 }
 
 const schema = `

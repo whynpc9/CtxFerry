@@ -235,7 +235,11 @@ func (a App) ListResources(ctx context.Context, selector, cwd string) (ResourceL
 		return out, err
 	}
 	defer db.Close()
-	out.Project = project
+	return listProjectResources(ctx, db, project)
+}
+
+func listProjectResources(ctx context.Context, db *sql.DB, project Project) (ResourceList, error) {
+	out := ResourceList{Project: project, Resources: []Resource{}}
 	rows, err := db.QueryContext(ctx, "SELECT metadata"+liveResources+" ORDER BY id", project.ID)
 	if err != nil {
 		return out, err

@@ -154,3 +154,10 @@ func readRemoteRef(ctx context.Context, dir string, conf SyncConfig) (string, er
 	}
 	return fields[0], nil
 }
+
+// backgroundSyncStatus is the sync subsystem's capability check. A sync
+// service implementation can supply evidence of an installed, identified
+// service here without making doctor start or install it.
+func backgroundSyncStatus() DoctorCheck {
+	return DoctorCheck{"unavailable", "This build supports foreground sync only"}
+}

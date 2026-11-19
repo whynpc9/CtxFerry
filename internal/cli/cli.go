@@ -26,9 +26,10 @@ type envelope struct {
 
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	return RunWithProviders(ctx, args, stdout, stderr, provider.Services{
-		Adapters:        map[string]provider.Adapter{infisical.Name: infisical.New()},
-		Credentials:     platform.SystemCredentials(),
-		InjectedSession: infisical.InjectedSession,
+		Adapters:           map[string]provider.Adapter{infisical.Name: infisical.New()},
+		Credentials:        platform.SystemCredentials(),
+		InjectedSession:    infisical.InjectedSession,
+		HasInjectedSession: infisical.HasInjectedSession,
 	})
 }
 
@@ -69,7 +70,10 @@ func RunWithServices(ctx context.Context, args []string, stdout, stderr io.Write
 			}
 			dir, e := platform.DataDir(dataDir, cmd.Flags().Changed("data-dir"))
 			if e != nil {
-				return app.Fail("usage", e.Error())
+				if cmd.Name() != "doctor" || cmd.Flags().Changed("data-dir") {
+					return app.Fail("usage", e.Error())
+				}
+				dir = "" // Doctor can still report checks unrelated to the catalog.
 			}
 			trust := services.Trust
 			if trust == nil {
@@ -141,7 +145,7 @@ func RunWithServices(ctx context.Context, args []string, stdout, stderr io.Write
 	onExit := func(code int) { taskExit, taskRan = code, true }
 	runTask := runCommand(ctx, invoke, &projectSelector, &format, onExit)
 	execTask := execCommand(ctx, invoke, &projectSelector, &format, onExit)
-	root.AddCommand(secrets, providerCommands, runTask, execTask, taskCommand(ctx, invoke, &projectSelector), initCmd, project, config, profile, contextCommand(ctx, invoke, &projectSelector), resourceCommand(ctx, invoke, &projectSelector), syncCommand(ctx, invoke), joinCommand(ctx, invoke))
+	root.AddCommand(doctorCommand(ctx, invoke, &projectSelector), secrets, providerCommands, runTask, execTask, taskCommand(ctx, invoke, &projectSelector), initCmd, project, config, profile, contextCommand(ctx, invoke, &projectSelector), resourceCommand(ctx, invoke, &projectSelector), syncCommand(ctx, invoke), joinCommand(ctx, invoke))
 
 	// Detect format before parsing so usage errors also obey the JSON contract.
 	requestedFormat := ""
@@ -246,6 +250,8 @@ func RunWithServices(ctx context.Context, args []string, stdout, stderr io.Write
 func render(w io.Writer, result any) error {
 	var err error
 	switch r := result.(type) {
+	case app.DoctorReport:
+		return renderDoctor(w, r)
 	case app.InitResult:
 		_, err = fmt.Fprintf(w, "Workspace %s\nDevice %s (%s/%s)\n", r.Workspace.ID, r.Device.ID, r.Device.OS, r.Device.Arch)
 	case app.BindResult:

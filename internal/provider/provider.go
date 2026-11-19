@@ -88,4 +88,25 @@ type Services struct {
 	// InjectedSession reads an explicitly provisioned runtime session for the
 	// exact device profile. It returns a caller-owned copy, or nil if absent.
 	InjectedSession func(SessionKey) []byte
+	// HasInjectedSession checks only whether the scoped injection is configured.
+	HasInjectedSession func(SessionKey) bool
+}
+
+// CredentialEvidence is metadata about the store and an exact session entry.
+// An entry's presence does not establish that its session is usable.
+type CredentialEvidence string
+
+const (
+	CredentialUnknown     CredentialEvidence = "unknown"
+	CredentialAvailable   CredentialEvidence = "available"
+	CredentialUnavailable CredentialEvidence = "unavailable"
+	CredentialLocked      CredentialEvidence = "locked"
+	CredentialPresent     CredentialEvidence = "present"
+	CredentialAbsent      CredentialEvidence = "absent"
+)
+
+// CredentialInspector is optional. Inspection must not unlock the store,
+// retrieve values, start a service, or write a probe entry.
+type CredentialInspector interface {
+	InspectCredentials(context.Context, []SessionKey) (CredentialEvidence, string, map[SessionKey]CredentialEvidence)
 }
