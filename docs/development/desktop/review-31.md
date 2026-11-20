@@ -33,3 +33,27 @@
 Kimi Code 的运行记录绑定 `kimi-code/k3.1-pro`，委派参数为 `thinking=max`。提供方运行记录未单独返回 executedModel 或实际推理档位。评审回复确认模型 ID，逐一用 ReadMediaFile 打开九张 CUA 原始 JPEG 及两张冻结稿，九项 SHA-256 均通过。
 
 结论为需要修改。首轮确认显式选择、版本来源、草稿保留、本机保存和待发布、远端删除以及披露受限的语义。需要修正两处：三方卡内应标出具体增删，成功回执与队列应保留对象名并展示实际生成的修订。评审也建议在来源环境未知时做明确标记。
+
+## 修订版的实机复核
+
+实现 `1951aa4b2da761259ffc5cf55f5848d41b4d495c`。Terra 使用新的隔离夹具重跑同一条桌面旅程。其中共同基线含「旧端口」，本机与远端分别改写不同片段。版本卡保留原文，分别以绿色底色和删除线标记实际增删，并显示设备 ID。没有环境元数据的设备标明环境未知。返回总览后二次点击「查看冲突队列」可回到队列，桌面烟测也验证了通过「返回同步队列」回到触发记录的焦点。
+
+| 原始截图 | 复核内容 |
+| --- | --- |
+| [01 同步队列](screenshots/issue-31-recheck/01-queue.jpg) | 两条具名冲突和一条独立待发布记录。 |
+| [02 三方比较](screenshots/issue-31-recheck/02-compare.jpg) | 基线保留原文，本机与远端标出具体新增和移除片段。产生修订前须选择方案。 |
+| [03 选定远端](screenshots/issue-31-recheck/03-side.jpg) | 远端结果原文与选中状态一致。 |
+| [04 编辑](screenshots/issue-31-recheck/04-edit.jpg) | 编辑精确多行正文。向下滚动可到达生成动作。 |
+| [05 确认](screenshots/issue-31-recheck/05-confirm.jpg) | 显示操作范围、本机设备、待发布和 Git 明文边界。 |
+| [06 过期](screenshots/issue-31-recheck/06-stale.jpg) | 禁止使用旧比较生成修订。刷新保留草稿，要求重新确认披露范围。 |
+| [07 本机回执](screenshots/issue-31-recheck/07-saved.jpg) | 记录标题、记录 ID 和新修订号独立显示。 |
+| [08 返回队列](screenshots/issue-31-recheck/08-queue-after.jpg) | 待发布项保留与回执相同的标题、记录 ID 和新修订号。另一条冲突仍活动。 |
+| [09 删除冲突](screenshots/issue-31-recheck/09-deletion.jpg) | 远端标为已删除，按策略隐藏正文，保留删除须显式选择。 |
+
+[修订版原始截图 SHA-256](screenshots/issue-31-recheck/sha256.txt)
+
+记录 `197c3717-9b38-4e8d-8269-cf38b4eb1acb` 的新本机修订为 `9f6528d4-c334-4194-966e-df76d64ff274`，父修订为刷新后查看的 `43ca9945-e2d4-424e-95e3-216285855aac`。CLI 读回相同设备、修订与原样换行的正文，正文 SHA-256 为 `4f47302b847763f77a603ed2510c097792204161ba9b3379cfd7987447e1db0f`。生成修订时观察到的裸 Git head 保持 `8df54742dbb975eaa277ba4ddfe729d3a97f5662`。关闭窗口后显式同步，第二个目录读到相同修订和正文，裸 Git head 更新为 `d62706d814bd60e2d00c6c5e512c5717f370c856`。
+
+自动化通过了桌面冲突烟测、桌面与根模块静态检查、核心的本机快照测试、四组 CLI 冲突和双目录同步回归。生产 CLI 以 CGO 禁用的方式构建并启动。首轮全仓本机测试达到 15 分钟的包级总时限，当时正在启动 `TestTwoDeviceSync`。该用例通过单独重跑及修订版回归。
+
+修订版的 `go test ./internal/...` 和带竞态检测的桌面冲突烟测均通过。
