@@ -35,19 +35,20 @@ Run `go test -count=1 ./...` and `go vet ./...`. The reusable `internal/testcli`
 
 ## Native desktop preview
 
-From the repository root, run the read-only MyGo desktop in its own Go module:
+Run the MyGo native desktop from its own Go module at the repository root.
 
 ```sh
 cd cmd/ctxferry-desktop
 go run .
 ```
 
-Overview and Sync read the same local workspace as the CLI. Set
-`CTXFERRY_DATA_DIR` to inspect an isolated workspace. Use **刷新本地视图** to
-reload after a CLI operation. The desktop does not initialize the catalog or
-start the sync worker. Run `go test ./...` inside the desktop module for its
-view smoke test. The [desktop design](plans/desktop-design/README.md) covers
-the intended UI beyond this first slice.
+Overview and Sync use the same local workspace as the CLI. Set
+`CTXFERRY_DATA_DIR` to select an isolated workspace. **刷新本地视图** reads the
+local catalog. **检查远端** checks Git access and repository privacy on demand.
+**创建备份…** shows the scope and destination before writing the plaintext backup.
+Initialize workspaces with the CLI and run background sync as a separate user
+service. See the [desktop smoke procedure](docs/desktop/acceptance-28.md#复现)
+and [design](plans/desktop-design/README.md).
 
 ## First-device onboarding
 

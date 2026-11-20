@@ -1,13 +1,14 @@
 package app
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
 	"os"
 	"os/exec"
 	"runtime"
-	"sort"
+	"slices"
 	"time"
 
 	"github.com/whynpc9/CtxFerry/internal/platform"
@@ -333,24 +334,18 @@ func (a App) doctorProviderAuth(ctx context.Context, db *sql.DB, loc configurati
 		return out, storage
 	}
 	seen := map[provider.Profile]bool{}
-	keys := []provider.SessionKey{}
 	for _, binding := range list.Bindings {
-		p := binding.ProviderProfile
-		if !seen[p] {
-			seen[p] = true
-			keys = append(keys, provider.SessionKey{WorkspaceID: loc.workspace, DeviceID: loc.device, Profile: p})
-		}
+		seen[binding.ProviderProfile] = true
 	}
-	sort.Slice(keys, func(i, j int) bool {
-		a, b := keys[i].Profile, keys[j].Profile
-		if a.Provider != b.Provider {
-			return a.Provider < b.Provider
-		}
-		if a.Name != b.Name {
-			return a.Name < b.Name
-		}
-		return a.Method < b.Method
-	})
+	profiles := make([]provider.Profile, 0, len(seen))
+	for p := range seen {
+		profiles = append(profiles, p)
+	}
+	sortProviderProfiles(profiles)
+	keys := make([]provider.SessionKey, 0, len(profiles))
+	for _, p := range profiles {
+		keys = append(keys, provider.SessionKey{WorkspaceID: loc.workspace, DeviceID: loc.device, Profile: p})
+	}
 	storage, sessions := a.doctorCredentialStorage(ctx, keys)
 	out.DoctorCheck = DoctorCheck{"unknown", "Live authentication is unverified; see the evidence for each provider profile"}
 	if len(keys) == 0 {
@@ -360,6 +355,12 @@ func (a App) doctorProviderAuth(ctx context.Context, db *sql.DB, loc configurati
 		out.Profiles = append(out.Profiles, a.doctorProviderProfile(key, storage, sessions[key]))
 	}
 	return out, storage
+}
+
+func sortProviderProfiles(profiles []provider.Profile) {
+	slices.SortFunc(profiles, func(a, b provider.Profile) int {
+		return cmp.Or(cmp.Compare(a.Provider, b.Provider), cmp.Compare(a.Name, b.Name), cmp.Compare(a.Method, b.Method))
+	})
 }
 
 func (a App) doctorProviderProfile(key provider.SessionKey, storage DoctorCheck, session provider.CredentialEvidence) DoctorProvider {

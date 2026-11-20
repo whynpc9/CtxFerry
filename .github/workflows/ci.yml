@@ -23,6 +23,13 @@ jobs:
       - run: go vet ./...
       - run: go test -count=1 -timeout=15m ./...
       - run: go build -o ctxferry ./cmd/ctxferry
+      - name: Build and test the native desktop
+        if: runner.os == 'macOS'
+        working-directory: cmd/ctxferry-desktop
+        run: |
+          go vet ./...
+          go test -count=1 ./...
+          go build .
       - name: Offline headless smoke
         if: runner.os == 'Linux'
         shell: bash
