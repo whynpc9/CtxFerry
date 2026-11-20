@@ -60,6 +60,10 @@ func (r skillReceipt) stagePath(p *skillProjection) string {
 }
 
 func (a App) ApplySkill(ctx context.Context, name, target string, symlink bool) (SkillPlan, error) {
+	return a.applySkill(ctx, name, target, symlink, "")
+}
+
+func (a App) applySkill(ctx context.Context, name, target string, symlink bool, confirmation string) (SkillPlan, error) {
 	device, err := a.skillDevice(ctx)
 	if err != nil {
 		return SkillPlan{}, err
@@ -74,6 +78,14 @@ func (a App) ApplySkill(ctx context.Context, name, target string, symlink bool) 
 		return p.SkillPlan, err
 	}
 	recovering := p.receipt.Replaces != nil
+	if confirmation != "" {
+		if err := a.planSelectedSkill(ctx, &p, name, symlink); err != nil {
+			return p.SkillPlan, err
+		}
+		if confirmation != p.installConfirmation() {
+			return p.SkillPlan, Fail("skill-plan-changed", "the Skill installation no longer matches the preview")
+		}
+	}
 	if recovering {
 		mode := "copy"
 		if symlink {
@@ -82,10 +94,17 @@ func (a App) ApplySkill(ctx context.Context, name, target string, symlink bool) 
 		if err := p.recoverReplacement(device, mode); err != nil {
 			return p.SkillPlan, err
 		}
+		// Rebuild the post-recovery projection without the preview's status and file list.
+		if confirmation != "" {
+			p, err = a.openSkillProjection(name, target)
+			if err != nil {
+				return p.SkillPlan, err
+			}
+		}
 	}
 	if recovering {
 		err = p.planInstalled(name, symlink)
-	} else {
+	} else if confirmation == "" {
 		err = a.planSelectedSkill(ctx, &p, name, symlink)
 	}
 	if err != nil {

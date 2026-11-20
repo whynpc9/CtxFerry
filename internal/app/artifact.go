@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"io"
 	"mime"
 	"path/filepath"
 	"slices"
@@ -254,23 +255,32 @@ func (a App) FetchArtifact(ctx context.Context, selector, cwd, id, output string
 	if !filepath.IsAbs(output) {
 		output = filepath.Join(cwd, output)
 	}
-	switch m.Payload.Storage {
-	case "local-only":
-		err = a.fetchArtifactObject(m.Payload, output)
-	case "shared":
-		var data []byte
-		err = db.QueryRowContext(ctx, "SELECT data FROM sync_baselines WHERE path=?", m.Payload.Location).Scan(&data)
-		if errors.Is(err, sql.ErrNoRows) {
-			err = Fail("artifact-unavailable", "verified artifact payload is missing from the local snapshot")
-		}
-		if err == nil {
-			err = a.writeArtifactOutput(bytes.NewReader(data), m.Payload, output)
-		}
-	default:
-		err = Fail("artifact-unavailable", "this device has only the artifact metadata")
-	}
+	in, err := a.openArtifactPayload(ctx, db, m.Payload)
 	if err != nil {
 		return ArtifactFetch{}, err
 	}
+	defer in.Close()
+	if err := a.writeArtifactOutput(in, m.Payload, output); err != nil {
+		return ArtifactFetch{}, err
+	}
 	return ArtifactFetch{ID: id, Output: output, Size: m.Payload.Size, SHA256: m.Payload.SHA256}, nil
+}
+
+func (a App) openArtifactPayload(ctx context.Context, db *sql.DB, p ArtifactPayload) (io.ReadCloser, error) {
+	switch p.Storage {
+	case "local-only":
+		return a.openCachedArtifact(p)
+	case "shared":
+		var data []byte
+		err := db.QueryRowContext(ctx, "SELECT data FROM sync_baselines WHERE path=?", p.Location).Scan(&data)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, Fail("artifact-unavailable", "verified artifact payload is missing from the local snapshot")
+		}
+		if err != nil {
+			return nil, err
+		}
+		return io.NopCloser(bytes.NewReader(data)), nil
+	default:
+		return nil, Fail("artifact-unavailable", "this device has only the artifact metadata")
+	}
 }

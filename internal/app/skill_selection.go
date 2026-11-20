@@ -195,34 +195,35 @@ func (a App) cacheSharedSkill(ctx context.Context, p skillProjection) error {
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	var data map[string][]byte
-	pkg := p.Package
+	data, err := a.readSharedSkillData(ctx, p.Package)
+	if err != nil {
+		return err
+	}
+	return saveSkillSnapshot(path, p.Package, data)
+}
+
+func (a App) readSharedSkillData(ctx context.Context, pkg SkillPackage) (map[string][]byte, error) {
 	if pkg.SourceKind == "private" {
 		db, err := store.Open(ctx, a.DataDir, false)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		defer db.Close()
-		data, err = privateSkillData(pkg, func(path string) ([]byte, error) {
+		return privateSkillData(pkg, func(path string) ([]byte, error) {
 			return localSkillObject(ctx, db, path)
 		})
-		if err != nil {
-			return err
-		}
-	} else {
-		source := SkillPackage{Subdir: "."}
-		payload, err := readGitSkill(ctx, &source, SkillImport{Git: pkg.SourceURL, Subdir: pkg.Subdir, Ref: pkg.Commit})
-		if err != nil {
-			return err
-		}
-		if err := payload.finish(); err != nil {
-			return err
-		}
-		name, _, _, err := skillFrontMatter(payload.data["SKILL.md"])
-		if err != nil || name != pkg.Name || !slices.Equal(payload.files, pkg.Files) {
-			return Fail("skill-pin-mismatch", "the fetched public Skill differs from its approved manifest")
-		}
-		data = payload.data
 	}
-	return saveSkillSnapshot(path, pkg, data)
+	source := SkillPackage{Subdir: "."}
+	payload, err := readGitSkill(ctx, &source, SkillImport{Git: pkg.SourceURL, Subdir: pkg.Subdir, Ref: pkg.Commit})
+	if err != nil {
+		return nil, err
+	}
+	if err := payload.finish(); err != nil {
+		return nil, err
+	}
+	name, _, _, err := skillFrontMatter(payload.data["SKILL.md"])
+	if err != nil || name != pkg.Name || !slices.Equal(payload.files, pkg.Files) {
+		return nil, Fail("skill-pin-mismatch", "the fetched public Skill differs from its approved manifest")
+	}
+	return payload.data, nil
 }

@@ -50,6 +50,10 @@ func skillVersion(pkg SkillPackage) string {
 }
 
 func (a App) ChangeSkill(ctx context.Context, input SkillChangeInput) (SkillChangePlan, error) {
+	return a.changeSkill(ctx, input, nil)
+}
+
+func (a App) changeSkill(ctx context.Context, input SkillChangeInput, preview func(skillProjection, skillProjection, skillPayload, SkillChangePlan) error) (SkillChangePlan, error) {
 	var device string
 	if input.Confirm != "" {
 		var err error
@@ -131,6 +135,9 @@ func (a App) ChangeSkill(ctx context.Context, input SkillChangeInput) (SkillChan
 		if input.Confirm != "" {
 			return plan, &Error{Code: "skill-change-blocked", Message: plan.Issues[0].Message, Details: plan.Issues}
 		}
+		if preview != nil {
+			return plan, preview(old, next, payload, plan)
+		}
 		return plan, nil
 	}
 	if skillVersion(old.Package) == skillVersion(next.Package) {
@@ -149,6 +156,9 @@ func (a App) ChangeSkill(ctx context.Context, input SkillChangeInput) (SkillChan
 		plan.Confirmation = digest(wire)
 	}
 	if input.Confirm == "" {
+		if preview != nil {
+			return plan, preview(old, next, payload, plan)
+		}
 		return plan, nil
 	}
 	if plan.Confirmation != input.Confirm {
