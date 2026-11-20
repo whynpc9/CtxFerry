@@ -62,3 +62,9 @@ Kimi K3.1 Pro 对 `4681f9394a3a5ccd3c772c82072b33ca9ffb8a46` 的复核通过，�
 | 8.6 | 8.9 | 8.4 | 8.7 | 8.3 | 8.8 | 8.9 | 8.7 |
 
 T3 记录使用 `kimi-code/k3.1-pro`，传入 `thinking=max`。Provider 的独立执行模型和实际推理档位回执仍不可用。复核覆盖归档图面、当轮磁盘证据和实现路径。Windows 与 Linux 验证覆盖编译，实机截图覆盖 macOS。
+
+## #30 合入后的原生侧栏
+
+集成版本 `da5ff0c1cf9b68599547f2c59e3d44c08339b47a` 基于 `ce3a4ab498fb3df3dcda450dd6c3be9b1259e50d`。实机依次打开“设备与资源”“凭据绑定”“Skills”和“产物”。共享侧栏保留各入口，Skills 仍显示共享 v2 和本机已装 v1，`trace.json` 仍显示仅元数据及超额原因。两页功能源文件与最终实现复核版一致。[Skills 原图](screenshots/issue-32/integrated/01-skills-intent-receipt.png) · [产物原图](screenshots/issue-32/integrated/02-trace-metadata.png) · [原图 SHA-256](screenshots/issue-32/integrated/manifest.json) · [导航和关闭回执](screenshots/issue-32/integrated/outcomes.json)
+
+合入 #30 后重新运行桌面全量测试、桌面与核心静态检查、Skills 与产物核心专项测试和真实 Git 接收端的产物专项测试，均通过。与 [#29 PR](https://github.com/whynpc9/CtxFerry/pull/63) 的 `e88ca11` 再次临时集成，两条项目往返路径均通过。
