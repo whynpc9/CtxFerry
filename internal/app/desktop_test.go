@@ -57,8 +57,8 @@ func TestDesktopLocalSnapshot(t *testing.T) {
 	if s.Sync.State != "conflict" || s.Sync.Config.Branch != "main" || s.Sync.Head != "head" || s.Sync.History.RawBytes != 4096 || len(s.Sync.Conflicts) != 1 {
 		t.Fatalf("unexpected sync evidence: %+v", s.Sync)
 	}
-	if len(s.PendingIDs) != s.Sync.Pending {
-		t.Fatalf("pending records %v, count %d", s.PendingIDs, s.Sync.Pending)
+	if len(s.PendingIDs) != s.Sync.Pending || s.QueuePending != 1 {
+		t.Fatalf("pending records %v, count %d, waiting %d", s.PendingIDs, s.Sync.Pending, s.QueuePending)
 	}
 	found := false
 	for _, id := range s.PendingIDs {
@@ -75,5 +75,49 @@ func TestDesktopLocalSnapshot(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("missing pending record")
+	}
+}
+
+// A conflict may still be in the outbox. It is counted in the raw CLI
+// backlog, but should appear in the desktop conflict count only.
+func TestDesktopQueueAndPartialSnapshot(t *testing.T) {
+	ctx := t.Context()
+	a := App{DataDir: filepath.Join(t.TempDir(), "data")}
+	init, err := a.Init(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.BindProject(ctx, t.TempDir(), "retained-project"); err != nil {
+		t.Fatal(err)
+	}
+	db, err := store.Open(ctx, a.DataDir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, stmt := range []string{
+		"INSERT INTO sync_outbox VALUES ('conflict',NULL,X'00','first','epoch'),('waiting',NULL,X'00','second','epoch'),('blocked',NULL,X'00','third','epoch')",
+		"INSERT INTO sync_conflicts VALUES ('token','conflict',NULL,X'00',X'00','head',1)",
+		"INSERT INTO sync_blocked VALUES ('blocked','dependent record has a conflict')",
+	} {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s, err := a.ReadDesktopSnapshot(ctx)
+	if err != nil || s.SyncErr != nil || s.QueuePending != 1 || s.Sync.Pending != 3 || len(s.Queue) != 3 ||
+		!s.Queue[0].Conflict || !s.Queue[1].Blocked || !s.Queue[2].Waiting() {
+		t.Fatalf("queue projection: %+v, %v", s, err)
+	}
+	if _, err := db.ExecContext(ctx, "INSERT INTO sync_state(singleton,epoch) VALUES(1,'epoch')"); err != nil {
+		t.Fatal(err)
+	}
+	// A bad sync section cannot erase the established catalog or bindings.
+	if _, err := db.ExecContext(ctx, "INSERT INTO sync_config VALUES (1,'https://redacted@github.com/a/b.git',?,'main','identity')", init.Workspace.ID); err != nil {
+		t.Fatal(err)
+	}
+	s, err = a.ReadDesktopSnapshot(ctx)
+	if err != nil || s.SyncErr == nil || s.ReadAt.IsZero() || len(s.Bindings) != 1 || s.Sync.Config != nil {
+		t.Fatalf("partial snapshot: %+v, %v", s, err)
 	}
 }

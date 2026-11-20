@@ -63,8 +63,13 @@ class Window:
             conn.connect(self.endpoint)
             request = json.dumps({"id": 1, "method": method, "params": params})
             conn.sendall(request.encode() + b"\n")
-            reply = json.loads(conn.makefile("rb").readline())
+            line = conn.makefile("rb").readline()
+            if not line:
+                raise ConnectionError("The desktop closed its automation connection")
+            reply = json.loads(line)
         if "error" in reply:
+            if reply["error"]["code"] == "no_window":
+                raise ConnectionError("Native window is not ready")
             raise AssertionError(reply["error"])
         return reply["result"]
 
@@ -135,7 +140,7 @@ def smoke(root, server):
                         "--body-file", str(path))["document"]
 
     cli_call("a", "init")
-    cli_call("a", "project", "bind", ".", "--project", "demo")
+    cli_call("a", "project", "bind", ".", "--slug", "demo")
     d = doc("a", "测试环境说明", "共同基线")
     cli_call("a", "sync", "enable", "--remote", REMOTE)
     preview = cli_call("a", "sync", "preview")["previewId"]
@@ -144,7 +149,7 @@ def smoke(root, server):
     cli_call("b", "project", "bind", ".", "--project", "demo")
     desktop_checkout = checkout["b"] / "tools"
     desktop_checkout.mkdir()
-    cli_call("b", "project", "bind", str(desktop_checkout), "--project", "tools")
+    cli_call("b", "project", "bind", str(desktop_checkout), "--slug", "tools")
     doc("a", "测试环境说明", "远端修订", d)
     cli_call("a", "sync")
     doc("b", "测试环境说明", "本机修订", d)
@@ -175,6 +180,20 @@ def smoke(root, server):
         db.execute("INSERT INTO records VALUES(?,?,?,?)",
                    (secret["id"], project, secret["kind"], json.dumps(secret)))
 
+    label = "com.ctxferry.ctxferry-sync-" + hashlib.sha256(os.fsencode(data_dir["b"].resolve())).hexdigest()[:24]
+    job = f"gui/{os.getuid()}/{label}"
+    plist = root / (label + ".plist")
+    gate = root / "allow-service-fetch"
+    plist.write_bytes(plistlib.dumps({"Label": label, "RunAtLoad": True,
+                                     "ProgramArguments": [str(cli), "--data-dir", str(data_dir["b"]), "sync", "serve"],
+                                     "EnvironmentVariables": {**env, "CTXFERRY_TEST_FETCH_GATE": str(gate)}}))
+    service_pid = None
+
+    def job_pid():
+        state = run("/bin/launchctl", "print", job)
+        return next((int(line.split("=")[1]) for line in state.splitlines()
+                     if line.strip().startswith("pid =")), None)
+
     endpoint = root / "native.sock"
     app_env = {**env, "CTXFERRY_DATA_DIR": str(data_dir["b"]), "MYGO_AUTOMATION": str(endpoint),
                "CTXFERRY_INFISICAL_WORKSPACE_ID": workspace, "CTXFERRY_INFISICAL_DEVICE_ID": device,
@@ -182,72 +201,86 @@ def smoke(root, server):
     window = Window(endpoint)
     images = {}
     lock = Path(run("git", "rev-parse", "--path-format=absolute", "--git-common-dir", cwd=REPO)) / "ctxferry-desktop-gui.lock"
-    with lock.open("a") as lockfile:
-        fcntl.flock(lockfile, fcntl.LOCK_EX)
-        with (root / "desktop.log").open("w") as diagnostics:
-            proc = subprocess.Popen([binary], env=app_env, stdout=diagnostics, stderr=diagnostics)
-            try:
-                window.label("设备总览")
-                window.label("smoke · 已配置本机运行会话 · 登录未经验证")
-                window.capture(root, "01-overview-configured", images)
-                window.click("查看冲突")
-                window.label("测试环境说明")
-                window.click("全部")
-                window.label("运行手册")
-                window.click("检查远端")
-                window.label("Git 历史体积")
-                wait_for(lambda: any("已核验私有仓库" in n.get("label", "") for n in window.nodes()))
-                window.capture(root, "02-sync-configured", images)
-
-                window.click("创建备份…")
-                window.label("创建工作区备份")
-                output = root / "verified-backup"
-                field = window.label("备份目标目录")
-                window.call("act", id=field["id"], action="setValue", text=str(output))
-                window.capture(root, "03-backup-confirm", images)
-                window.click("确认创建备份")
-                window.label("备份已创建")
-                wait_for(lambda: (output / "manifest.json").is_file())
-                window.capture(root, "04-backup-receipt", images)
-                manifest = json.loads((output / "manifest.json").read_text())
-                assert not manifest.get("includesLocalOnly") and manifest["head"] == fixture["head"], manifest
-                for filename, key in (("catalog.sqlite", "catalogSha256"), ("published.bundle", "bundleSha256")):
-                    assert hashlib.sha256((output / filename).read_bytes()).hexdigest() == manifest[key]
-
-                server.reply = 503
-                cli_call("b", "sync", error="offline", extra={"CTXFERRY_TEST_FETCH_FAILURE": "offline"})
-                window.click("刷新本地视图")
-                window.label("上次同步时远端不可用。下面仍显示本机记录和最后确认的版本。")
-                window.capture(root, "05-sync-offline", images)
-                server.reply = 200
-            finally:
-                if proc.poll() is None:
-                    proc.terminate()
-                proc.wait(timeout=10)
-
-    # Confirm an independent user service can publish after the desktop exits.
-    # Remove the fixture-only SecretBinding before the shared catalog exports.
-    with sqlite3.connect(db_path) as db:
-        db.execute("DELETE FROM records WHERE id=?", (secret["id"],))
-    label = "com.ctxferry.ctxferry-sync-" + hashlib.sha256(os.fsencode(data_dir["b"].resolve())).hexdigest()[:24]
-    domain = f"gui/{os.getuid()}"
-    plist = root / (label + ".plist")
-    plist.write_bytes(plistlib.dumps({"Label": label, "RunAtLoad": True,
-                                     "ProgramArguments": [str(cli), "--data-dir", str(data_dir["b"]), "sync", "serve"],
-                                     "EnvironmentVariables": env}))
     try:
-        run("/bin/launchctl", "bootstrap", domain, plist)
-        wait_for(lambda: "state = running" in run("/bin/launchctl", "print", domain + "/" + label))
-        wait_for(lambda: cli_call("b", "sync", "status")["head"] != fixture["head"])
-        cli_call("a", "sync")
-        assert cli_call("a", "context", "get", pending["id"])["document"]["body"] == "待发布修订"
+        with lock.open("a") as lockfile:
+            fcntl.flock(lockfile, fcntl.LOCK_EX)
+            with (root / "desktop.log").open("w") as diagnostics:
+                proc = subprocess.Popen([binary], env=app_env, stdout=diagnostics, stderr=diagnostics)
+                try:
+                    window.label("设备总览")
+                    window.label("smoke · 已配置本机运行会话 · 登录未经验证")
+                    window.capture(root, "01-overview-configured", images)
+                    window.click("查看冲突")
+                    window.label("测试环境说明")
+                    window.click("全部")
+                    window.label("运行手册")
+                    window.click("检查远端")
+                    window.label("Git 历史体积")
+                    wait_for(lambda: any("已核验私有仓库" in n.get("label", "") for n in window.nodes()))
+                    window.capture(root, "02-sync-configured", images)
+
+                    window.click("创建备份…")
+                    window.label("创建工作区备份")
+                    output = root / "verified-backup"
+                    field = window.label("备份目标目录")
+                    window.call("act", id=field["id"], action="setValue", text=str(output))
+                    window.capture(root, "03-backup-confirm", images)
+                    window.click("确认创建备份")
+                    window.label("备份已创建")
+                    wait_for(lambda: (output / "manifest.json").is_file())
+                    window.capture(root, "04-backup-receipt", images)
+                    manifest = json.loads((output / "manifest.json").read_text())
+                    assert not manifest.get("includesLocalOnly") and manifest["head"] == fixture["head"], manifest
+                    for filename, key in (("catalog.sqlite", "catalogSha256"), ("published.bundle", "bundleSha256")):
+                        assert hashlib.sha256((output / filename).read_bytes()).hexdigest() == manifest[key]
+
+                    server.reply = 503
+                    cli_call("b", "sync", error="offline", extra={"CTXFERRY_TEST_FETCH_FAILURE": "offline"})
+                    window.click("刷新本地视图")
+                    window.label("上次同步时远端不可用。下面仍显示本机记录和最后确认的版本。")
+                    window.capture(root, "05-sync-offline", images)
+                    server.reply = 200
+
+                    # Run a real user service alongside the window. Hold the Git
+                    # round before it reads the remote so publication proves the
+                    # already-running job continued after File > Close.
+                    with sqlite3.connect(db_path) as db:
+                        db.execute("DELETE FROM records WHERE id=?", (secret["id"],))
+                    run("/bin/launchctl", "bootstrap", job.rsplit("/", 1)[0], plist)
+                    service_pid = wait_for(job_pid)
+                    wait_for(lambda: gate.with_suffix(".entered").is_file())
+                    assert cli_call("b", "sync", "status")["head"] == fixture["head"]
+                    try:
+                        window.call("menu", path=["File", "Close"])
+                    except ConnectionError:
+                        pass
+
+                    def closed_window():
+                        if proc.poll() is not None:
+                            return True
+                        return not window.call("windows")["windows"]
+
+                    wait_for(closed_window)
+                finally:
+                    if proc.poll() is None:
+                        proc.terminate()
+                    proc.wait(timeout=10)
+
+        if service_pid:
+            assert service_pid and job_pid() == service_pid
+            gate.touch()
+            wait_for(lambda: cli_call("b", "sync", "status")["head"] != fixture["head"])
+            assert job_pid() == service_pid
+            cli_call("a", "sync")
+            assert cli_call("a", "context", "get", pending["id"])["document"]["body"] == "待发布修订"
     finally:
-        subprocess.run(["/bin/launchctl", "bootout", domain + "/" + label], capture_output=True)
+        if service_pid or plist.exists():
+            subprocess.run(["/bin/launchctl", "bootout", job], capture_output=True)
 
     receipt = {"revision": run("git", "rev-parse", "HEAD", cwd=REPO),
                "fixture": {"confirmedHead": fixture["head"], "pending": fixture["pending"],
                            "conflicts": len(fixture["conflicts"]), "historyBytes": fixture["history"]["rawBytes"]},
-               "backupManifest": manifest, "publishedByUserServiceAfterWindowExit": True, "images": images}
+               "backupManifest": manifest, "continuedUserServicePID": service_pid, "images": images}
     (root / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
     print(json.dumps(receipt, indent=2))
 

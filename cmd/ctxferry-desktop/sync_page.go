@@ -219,6 +219,11 @@ func (d *desktop) repository(c *ui.Context) {
 		}
 	})
 
+	// A write receipt or error belongs with the action that produced it.
+	if state.backingUp || !state.backupAt.IsZero() || state.backupErr != "" {
+		d.backupStatus(c)
+	}
+
 	switch {
 	case d.data.SyncErr != nil:
 		detail(c, "仓库", "未知 · 本机同步记录不可用")
@@ -260,7 +265,9 @@ func (d *desktop) repository(c *ui.Context) {
 			firstPublishHelp(c)
 		}
 	}
-	d.backupStatus(c)
+	if !state.backingUp && state.backupAt.IsZero() && state.backupErr == "" {
+		d.backupStatus(c)
+	}
 }
 
 func historySize(bytes int64) string {
