@@ -66,7 +66,7 @@ func (d *desktop) loadSkills() {
 			s.candidate = "update"
 		}
 		if s.target == "" {
-			s.target, s.mode = "codex", "受管复制"
+			s.target, s.mode = "codex", "Managed copy"
 		}
 		d.loadSkillTarget()
 	})
@@ -83,7 +83,7 @@ func (d *desktop) loadSkillTarget() {
 	s.readID++
 	readID := s.readID
 	s.loading, s.err, s.targetState = true, nil, app.DesktopSkillTarget{}
-	name, target, link := s.name, s.target, s.mode == "受管软链"
+	name, target, link := s.name, s.target, s.mode == "Managed symlink"
 	desktopJob(d, func(ctx context.Context) (app.DesktopSkillTarget, error) {
 		return d.core.ReadDesktopSkillTarget(ctx, name, target, link)
 	}, func(state app.DesktopSkillTarget, err error) {
@@ -107,7 +107,7 @@ func (d *desktop) previewSkill(action string) {
 	} else if s.targetState.Shared {
 		selected = s.sharedPin()
 	}
-	link := s.mode == "受管软链"
+	link := s.mode == "Managed symlink"
 	if s.targetState.Mode != "" {
 		link = s.targetState.Mode == "symlink"
 	}
@@ -143,6 +143,9 @@ func (d *desktop) previewSkill(action string) {
 }
 
 func (d *desktop) confirmSkill() {
+	if d.err != nil {
+		return
+	}
 	s := &d.skills
 	p := s.preview
 	if s.busy || s.err != nil || p.Confirmation == "" {
@@ -170,15 +173,15 @@ func (d *desktop) confirmSkill() {
 		if err != nil {
 			return
 		}
-		s.receipt = fmt.Sprintf("%s完成 · %s · %s", skillAction(action, p.Status), d.data.Device.Name, path)
+		s.receipt = fmt.Sprintf("%s complete · %s · %s", skillAction(action, p.Status), d.data.Device.Name, path)
 		d.loadSkillTarget()
 	})
 }
 
 func (d *desktop) skillsPage(c *ui.Context) {
 	s := &d.skills
-	ui.Column(c).FillWidth().Padding(12, 14).Gap(9).Radius(7).Background(panel).Children(func() {
-		ui.Row(c).FillWidth().Gap(12).Wrap().Children(func() {
+	card(c).Children(func() {
+		ui.Row(c).FillWidth().Gap(sp3).Wrap().Children(func() {
 			d.projectPicker(c, s.project, true, s.busy || s.loading, d.setSkillProject)
 			names := make([]string, 0, len(s.entries))
 			for _, entry := range s.entries {
@@ -189,18 +192,18 @@ func (d *desktop) skillsPage(c *ui.Context) {
 				s.candidate = "update"
 				d.loadSkillTarget()
 			})
-			workPicker(c, "安装目标", &s.target, []string{"codex", "claude-code"}, s.busy || s.loading, func() {
+			workPicker(c, "Install target", &s.target, []string{"codex", "claude-code"}, s.busy || s.loading, func() {
 				s.ref, s.receipt = "", ""
 				s.candidate = "update"
 				d.loadSkillTarget()
 			})
 			if s.targetState.Installed == nil && s.targetState.Status != "recovery-pending" {
-				workPicker(c, "安装方式", &s.mode, []string{"受管复制", "受管软链"}, s.busy || s.loading, d.loadSkillTarget)
+				workPicker(c, "Install mode", &s.mode, []string{"Managed copy", "Managed symlink"}, s.busy || s.loading, d.loadSkillTarget)
 			}
 			if pin := s.sharedPin(); pin != nil {
 				ui.Column(c).MinWidth(112).Gap(4).Children(func() {
-					ui.Text(c, "共享意图 pin").TextColor(muted)
-					ui.Text(c, skillShortPin(pin)).Bold().TextColor(ink)
+					ui.Text(c, "Approved shared pin").TextColor(tk.Muted)
+					ui.Text(c, skillShortPin(pin)).Bold().TextColor(tk.Text)
 				})
 			}
 			if s.targetState.Status == "installed" && s.targetState.Installed != nil {
@@ -209,74 +212,70 @@ func (d *desktop) skillsPage(c *ui.Context) {
 		})
 	})
 	if s.loading {
-		ui.Text(c, "正在读取 Skill 目录和本机状态…").TextColor(muted)
+		muted(c, "Reading the Skill catalog and local installation…")
 		return
 	}
 	if s.err != nil {
-		workMessage(c, "Skill 操作未完成", s.err)
+		workMessage(c, "Skill operation did not complete", s.err)
 	}
 	if s.name == "" {
 		if s.err == nil {
 			if s.project == "" {
-				ui.Text(c, "工作区还没有 Skill。使用 ctxferry skill add 登记来源后刷新。").TextColor(muted)
+				muted(c, "No Skills are registered in this Workspace. Use ctxferry skill add, then Refresh.")
 			} else {
-				ui.Text(c, "此项目尚未选择共享 Skills。").TextColor(muted)
+				muted(c, "This Project has no shared Skills selected.")
 			}
 		}
 		return
 	}
 	if s.receipt != "" {
-		ui.Text(c, s.receipt).FillWidth().Padding(8, 10).Radius(6).Background(panel).TextColor(ink)
+		banner(c, toneOk, "Local installation receipt", s.receipt+" · Shared pin approval is unchanged.", nil)
 	}
-	ui.Row(c).FillWidth().Gap(16).AlignItems(ui.Start).Children(func() {
-		ui.Column(c).Grow(1).MinWidth(0).Gap(12).Children(func() {
-			if s.action != "" {
-				d.skillPlanView(c)
-				ui.Divider(c)
+	managementColumns(c, func() {
+		if s.action != "" {
+			d.skillPlanView(c)
+		}
+		d.skillInstallView(c)
+	}, func() {
+		selected := s.row >= 0 && s.row < len(s.preview.Files)
+		if selected && !s.showPackages {
+			s.skillFileInspector(c)
+			ui.Button(c, "View versions and source").OnClick(func() { s.showPackages = true })
+		} else {
+			d.skillSourceInspector(c)
+			if selected {
+				ui.Button(c, "Back to selected file").OnClick(func() { s.showPackages = false })
 			}
-			d.skillInstallView(c)
-		})
-		workInspector(c, func() {
-			selected := s.row >= 0 && s.row < len(s.preview.Files)
-			if selected && !s.showPackages {
-				s.skillFileInspector(c)
-				ui.Button(c, "查看版本与来源").OnClick(func() { s.showPackages = true })
-			} else {
-				d.skillSourceInspector(c)
-				if selected {
-					ui.Button(c, "返回所选文件").OnClick(func() { s.showPackages = false })
-				}
-			}
-		})
+		}
 	})
 }
 
 func (d *desktop) skillInstallView(c *ui.Context) {
 	s := &d.skills
 	state := s.targetState
-	ui.Column(c).FillWidth().Gap(8).Children(func() {
-		section(c, "本机安装")
-		workDetail(c, "本机用户级目标 · "+d.data.Device.Name, state.Path)
+	card(c).Children(func() {
+		cardHeader(c, icSkill, "Local installation", "User-level target on "+d.data.Device.Name, nil)
+		workDetail(c, "Target path", state.Path)
 		switch state.Status {
 		case "installed":
-			label := "已安装"
+			label := "Installed"
 			if len(state.Issues) != 0 {
-				label = "已登记安装 · 文件需要核对"
+				label = "Installed receipt present · files need review"
 			}
-			ui.Text(c, label+" · "+skillMode(state.Mode)).Bold().TextColor(ink)
+			strong(c, label+" · "+skillMode(state.Mode))
 			if state.Installed != nil && !state.Shared && state.Installed.SourceKind == "git" && s.candidate != "rollback" {
-				ui.Text(c, "候选 Git pin").TextColor(muted)
-				ui.TextInput(c, &s.ref).FillWidth().Label("候选 Git pin").Placeholder("完整 commit 或 refs/tags/<release>").Disabled(s.busy).OnChange(s.clearPreview)
+				muted(c, "Candidate Git pin")
+				ui.TextInput(c, &s.ref).FillWidth().Label("Candidate Git pin").Placeholder("Full commit or refs/tags/<release>").Disabled(s.busy).OnChange(s.clearPreview)
 			}
-			actionLabel := "预览" + skillAction(s.candidate, "") + "…"
+			actionLabel := "Preview " + skillAction(s.candidate, "") + "…"
 			noApprovedPin := s.candidate != "rollback" && state.Shared && s.sharedPin() == nil
 			ui.Button(c, actionLabel).Disabled(s.busy || state.Installed == nil || noApprovedPin).OnClick(func() { d.previewSkill(s.candidate) })
 		case "recovery-pending":
-			ui.Text(c, "发现未完成的操作。先核对恢复计划。").TextColor(workWarning)
-			ui.Button(c, "预览恢复…").Disabled(s.busy).OnClick(func() { d.previewSkill("install") })
+			banner(c, toneAttention, "Interrupted installation", "Review the recovery plan before any other change to this target.", nil)
+			ui.Button(c, "Preview recovery…").Disabled(s.busy).OnClick(func() { d.previewSkill("install") })
 		default:
-			ui.Text(c, "尚未安装").TextColor(muted)
-			ui.Button(c, "预览安装…").Disabled(s.busy || len(state.Issues) > 0).OnClick(func() { d.previewSkill("install") })
+			muted(c, "Not installed")
+			ui.Button(c, "Preview install…").Disabled(s.busy || len(state.Issues) > 0).OnClick(func() { d.previewSkill("install") })
 		}
 		if s.action == "" {
 			skillIssues(c, state.Issues)
@@ -286,21 +285,21 @@ func (d *desktop) skillInstallView(c *ui.Context) {
 
 func (s *skillsState) candidatePicker(c *ui.Context) {
 	state := s.targetState
-	update := "重新读取本机来源"
+	update := "Reread local source"
 	switch {
 	case state.Shared:
-		update = "已批准共享 pin"
+		update = "Approved shared pin"
 		if pin := s.sharedPin(); pin != nil {
-			update = "共享 · " + skillShortPin(pin)
+			update = "Shared · " + skillShortPin(pin)
 		} else {
-			update += "不可用"
+			update += " unavailable"
 		}
 	case state.Installed.SourceKind == "git":
-		update = "指定 Git pin"
+		update = "Specified Git pin"
 	}
-	rollback := "上次安装版本"
+	rollback := "Previous installed version"
 	if state.Previous != nil {
-		rollback = "上次本机 · " + skillShortPin(state.Previous)
+		rollback = "Previous local · " + skillShortPin(state.Previous)
 	}
 	choices, selected := []string{update}, update
 	if state.CanRollback {
@@ -309,7 +308,7 @@ func (s *skillsState) candidatePicker(c *ui.Context) {
 			selected = rollback
 		}
 	}
-	workPicker(c, "候选 pin", &selected, choices, s.busy, func() {
+	workPicker(c, "Candidate pin", &selected, choices, s.busy, func() {
 		s.candidate = "update"
 		if selected == rollback {
 			s.candidate = "rollback"
@@ -322,92 +321,97 @@ func (d *desktop) skillPlanView(c *ui.Context) {
 	s := &d.skills
 	p := &s.preview
 	title := skillAction(s.action, p.Status)
-	ui.Row(c).FillWidth().Gap(10).AlignItems(ui.Center).Wrap().Children(func() {
-		section(c, title+"计划")
-		if len(p.Issues) > 0 {
-			message := fmt.Sprintf("%d 项阻塞 · %s已暂停", len(p.Issues), title)
-			localChanges := 0
-			for _, file := range p.Files {
-				if file.LocalChanged {
-					localChanges++
+	ui.Column(c).FillWidth().Gap(sp3).Padding(sp4).Radius(radiusCard).Background(tk.Surface).Border(1.5, tk.BorderStrong).BorderStyle(ui.BorderDashed).Children(func() {
+		ui.Row(c).FillWidth().Gap(sp2).AlignItems(ui.Center).Wrap().Children(func() {
+			previewBadge(c)
+			section(c, title+" plan")
+			if len(p.Issues) > 0 {
+				localChanges := 0
+				for _, file := range p.Files {
+					if file.LocalChanged {
+						localChanges++
+					}
 				}
-			}
-			if localChanges > 0 {
-				message = fmt.Sprintf("%d 个文件有本地修改 · %s已暂停", localChanges, title)
-			}
-			ui.Text(c, message).Bold().Padding(4, 7).Radius(4).Background(workWarningBG).TextColor(workWarning)
-		} else if !s.scanned.IsZero() {
-			ui.Text(c, "已重新扫描 · 0 项阻塞 · "+s.scanned.Local().Format("15:04:05")).TextColor(ink)
-		}
-	})
-	if s.busy {
-		ui.Text(c, "正在处理 "+s.name+" · "+s.target+"…").TextColor(muted)
-		return
-	}
-	if p.Status == "" {
-		ui.Button(c, "重新扫描并生成计划").OnClick(func() { d.previewSkill(s.action) })
-		return
-	}
-	if len(p.Issues) == 0 && s.scanned.IsZero() {
-		switch p.Status {
-		case "unchanged":
-			ui.Text(c, "候选 pin 与本机安装一致。").TextColor(muted)
-		case "installed":
-			ui.Text(c, "此目标已是计划版本。").TextColor(muted)
-		default:
-			ui.Textf(c, "%d 项文件记录 · 等待确认", len(p.Files)).TextColor(muted)
-		}
-	}
-	if len(p.Files) > 0 {
-		s.table.Selected = &s.row
-		s.table.Key = func(row int) any { return p.Files[row].Path }
-		s.table.Label = func(row int) string { return p.Files[row].Path }
-		columns := []ui.TableColumn{{Title: "目标文件"}, {Title: "计划", Width: 72}, {Title: "本机副本", Width: 90}}
-		ui.Table(c, &s.table, columns, len(p.Files), func(row, col int) {
-			file := p.Files[row]
-			value := file.Path
-			if col == 1 {
-				value = skillFileAction(file)
-			}
-			if col == 2 {
-				switch {
-				case file.LocalChanged:
-					value = "本地修改"
-				case file.Before == nil:
-					value = "目标不存在"
-				default:
-					value = "与记录一致"
+				message := fmt.Sprintf("%d blocking issues · %s paused", len(p.Issues), title)
+				if localChanges > 0 {
+					message = fmt.Sprintf("%d files have local drift · %s paused", localChanges, title)
 				}
+				pill(c, toneAttention, message)
+			} else if !s.scanned.IsZero() {
+				pill(c, toneOk, "Rescanned · 0 blockers · "+s.scanned.Local().Format("15:04:05"))
 			}
-			ui.Text(c, value).NoWrap().Ellipsis("…")
-		}).FillWidth().Height(float32(min(8, len(p.Files))+1)*31 + 10).OnChange(func() {
-			if s.row >= 0 && s.row < len(p.Files) {
-				s.showLocal = p.Files[s.row].LocalChanged
-			}
-			s.updateDiff()
 		})
-	}
-	ui.Row(c).FillWidth().Gap(16).Wrap().Children(func() {
-		if p.Before != nil && p.Before.Digest != "" {
-			ui.Text(c, "本机已装 · "+skillShortPin(p.Before)).TextColor(muted)
+		if s.busy {
+			muted(c, "Building "+s.name+" · "+s.target+" plan…")
+			return
 		}
-		if p.After != nil {
-			ui.Text(c, "候选包 · "+skillShortPin(p.After)).TextColor(ink)
+		if p.Status == "" {
+			ui.Button(c, "Rescan and build plan").OnClick(func() { d.previewSkill(s.action) })
+			return
 		}
+		if len(p.Issues) == 0 && s.scanned.IsZero() {
+			switch p.Status {
+			case "unchanged":
+				muted(c, "The candidate pin matches the local installation.")
+			case "installed":
+				muted(c, "This target already has the planned version.")
+			default:
+				muted(c, fmt.Sprintf("%d file records · waiting for confirmation", len(p.Files)))
+			}
+		}
+		if len(p.Files) > 0 {
+			s.table.Selected = &s.row
+			s.table.Key = func(row int) any { return p.Files[row].Path }
+			s.table.Label = func(row int) string { return p.Files[row].Path }
+			columns := []ui.TableColumn{{Title: "Target file"}, {Title: "Plan", Width: 82}, {Title: "Local copy", Width: 110}}
+			ui.Table(c, &s.table, columns, len(p.Files), func(row, col int) {
+				file := p.Files[row]
+				value := file.Path
+				if col == 1 {
+					value = skillFileAction(file)
+				}
+				if col == 2 {
+					switch {
+					case file.LocalChanged:
+						value = "Local drift"
+					case file.Before == nil:
+						value = "Target absent"
+					default:
+						value = "Matches receipt"
+					}
+				}
+				ui.Text(c, value).NoWrap().Ellipsis("…").Tooltip(value)
+			}).FillWidth().Height(float32(min(8, len(p.Files))+1)*31 + 10).OnChange(func() {
+				if s.row >= 0 && s.row < len(p.Files) {
+					s.showLocal = p.Files[s.row].LocalChanged
+				}
+				s.updateDiff()
+			})
+		}
+		ui.Row(c).FillWidth().Gap(sp4).Wrap().Children(func() {
+			if p.Before != nil && p.Before.Digest != "" {
+				muted(c, "Installed · "+skillShortPin(p.Before))
+			}
+			if p.After != nil {
+				strong(c, "Candidate · "+skillShortPin(p.After))
+			}
+		})
+		if s.diff != nil {
+			s.skillDiffView(c)
+		}
+		scope := "Writes only the local user-level target and installation receipt."
+		if s.sharedPin() != nil {
+			scope += " The approved shared pin remains unchanged."
+		}
+		muted(c, scope)
+		confirmToken(c, confirmSpec{tokenLabel: "Skill plan token", token: p.Confirmation})
+		ui.Row(c).Gap(sp2).Wrap().Children(func() {
+			ui.Button(c, "Rescan and build plan").OnClick(func() { d.previewSkill(s.action) })
+			ui.Spacer(c)
+			ui.PrimaryButton(c, "Confirm "+title).Disabled(p.Confirmation == "" || s.err != nil).OnClick(d.confirmSkill)
+		})
+		skillIssues(c, p.Issues)
 	})
-	if s.diff != nil {
-		s.skillDiffView(c)
-	}
-	scope := "写入本机用户级目标和安装回执。"
-	if s.sharedPin() != nil {
-		scope += "共享安装意图保留原值。"
-	}
-	ui.Text(c, scope).FillWidth().TextColor(muted)
-	ui.Row(c).Gap(8).Wrap().Children(func() {
-		ui.Button(c, "重新扫描并生成计划").OnClick(func() { d.previewSkill(s.action) })
-		ui.PrimaryButton(c, "确认"+title).Disabled(p.Confirmation == "" || s.err != nil).OnClick(d.confirmSkill)
-	})
-	skillIssues(c, p.Issues)
 }
 
 func (s *skillsState) sharedPin() *app.SkillPackage {
@@ -421,70 +425,74 @@ func (s *skillsState) sharedPin() *app.SkillPackage {
 
 func (s *skillsState) skillDiffView(c *ui.Context) {
 	file := s.preview.Files[s.row]
-	label := "已安装版本 → 候选版本"
+	label := "Installed version → candidate version"
 	switch {
 	case s.showLocal:
-		label = "已安装版本 → 当前本机文件"
+		label = "Installed version → current local file (drift)"
 	case s.action == "install":
-		label = "目标文件 → 将写入的版本"
+		label = "Existing target file → version to be written"
 	}
-	ui.Text(c, label+" · "+file.Path).Bold().TextColor(ink)
-	editor.DiffView(c, s.diff).FillWidth().Height(132)
+	ui.Text(c, label+" · "+file.Path).Bold().TextColor(tk.Text)
+	editor.DiffView(c, s.diff).FillWidth().Height(160)
 }
 
 func (d *desktop) skillSourceInspector(c *ui.Context) {
 	s := &d.skills
-	section(c, "安装意图与来源")
-	if pin := s.sharedPin(); pin != nil {
-		workDetail(c, "共享 pin", skillPin(pin))
-		workDetail(c, "共享来源", skillSource(pin))
-	}
-	if pkg := s.targetState.Installed; pkg != nil {
-		ui.Divider(c)
-		workDetail(c, "本机已装 pin", skillPin(pkg))
-		workDetail(c, "安装来源", skillSource(pkg))
-		if pkg.Commit != "" {
-			workDetail(c, "已装包 SHA-256", pkg.Digest)
+	card(c).Children(func() {
+		cardHeader(c, icLayers, "Installation intent and source", "Approved shared intent is independent of the local receipt.", nil)
+		if pin := s.sharedPin(); pin != nil {
+			workDetail(c, "Shared pin", skillPin(pin))
+			workDetail(c, "Shared source", skillSource(pin))
 		}
-		workDetail(c, "所有权", "本设备 · CtxFerry · "+skillMode(s.targetState.Mode))
-	} else if pkg := s.targetState.Available; pkg != nil {
-		workDetail(c, "可安装 pin", skillPin(pkg))
-		workDetail(c, "包来源", skillSource(pkg))
-	}
-	if pkg := s.preview.After; pkg != nil {
-		ui.Divider(c)
-		workDetail(c, "候选 pin", skillPin(pkg))
-		workDetail(c, "候选来源", skillSource(pkg))
-		workDetail(c, "许可证", pkg.License)
-		if pkg.Commit != "" {
-			workDetail(c, "候选包 SHA-256", pkg.Digest)
+		if pkg := s.targetState.Installed; pkg != nil {
+			ui.Divider(c)
+			workDetail(c, "Installed pin", skillPin(pkg))
+			workDetail(c, "Installation source", skillSource(pkg))
+			if pkg.Commit != "" {
+				workDetail(c, "Installed package SHA-256", pkg.Digest)
+			}
+			workDetail(c, "Ownership", "This device · CtxFerry · "+skillMode(s.targetState.Mode))
+		} else if pkg := s.targetState.Available; pkg != nil {
+			workDetail(c, "Available pin", skillPin(pkg))
+			workDetail(c, "Package source", skillSource(pkg))
 		}
-		if s.preview.Link != "" {
-			workDetail(c, "软链来源", s.preview.Link)
+		if pkg := s.preview.After; pkg != nil {
+			ui.Divider(c)
+			workDetail(c, "Candidate pin", skillPin(pkg))
+			workDetail(c, "Candidate source", skillSource(pkg))
+			workDetail(c, "License", pkg.License)
+			if pkg.Commit != "" {
+				workDetail(c, "Candidate package SHA-256", pkg.Digest)
+			}
+			if s.preview.Link != "" {
+				workDetail(c, "Symlink source", s.preview.Link)
+			}
 		}
-	}
+	})
 }
 
 func (s *skillsState) skillFileInspector(c *ui.Context) {
 	file := s.preview.Files[s.row]
-	section(c, "所选目标文件")
-	workDetail(c, skillFileAction(file), filepath.Join(s.preview.Path, filepath.FromSlash(file.Path)))
-	if file.LocalChanged {
-		ui.Text(c, "本地修改 · 与安装回执不同").Bold().TextColor(workWarning)
-	}
-	skillFileDigest(c, "已安装文件", file.Before)
-	skillFileDigest(c, "候选文件", file.After)
-	if file.LocalChanged {
-		skillFileDigest(c, "本机文件", file.Local)
-		ui.Button(c, "查看本地修改").Disabled(s.showLocal).OnClick(func() {
-			s.showLocal = true
-			s.updateDiff()
-		})
-		ui.Button(c, "查看候选变更").Disabled(!s.showLocal).OnClick(func() {
-			s.showLocal = false
-			s.updateDiff()
-		})
-	}
+	card(c).Children(func() {
+		cardHeader(c, icFile, "Selected target file", skillFileAction(file), nil)
+		workDetail(c, "Destination", filepath.Join(s.preview.Path, filepath.FromSlash(file.Path)))
+		if file.LocalChanged {
+			banner(c, toneAttention, "Local drift", "The current file differs from the installation receipt. Candidate and drift diffs are separate views.", nil)
+		}
+		skillFileDigest(c, "Installed file", file.Before)
+		skillFileDigest(c, "Candidate file", file.After)
+		if file.LocalChanged {
+			skillFileDigest(c, "Current local file", file.Local)
+			ui.Button(c, "View installed → local drift").Disabled(s.showLocal).OnClick(func() {
+				s.showLocal = true
+				s.updateDiff()
+			})
+			ui.Button(c, "View installed → candidate").Disabled(!s.showLocal).OnClick(func() {
+				s.showLocal = false
+				s.updateDiff()
+			})
+		}
+	})
 }
 
 func skillFileDigest(c *ui.Context, title string, file *app.DesktopSkillText) {
@@ -493,15 +501,15 @@ func skillFileDigest(c *ui.Context, title string, file *app.DesktopSkillText) {
 	}
 	label := title + " SHA-256"
 	if file.Exec {
-		label += " · 可执行"
+		label += " · executable"
 	}
 	switch file.Kind {
 	case "binary":
-		label += " · 二进制"
+		label += " · binary"
 	case "large":
-		label += " · 超过文本预览上限"
+		label += " · above text preview limit"
 	case "unavailable":
-		label = title + " · 内容不可预览"
+		label = title + " · content unavailable for preview"
 	}
 	workDetail(c, label, file.Digest)
 }
@@ -540,13 +548,13 @@ func skillIssues(c *ui.Context, issues []app.SkillProblem) {
 		message := issue.Message
 		switch issue.Code {
 		case "skill-external-edit":
-			message = "本机安装与回执不同。请先在外部处理这些文件，再重新扫描。"
+			message = "Local files differ from the installation receipt. Reconcile them externally, then rescan."
 		case "platform-unsupported":
-			message = "这个 Skill 不适用于本机平台。 " + issue.Message
+			message = "This Skill does not apply to the current platform. " + issue.Message
 		}
-		ui.Text(c, message+" · "+issue.Code).FillWidth().TextColor(workWarning)
+		ui.Text(c, message+" · "+issue.Code).FillWidth().TextColor(tk.Conflict)
 		for _, path := range issue.Paths {
-			ui.Text(c, path).FillWidth().Selectable().TextColor(workWarning)
+			ui.Text(c, path).FillWidth().Selectable().TextColor(tk.Conflict)
 		}
 	}
 }
@@ -554,35 +562,35 @@ func skillIssues(c *ui.Context, issues []app.SkillProblem) {
 func skillAction(action, status string) string {
 	switch action {
 	case "rollback":
-		return "回滚"
+		return "rollback"
 	case "update":
-		return "更新"
+		return "update"
 	default:
 		if status == "recovery-pending" {
-			return "恢复"
+			return "recovery"
 		}
-		return "安装"
+		return "install"
 	}
 }
 
 func skillFileAction(file app.DesktopSkillDiff) string {
 	switch {
 	case file.Before == nil && file.After != nil:
-		return "新增"
+		return "Add"
 	case file.Before != nil && file.After == nil:
-		return "删除"
+		return "Delete"
 	case file.Before != nil && file.After != nil && (file.Before.Digest != file.After.Digest || file.Before.Exec != file.After.Exec):
-		return "替换"
+		return "Replace"
 	default:
-		return "保留"
+		return "Keep"
 	}
 }
 
 func skillMode(mode string) string {
 	if mode == "symlink" {
-		return "受管软链"
+		return "Managed symlink"
 	}
-	return "受管复制"
+	return "Managed copy"
 }
 
 func skillPin(p *app.SkillPackage) string {
@@ -606,7 +614,7 @@ func skillShortPin(p *app.SkillPackage) string {
 
 func skillSource(p *app.SkillPackage) string {
 	if p.SourceKind == "private" {
-		return "工作区私有快照"
+		return "Workspace private snapshot"
 	}
 	if p.Subdir != "" && p.Subdir != "." {
 		return p.SourceURL + " · " + p.Subdir

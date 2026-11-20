@@ -37,6 +37,12 @@ func (s *secretsView) setReceipt(message string) {
 	s.receipt, s.receiptTarget = message, s.target()
 }
 
+func (d *desktop) openCredential(project, profile, task, requirement string) {
+	d.secrets = secretsView{project: project, profile: profile, task: task, requirement: requirement}
+	d.navigate(desktopRoute{Page: pageSecrets, ProjectID: project})
+	d.loadCredentials(project)
+}
+
 func (d *desktop) loadCredentials(project string) {
 	s := &d.secrets
 	if project == "" || s.wait || d.window == nil {
@@ -101,7 +107,7 @@ func (d *desktop) loadSlot() {
 }
 
 func (d *desktop) secretsPage(c *ui.Context) {
-	pageHeading(c, "凭据绑定", "逐项检查任务运行需要的条件")
+	pageHeader(c, "Credential bindings", "Map shared references without exposing values; check each local requirement independently.", nil)
 	if !d.managementReady(c) {
 		return
 	}
@@ -126,44 +132,47 @@ func (d *desktop) secretsPage(c *ui.Context) {
 			}
 		}
 	}
-	metrics(c, func() {
-		optionPicker(c, "项目", s.project, d.projectOptions(), s.wait, func(id string) {
-			d.navigate(desktopRoute{Page: pageSecrets, ProjectID: id})
-			d.loadCredentials(id)
-		})
-		optionPicker(c, "配置方案", s.profile, profiles, s.wait, func(id string) {
-			s.profile = id
-			d.loadSlot()
-		})
-		optionPicker(c, "任务", s.task, tasks, s.wait, d.chooseCredentialTask)
-		optionPicker(c, "槽位", s.requirement, slots, s.wait, func(id string) {
-			s.requirement = id
-			d.loadSlot()
+	card(c).Children(func() {
+		ui.Row(c).FillWidth().Gap(sp3).Wrap().Children(func() {
+			optionPicker(c, "Project", s.project, d.projectOptions(), s.wait, func(id string) {
+				d.navigate(desktopRoute{Page: pageSecrets, ProjectID: id})
+				d.loadCredentials(id)
+			})
+			optionPicker(c, "Profile", s.profile, profiles, s.wait, func(id string) { s.profile = id; d.loadSlot() })
+			optionPicker(c, "Task", s.task, tasks, s.wait, d.chooseCredentialTask)
+			optionPicker(c, "Requirement", s.requirement, slots, s.wait, func(id string) { s.requirement = id; d.loadSlot() })
 		})
 	})
+	if s.slot.Status.TaskID != "" {
+		scopeBar(c, []scopeItem{
+			{label: "Project", value: s.slot.Status.Project.Slug, id: s.project, icon: icFolder},
+			{label: "Profile", value: s.profile, icon: icLayers},
+			{label: "Task", value: s.slot.Status.Task, id: s.slot.Status.TaskID, icon: icTasks},
+			{label: "Requirement", value: s.requirement, icon: icKey},
+		}, nil)
+	}
 	showManagementError(c, s.issue)
 	if s.wait {
-		ui.Text(c, "正在处理当前凭据请求…").TextColor(muted)
+		muted(c, "Reading the selected credential requirement…")
 	}
 	if s.receipt != "" && s.receiptTarget == s.target() {
-		ui.Text(c, s.receipt).FillWidth().Padding(10, 12).Background(panel).Radius(6).TextColor(ink)
+		banner(c, toneOk, "Local check complete", s.receipt, nil)
 	}
 	switch {
 	case s.issue != "":
 		return
 	case !s.wait && len(profiles) == 0:
-		ui.Text(c, "此项目暂无共享配置方案。")
+		muted(c, "This Project has no shared Profiles.")
 	case !s.wait && len(tasks) == 0:
-		ui.Text(c, "此项目暂无声明凭据要求的任务。")
+		muted(c, "This Project has no Tasks declaring credential requirements.")
 	case s.slot.Status.TaskID != "":
-		managementColumns(c, func() {
-			d.secretConditions(c, requirement)
-		}, func() {
-			d.secretInspector(c)
-		})
+		managementColumns(c, func() { d.secretConditions(c, requirement) }, func() { d.secretInspector(c) })
 	default:
 		showManagementError(c, s.slotIssue)
 		showManagementError(c, s.slot.Issue)
+		if !s.wait && s.profile != "" && s.task != "" {
+			d.unmappedSlotHandoff(c, requirement)
+		}
 	}
 }
 
@@ -172,92 +181,98 @@ type conditionRow struct{ name, status, stamp string }
 func (d *desktop) secretConditions(c *ui.Context, requirement app.DesktopCredentialRequirement) {
 	s := &d.secrets
 	status := s.slot.Status
-	section(c, s.requirement)
-	bound := "未绑定"
-	if status.Bound {
-		bound = "已绑定"
-	} else if s.slot.Issue != "" && s.slot.Issue != "binding-missing" {
-		bound = "需处理"
-	}
-	rows := []conditionRow{
-		{"共享槽位绑定", bound, "当前配置"},
-		{"Provider 认证", authenticationLabel(status), timeLabel(s.authSeen)},
-		{"条目可读取", boolLabel(status.EntryRetrievable, "可读取", "不可读取"), timeLabel(s.entrySeen)},
-		{"资源可达", boolLabel(status.ResourceReachable, "TCP 可达", "TCP 不可达"), timeLabel(status.ReachabilitySeenAt)},
-		{"任务测试", "无运行证据", "—"},
-	}
-	ui.Table(c, nil, []ui.TableColumn{{Title: "条件"}, {Title: "状态", Width: 126}, {Title: "观察时间", Width: 158}}, len(rows), func(i, col int) {
-		r := rows[i]
-		if col == 1 {
-			statusLabel(c, r.status)
-			return
+	card(c).Children(func() {
+		cardHeader(c, icKey, s.requirement, requirement.Purpose+" · "+requirement.Type, nil)
+		bound := "Not mapped"
+		if status.Bound {
+			bound = "Mapped"
+		} else if s.slot.Issue != "" && s.slot.Issue != "binding-missing" {
+			bound = "Needs attention"
 		}
-		ui.Text(c, []string{r.name, r.status, r.stamp}[col])
-	}).FillWidth().Height(204)
+		rows := []conditionRow{
+			{"Shared credential binding", bound, "Current configuration"},
+			{"Provider authentication", authenticationLabel(status), timeLabel(s.authSeen)},
+			{"Entry readable", boolLabel(status.EntryRetrievable, "Readable", "Not readable"), timeLabel(s.entrySeen)},
+			{"Resource reachability", boolLabel(status.ResourceReachable, "TCP reachable", "TCP unreachable"), timeLabel(status.ReachabilitySeenAt)},
+			{"Task run", "No run evidence", "—"},
+		}
+		ui.Table(c, nil, []ui.TableColumn{{Title: "Condition"}, {Title: "State", Width: 140}, {Title: "Observed", Width: 165}}, len(rows), func(i, col int) {
+			r := rows[i]
+			if col == 1 {
+				statusLabel(c, r.status)
+				return
+			}
+			ui.Text(c, []string{r.name, r.status, r.stamp}[col])
+		}).FillWidth().Height(204)
+	})
 	showManagementError(c, s.slot.Issue)
 	showManagementError(c, s.slotIssue)
-	binding := "未绑定"
+	binding := "Not mapped"
 	if status.Binding != nil {
 		binding = status.Binding.Alias
 	}
-	ui.Row(c).FillWidth().Gap(12).Padding(12).Background(panel).Radius(6).AlignItems(ui.Center).Children(func() {
-		ui.Column(c).Grow(1).MinWidth(0).Gap(4).Children(func() {
-			ui.Text(c, "当前共享引用 · "+binding).Bold()
-			ui.Text(c, requirement.Purpose+" · "+requirement.Type).TextColor(muted)
-		})
-		label := "映射共享绑定…"
+	card(c).Children(func() {
+		cardHeader(c, icLink, "Shared reference · "+binding, "A mapping changes the shared reference, never the provider-held value.", nil)
+		label := "Map shared binding…"
 		if status.Bound {
-			label = "更换共享绑定…"
+			label = "Change shared binding…"
 		}
-		if ui.Button(c, label).Disabled(s.wait || s.slot.Resource.ID == "" || s.slot.Issue == "binding-conflict").Clicked() {
+		ui.Button(c, label).Disabled(s.wait || s.slot.Resource.ID == "" || s.slot.Issue == "binding-conflict").OnClick(func() {
 			s.draft = newBindingDraft(s.slot)
-		}
+		})
 	})
 	if s.draft != nil {
 		d.bindingEditor(c)
 	}
 	if resource := s.slot.Resource; resource.ID != "" {
-		ui.Divider(c)
-		ui.Row(c).FillWidth().AlignItems(ui.Center).Children(func() {
-			section(c, "关联资源")
-			ui.Spacer(c)
-			if ui.Button(c, "打开资源观察").Disabled(d.fleet.wait).Clicked() {
+		card(c).Children(func() {
+			cardHeader(c, icServer, "Resource match", "This requirement resolves through its declared Resource slot.", nil)
+			labelValue(c, "Mapped Resource", resource.Identity+" · "+resource.Stage)
+			labelValue(c, "Purpose", resource.Purpose)
+			linkButton(c, "Open Resource "+resource.Identity, icArrowR).AlignSelf(ui.Start).Disabled(d.fleet.wait).OnClick(func() {
 				d.navigate(desktopRoute{Page: pageFleet, ProjectID: s.project, RecordID: resource.ID})
 				d.loadFleet(s.project, resource.ID)
-			}
+			})
 		})
-		labelValue(c, "目标资源", resource.Identity+" · "+resource.Stage)
-		labelValue(c, "资源用途", resource.Purpose)
 	}
+}
+
+func (d *desktop) unmappedSlotHandoff(c *ui.Context, requirement app.DesktopCredentialRequirement) {
+	s := &d.secrets
+	card(c).Children(func() {
+		cardHeader(c, icLink, "Resolve the Resource slot first", "A credential mapping must match the Resource mapped to this requirement's slot.", nil)
+		detail(c, "Required slot", s.slot.Status.ResourceSlot)
+		muted(c, "Choose the intended Resource in Resources & environments, copy its full Resource UUID into this command, then run it and Refresh.")
+		d.commandBlock(c, desktopCommand(d.core.DataDir, "profile", "map-resource", s.profile, s.task, s.slot.Status.ResourceSlot, "<resource-uuid>"), true)
+		d.afterRun(c, "After the slot is mapped and reread, the compatible shared reference preview becomes available.")
+		ui.Button(c, "Open Resources & environments").AlignSelf(ui.Start).OnClick(func() {
+			d.navigate(desktopRoute{Page: pageFleet, ProjectID: s.project})
+		})
+	})
 }
 
 func (d *desktop) secretInspector(c *ui.Context) {
 	s := &d.secrets
 	binding := s.slot.Status.Binding
-	inspectorPanel(c, func() {
-		device := d.data.Device.Name + "（本机）"
+	card(c).Children(func() {
+		device := d.data.Device.Name + " · local"
 		system := environmentSystem(d.data.Device.OS, d.data.Device.Arch)
 		if binding == nil {
-			section(c, device)
-			inspectorField(c, "系统", system)
-			ui.Divider(c)
-			ui.Text(c, "映射共享引用后可检查当前环境的认证状态。").FillWidth()
+			cardHeader(c, icLaptop, device, system, nil)
+			muted(c, "Map a shared reference to check authentication in this execution environment.")
 			return
 		}
 		profile := binding.ProviderProfile
-		ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
-			section(c, providerLabel(profile.Provider)+" 认证")
-			ui.Spacer(c)
+		cardHeader(c, icKey, providerLabel(profile.Provider)+" authentication", device+" · "+system, func() {
 			statusLabel(c, authenticationLabel(s.slot.Status))
 		})
-		ui.Text(c, device+" · "+system).FillWidth().TextColor(muted)
-		inspectorField(c, "Provider 配置", profile.Name+" · "+profile.Method)
-		inspectorField(c, "绑定别名", binding.Alias)
+		inspectorField(c, "Provider profile", profile.Name+" · "+profile.Method)
+		inspectorField(c, "Binding alias", binding.Alias)
 		if binding.Locator.EntryID != "" {
-			inspectorField(c, "条目 ID", binding.Locator.EntryID)
+			inspectorField(c, "Entry ID", binding.Locator.EntryID)
 		} else {
-			inspectorField(c, "后端项目 · 环境", binding.Locator.ProjectID+" · "+binding.Locator.Environment)
-			inspectorField(c, "路径 · 键", binding.Locator.Path+" · "+binding.Locator.Key)
+			inspectorField(c, "Backend Project · environment", binding.Locator.ProjectID+" · "+binding.Locator.Environment)
+			inspectorField(c, "Path · key", binding.Locator.Path+" · "+binding.Locator.Key)
 		}
 		ui.Divider(c)
 		d.providerActions(c, profile)
@@ -282,53 +297,45 @@ func (d *desktop) providerActions(c *ui.Context, profile provider.Profile) {
 		var help string
 		switch {
 		case profile.Provider == infisical.Name && profile.Method == "personal":
-			help = "在本机通过 Infisical CLI 登录后，更新 CtxFerry 会话。"
+			help = "Sign in with the Infisical CLI in this environment, then adopt that session in CtxFerry."
 		case profile.Provider == bitwarden.Name:
-			help = "在本机通过 Bitwarden CLI 登录并解锁，再用 ctxferry provider login 载入会话。"
+			help = "Sign in and unlock the Bitwarden CLI, then use ctxferry provider login to adopt the session."
 		case profile.Method == "universal-auth":
-			help = "认证使用当前环境预先配置的机器身份。"
+			help = "Authentication uses the machine identity configured in this execution environment."
 		}
 		if help != "" {
-			ui.Text(c, help).FillWidth().TextColor(muted)
+			muted(c, help)
 		}
 	}
 	if s.providerIssue != "authentication-required" || authed == nil {
 		showManagementError(c, s.providerIssue)
 	}
 	if authed != nil && *authed {
-		if ui.PrimaryButton(c, "检查条目可读性").Disabled(s.wait).FillWidth().Clicked() {
-			d.checkBinding(true)
-		}
+		ui.PrimaryButton(c, "Check entry readability").Disabled(s.wait).FillWidth().OnClick(func() { d.checkBinding(true) })
 	}
-	ui.Row(c).FillWidth().Gap(8).Children(func() {
-		if ui.Button(c, "检查本机认证").Disabled(s.wait).Grow(1).Clicked() {
-			d.checkBinding(false)
-		}
-		if ui.Button(c, "更新本机会话").Disabled(s.wait).Grow(1).Clicked() {
-			d.loginForBinding()
-		}
+	ui.Row(c).FillWidth().Gap(sp2).Children(func() {
+		ui.Button(c, "Check local authentication").Disabled(s.wait).Grow(1).OnClick(func() { d.checkBinding(false) })
+		ui.Button(c, "Adopt configured session").Disabled(s.wait).Grow(1).OnClick(d.loginForBinding)
 	})
-	label := "在 Provider 中管理条目 ↗"
+	label := "Manage entry in provider ↗"
 	if profile.Provider == infisical.Name {
-		label = "打开 Infisical 控制台 ↗"
+		label = "Open Infisical console ↗"
 	}
-	if ui.Button(c, label).Disabled(s.wait).FillWidth().Clicked() {
-		d.openProvider(c.Services())
-	}
+	ui.Button(c, label).Disabled(s.wait).FillWidth().OnClick(func() { d.openProvider(c.Services()) })
 }
 
 func locatorFields(c *ui.Context, locator provider.Locator) {
 	if locator.EntryID != "" {
-		labelValue(c, "条目 ID", locator.EntryID)
+		labelValue(c, "Entry ID", locator.EntryID)
 		return
 	}
-	labelValue(c, "后端项目 · 环境", locator.ProjectID+" · "+locator.Environment)
-	labelValue(c, "路径 · 键", locator.Path+" · "+locator.Key)
+	labelValue(c, "Backend Project · environment", locator.ProjectID+" · "+locator.Environment)
+	labelValue(c, "Path · key", locator.Path+" · "+locator.Key)
 }
 
 func boolLabel(b *bool, yes, no string) string {
 	if b == nil {
-		return "未知"
+		return "Unknown"
 	}
 	if *b {
 		return yes
@@ -340,27 +347,27 @@ func authenticationLabel(s app.SecretStatus) string {
 	if s.Authentication != nil {
 		switch s.Authentication.State {
 		case provider.Authenticated:
-			return "已认证"
+			return "Authenticated"
 		case provider.Locked:
-			return "需解锁"
+			return "Unlock required"
 		case provider.Expired:
-			return "会话已过期"
+			return "Session expired"
 		case provider.SignedOut:
-			return "需登录"
+			return "Sign-in required"
 		}
 	}
-	return boolLabel(s.Authenticated, "已认证", "需登录")
+	return boolLabel(s.Authenticated, "Authenticated", "Sign-in required")
 }
 
 func statusLabel(c *ui.Context, label string) {
-	bg, fg := ui.Hex("#e9eeef"), ui.Hex("#394d55")
+	t := toneUnknown
 	switch label {
-	case "已绑定", "已认证", "可读取", "TCP 可达", "代理 TCP 可达":
-		bg, fg = ui.Hex("#e0eee7"), ui.Hex("#225844")
-	case "需登录", "需解锁", "会话已过期", "未绑定", "需处理", "不可读取", "TCP 不可达", "代理 TCP 不可达":
-		bg, fg = ui.Hex("#fcecca"), ui.Hex("#764703")
+	case "Mapped", "Authenticated", "Readable", "TCP reachable", "Proxy TCP reachable":
+		t = toneOk
+	case "Sign-in required", "Unlock required", "Session expired", "Not mapped", "Needs attention", "Not readable", "TCP unreachable", "Proxy TCP unreachable", "Previous observation":
+		t = toneAttention
 	}
-	ui.Text(c, label).Bold().Padding(3, 7).Radius(5).TextColor(fg).Background(bg)
+	pill(c, t, label)
 }
 
 func (s *secretsView) invalidateProviderResult() {
@@ -391,8 +398,8 @@ func (d *desktop) checkBinding(entry bool) {
 		}
 		if status.EntryRetrievable != nil {
 			s.entrySeen = nowLabel()
-			result := boolLabel(status.EntryRetrievable, "可读取", "不可读取")
-			s.setReceipt(fmt.Sprintf("%s 本机条目检查 · %s · %s / %s / %s / %s", d.data.Device.Name, result,
+			result := boolLabel(status.EntryRetrievable, "Readable", "Not readable")
+			s.setReceipt(fmt.Sprintf("%s · entry %s · %s / %s / %s / %s", d.data.Device.Name, result,
 				status.Project.Slug, status.Profile, status.Task, status.Requirement))
 		}
 	})
@@ -417,7 +424,7 @@ func (d *desktop) loginForBinding() {
 			s.slot.Status.Authentication = &result.Authentication
 			s.slot.Status.Authenticated = new(true)
 			s.authSeen = nowLabel()
-			s.setReceipt(fmt.Sprintf("已更新 %s 上的 %s / %s 会话。", d.data.Device.Name, providerLabel(result.Profile.Provider), result.Profile.Name))
+			s.setReceipt(fmt.Sprintf("Adopted the %s / %s session on %s.", providerLabel(result.Profile.Provider), result.Profile.Name, d.data.Device.Name))
 		}
 	})
 }

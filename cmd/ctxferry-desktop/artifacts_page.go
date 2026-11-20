@@ -14,9 +14,9 @@ import (
 )
 
 const (
-	allRuns    = "全部运行"
-	allDevices = "全部设备"
-	allContent = "全部状态"
+	allRuns    = "All runs"
+	allDevices = "All source devices"
+	allContent = "All content states"
 )
 
 type artifactsState struct {
@@ -31,6 +31,7 @@ type artifactsState struct {
 	checked               map[string]string
 	exported              app.ArtifactFetch
 	showRun               bool
+	displayLimit          int
 }
 
 func (d *desktop) setArtifactProject(project string) {
@@ -40,7 +41,7 @@ func (d *desktop) setArtifactProject(project string) {
 	}
 	a.project, a.run, a.device, a.content = project, allRuns, allDevices, allContent
 	d.route.ProjectID = project
-	a.row, a.table, a.showRun = -1, ui.ListState{}, false
+	a.row, a.table, a.showRun, a.displayLimit = -1, ui.ListState{}, false, 5
 	d.loadArtifacts()
 }
 
@@ -60,6 +61,9 @@ func (d *desktop) loadArtifacts() {
 			return
 		}
 		a.loading, a.loaded, a.items, a.err, a.checked = false, true, items, err, nil
+		if a.displayLimit == 0 {
+			a.displayLimit = 5
+		}
 		a.filterArtifacts()
 	})
 }
@@ -88,6 +92,14 @@ func (a *artifactsState) filterArtifacts() {
 	a.table = ui.ListState{}
 }
 
+func (a *artifactsState) shownArtifacts() []app.DesktopArtifact {
+	limit := a.displayLimit
+	if limit <= 0 {
+		limit = 5
+	}
+	return a.visible[:min(limit, len(a.visible))]
+}
+
 func (d *desktop) artifactsPage(c *ui.Context) {
 	a := &d.artifacts
 	runs, devices, contents := []string{allRuns}, []string{allDevices}, []string{allContent}
@@ -100,163 +112,174 @@ func (d *desktop) artifactsPage(c *ui.Context) {
 		slices.Sort(list[1:])
 	}
 	runs, devices, contents = slices.Compact(runs), slices.Compact(devices), slices.Compact(contents)
-	ui.Row(c).FillWidth().Gap(12).Wrap().Padding(12, 14).Radius(7).Background(panel).Children(func() {
-		d.projectPicker(c, a.project, false, a.loading || a.busy, d.setArtifactProject)
-		workPicker(c, "运行", &a.run, runs, a.project == "" || a.loading || a.busy, a.filterArtifacts)
-		workPicker(c, "来源设备", &a.device, devices, a.project == "" || a.loading || a.busy, a.filterArtifacts)
-		workPicker(c, "内容状态", &a.content, contents, a.project == "" || a.loading || a.busy, a.filterArtifacts)
+	card(c).Children(func() {
+		ui.Row(c).FillWidth().Gap(sp3).Wrap().Children(func() {
+			d.projectPicker(c, a.project, false, a.loading || a.busy, d.setArtifactProject)
+			workPicker(c, "Run", &a.run, runs, a.project == "" || a.loading || a.busy, a.filterArtifacts)
+			workPicker(c, "Source device", &a.device, devices, a.project == "" || a.loading || a.busy, a.filterArtifacts)
+			workPicker(c, "Content state", &a.content, contents, a.project == "" || a.loading || a.busy, a.filterArtifacts)
+		})
 	})
 	switch {
 	case a.loading || d.workProjects.loading:
-		ui.Text(c, "正在读取产物目录…").TextColor(muted)
+		muted(c, "Reading the artifact catalog…")
 		return
 	case a.err != nil:
-		workMessage(c, "产物目录读取失败", a.err)
+		workMessage(c, "The artifact catalog could not be read", a.err)
 		return
 	case a.project == "":
-		ui.Text(c, "工作区还没有可选项目。").TextColor(muted)
+		muted(c, "No subscribed Project is available for this scope.")
 		return
 	case len(a.items) == 0:
-		ui.Text(c, "这个项目还没有登记运行产物。").TextColor(muted)
+		card(c).Children(func() { muted(c, "This Project has no registered run artifacts.") })
 		return
 	case len(a.visible) == 0:
-		ui.Text(c, "当前筛选没有匹配的产物。").TextColor(muted)
-		ui.Button(c, "清除筛选").OnClick(func() {
-			a.run, a.device, a.content = allRuns, allDevices, allContent
-			a.filterArtifacts()
+		card(c).Children(func() {
+			muted(c, "No artifacts match the current filters.")
+			ui.Button(c, "Clear filters").OnClick(func() {
+				a.run, a.device, a.content = allRuns, allDevices, allContent
+				a.filterArtifacts()
+			})
 		})
 		return
 	}
-	ui.Row(c).FillWidth().Gap(16).AlignItems(ui.Start).Children(func() {
-		ui.Column(c).Grow(1).MinWidth(0).Gap(12).Children(func() {
-			section(c, fmt.Sprintf("运行产物 · %d 项", len(a.visible)))
+	muted(c, plural(len(a.visible), "artifact", "artifacts")+" · newest first")
+	managementColumns(c, func() {
+		card(c).Padding(0).Clip().Children(func() {
 			a.artifactTable(c)
-			if a.row >= 0 && a.row < len(a.visible) {
-				ui.Divider(c)
-				d.artifactRun(c, a.visible[a.row])
-			}
+			shown := len(a.shownArtifacts())
+			listFooter(c, fmt.Sprintf("Showing 1–%d of %d · newest first", shown, len(a.visible)), func() {
+				if shown < len(a.visible) {
+					ui.Button(c, fmt.Sprintf("Load %d older", len(a.visible)-shown)).OnClick(func() { a.displayLimit = len(a.visible) })
+				}
+			})
 		})
-		workInspector(c, func() {
-			if a.row >= 0 && a.row < len(a.visible) {
-				d.artifactInspector(c, a.visible[a.row])
-			}
-		})
+		if a.row >= 0 && a.row < len(a.visible) {
+			d.artifactRun(c, a.visible[a.row])
+		}
+	}, func() {
+		if a.row >= 0 && a.row < len(a.visible) {
+			d.artifactInspector(c, a.visible[a.row])
+		}
 	})
 }
 
 func (a *artifactsState) artifactTable(c *ui.Context) {
-	columns := []ui.TableColumn{{Title: "文件"}, {Title: "大小", Width: 74}, {Title: "内容状态", Width: 126}}
+	columns := []ui.TableColumn{{Title: "File"}, {Title: "Size", Width: 82}, {Title: "Content", Width: 150}}
 	a.table.Selected = &a.row
-	a.table.Key = func(row int) any { return a.visible[row].ID }
-	a.table.Label = func(row int) string { return a.visible[row].Payload.Name }
-	ui.Table(c, &a.table, columns, len(a.visible), func(row, col int) {
-		item := a.visible[row]
+	shown := a.shownArtifacts()
+	a.table.Key = func(row int) any { return shown[row].ID }
+	a.table.Label = func(row int) string { return shown[row].Payload.Name }
+	ui.Table(c, &a.table, columns, len(shown), func(row, col int) {
+		item := shown[row]
 		content := artifactContentLabel(item.Content)
-		if mark := a.checked[item.ID]; mark != "" && mark != "本机内容已校验" {
+		if mark := a.checked[item.ID]; mark != "" && mark != "Local content verified" {
 			content = mark
 		}
 		values := [3]string{item.Payload.Name, artifactSize(item.Payload.Size), content}
-		ui.Text(c, values[col]).NoWrap().Ellipsis("…")
-	}).FillWidth().Height(float32(min(9, len(a.visible))+1)*31 + 10).Disabled(a.busy).OnChange(func() {
+		ui.Text(c, values[col]).NoWrap().Ellipsis("…").Tooltip(values[col])
+	}).FillWidth().Height(float32(min(9, len(shown))+1)*31 + 10).Disabled(a.busy).OnChange(func() {
 		a.actionErr, a.showRun = nil, false
 	})
 }
 
 func (d *desktop) artifactRun(c *ui.Context, a app.DesktopArtifact) {
 	run := a.Run
-	ui.Row(c).FillWidth().Gap(10).Wrap().Children(func() {
-		section(c, "运行记录")
-		if run.SourceRevision != "" {
-			ui.Spacer(c)
-			label := "展开追溯信息"
-			if d.artifacts.showRun {
-				label = "收起追溯信息"
+	card(c).Children(func() {
+		cardHeader(c, icActivity, "Run record", run.Summary, func() {
+			if run.SourceRevision != "" {
+				label := "Show provenance"
+				if d.artifacts.showRun {
+					label = "Hide provenance"
+				}
+				ui.Button(c, label).OnClick(func() { d.artifacts.showRun = !d.artifacts.showRun })
 			}
-			ui.Button(c, label).OnClick(func() { d.artifacts.showRun = !d.artifacts.showRun })
+		})
+		device := run.DeviceID
+		if device == d.data.Device.ID {
+			device = d.data.Device.Name + " · current device"
+		}
+		kvGrid(c, []kvRow{
+			{k: "Source device", v: device + " · " + run.OS + "/" + run.Arch},
+			{k: "Run time", v: workTime(run.CreatedAt)},
+			{k: "Run ID", v: run.ID, mono: true},
+		})
+		if !d.artifacts.showRun {
+			return
+		}
+		workDetail(c, "Source revision", run.SourceRevision)
+		if run.Dirty {
+			workDetail(c, "Source state", "Local modifications · "+run.DiffID)
+		}
+		workDetail(c, "Profile", run.Profile)
+		workDetail(c, "Exit code", fmt.Sprint(run.ExitCode))
+		if len(run.ToolVersions) > 0 {
+			workDetail(c, "Tool versions", strings.Join(run.ToolVersions, " · "))
+		}
+		if len(run.Inputs) > 0 {
+			workDetail(c, "Inputs", strings.Join(run.Inputs, " · "))
+		}
+		if len(run.Uncompleted) > 0 {
+			workDetail(c, "Uncompleted scope", strings.Join(run.Uncompleted, " · "))
 		}
 	})
-	workDetail(c, "摘要", run.Summary)
-	device := run.DeviceID
-	if device == d.data.Device.ID {
-		device = d.data.Device.Name + " · 当前设备"
-	}
-	workDetail(c, "来源设备", device+" · "+run.OS+"/"+run.Arch)
-	workDetail(c, "运行时间", workTime(run.CreatedAt))
-	workDetail(c, "运行 ID", run.ID)
-	if !d.artifacts.showRun {
-		return
-	}
-	workDetail(c, "源修订", run.SourceRevision)
-	if run.Dirty {
-		workDetail(c, "源状态", "有本地修改 "+run.DiffID)
-	}
-	workDetail(c, "配置方案", run.Profile)
-	workDetail(c, "退出码", fmt.Sprint(run.ExitCode))
-	if len(run.ToolVersions) > 0 {
-		workDetail(c, "工具版本", strings.Join(run.ToolVersions, " · "))
-	}
-	if len(run.Inputs) > 0 {
-		workDetail(c, "输入", strings.Join(run.Inputs, " · "))
-	}
-	if len(run.Uncompleted) > 0 {
-		workDetail(c, "未完成范围", strings.Join(run.Uncompleted, " · "))
-	}
 }
 
 func (d *desktop) artifactInspector(c *ui.Context, item app.DesktopArtifact) {
 	a := &d.artifacts
-	section(c, item.Payload.Name)
-	label := artifactContentLabel(item.Content)
-	if mark := a.checked[item.ID]; mark != "" {
-		label = mark
-	}
-	ui.Text(c, label).Bold().Padding(5, 8).Radius(5).Background(ui.Hex("#e1ebe5")).TextColor(ink)
-	ui.Divider(c)
-	completed := strings.Join(item.Run.Completed, " · ")
-	if completed == "" {
-		completed = "运行记录未注明"
-		if item.Run.SourceRevision == "" {
-			completed = "同步记录只含运行摘要"
+	card(c).Children(func() {
+		cardHeader(c, icPackage, item.Payload.Name, "Artifact metadata and content evidence", nil)
+		label := artifactContentLabel(item.Content)
+		if mark := a.checked[item.ID]; mark != "" {
+			label = mark
 		}
-	}
-	workDetail(c, "完成范围", completed)
-	size := artifactSize(item.Payload.Size)
-	if item.Payload.Size >= 1024 {
-		size += fmt.Sprintf(" · %d B", item.Payload.Size)
-	}
-	workDetail(c, "原始大小", size)
-	if s := item.Sync; s != nil {
-		workDetail(c, "同步内容", artifactSyncLabel(s))
-	}
-	workDetail(c, "SHA-256", item.Payload.SHA256)
-	if item.Location != "" {
-		kind := "本机缓存位置"
-		if item.Payload.Storage == "shared" {
-			kind = "同步快照对象"
+		pill(c, toneUnknown, label)
+		completed := strings.Join(item.Run.Completed, " · ")
+		if completed == "" {
+			completed = "Run record does not state a completion scope"
+			if item.Run.SourceRevision == "" {
+				completed = "Synchronized record contains only a run summary"
+			}
 		}
-		workDetail(c, kind, item.Location)
-	} else if item.Content == "metadata-only" {
-		workDetail(c, "本机内容位置", "仅保留元数据")
-	}
-	for _, obs := range item.Observations {
-		if obs.DeviceID == d.data.Device.ID {
-			workDetail(c, "本机同步校验", workTime(obs.ObservedAt))
-			break
+		workDetail(c, "Completion scope", completed)
+		size := artifactSize(item.Payload.Size)
+		if item.Payload.Size >= 1024 {
+			size += fmt.Sprintf(" · %d B", item.Payload.Size)
 		}
-	}
-	if a.actionErr != nil {
-		workMessage(c, "内容操作未完成", a.actionErr)
-	}
-	if a.exported.ID == item.ID {
-		workDetail(c, "已校验并导出", a.exported.Output)
-	}
-	if item.Content == "cache" || item.Content == "snapshot" {
-		ui.Button(c, "校验本机内容").FillWidth().Disabled(a.busy).OnClick(func() { d.checkArtifact(item) })
-		ui.PrimaryButton(c, "校验并导出…").FillWidth().Disabled(a.busy || d.window == nil).OnClick(func() { d.exportArtifact(item) })
-	}
-	if a.busy {
-		ui.Text(c, "正在处理本机内容…").TextColor(muted)
-	}
+		workDetail(c, "Original size", size)
+		if s := item.Sync; s != nil {
+			workDetail(c, "Synchronized content", artifactSyncLabel(s))
+		}
+		workDetail(c, "SHA-256", item.Payload.SHA256)
+		if item.Location != "" {
+			kind := "Local cache location"
+			if item.Payload.Storage == "shared" {
+				kind = "Synchronized snapshot object"
+			}
+			workDetail(c, kind, item.Location)
+		} else if item.Content == "metadata-only" {
+			workDetail(c, "Local content location", "Metadata only · locate the original bytes on the source device")
+		}
+		for _, obs := range item.Observations {
+			if obs.DeviceID == d.data.Device.ID {
+				workDetail(c, "Local sync verification", workTime(obs.ObservedAt))
+				break
+			}
+		}
+		if a.actionErr != nil {
+			workMessage(c, "Content operation did not complete", a.actionErr)
+		}
+		if a.exported.ID == item.ID {
+			banner(c, toneOk, "Bytes verified and exported", a.exported.Output, nil)
+		}
+		if item.Content == "cache" || item.Content == "snapshot" {
+			ui.Button(c, "Verify local content").FillWidth().Disabled(a.busy).OnClick(func() { d.checkArtifact(item) })
+			ui.PrimaryButton(c, "Verify and export…").FillWidth().Disabled(a.busy || d.window == nil).OnClick(func() { d.exportArtifact(item) })
+		}
+		if a.busy {
+			muted(c, "Verifying local content…")
+		}
+	})
 }
 
 func (d *desktop) checkArtifact(item app.DesktopArtifact) {
@@ -278,7 +301,7 @@ func (d *desktop) exportArtifact(item app.DesktopArtifact) {
 	a.busy, a.actionErr = true, nil
 	desktopJob(d, func(ctx context.Context) (app.ArtifactFetch, error) {
 		path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
-			Parent: window, Title: "校验并导出产物", DefaultPath: item.Payload.Name, CreateDirectories: true,
+			Parent: window, Title: "Verify and export artifact", DefaultPath: item.Payload.Name, CreateDirectories: true,
 		})
 		if err != nil || path == "" {
 			return app.ArtifactFetch{}, err
@@ -304,14 +327,14 @@ func (a *artifactsState) recordArtifactCheck(id string, err error) {
 		a.checked = map[string]string{}
 	}
 	if err == nil {
-		a.checked[id] = "本机内容已校验"
+		a.checked[id] = "Local content verified"
 		return
 	}
 	switch app.Classify(err).Code {
 	case "artifact-hash-mismatch", "artifact-invalid", "artifact-changed":
-		a.checked[id] = "完整性校验失败"
+		a.checked[id] = "Integrity check failed"
 	case "artifact-unavailable":
-		a.checked[id] = "本机内容已缺失"
+		a.checked[id] = "Local content is missing"
 	}
 }
 
@@ -322,42 +345,42 @@ func artifactRunLabel(run app.ArtifactRun) string {
 func artifactContentLabel(content string) string {
 	switch content {
 	case "cache":
-		return "本机缓存"
+		return "Local cache"
 	case "snapshot":
-		return "同步快照可导出"
+		return "Snapshot exportable"
 	case "missing":
-		return "本机内容缺失"
+		return "Local content missing"
 	case "invalid":
-		return "内容异常"
+		return "Content invalid"
 	case "unavailable":
-		return "本机内容不可读取"
+		return "Local content unreadable"
 	default:
-		return "仅元数据"
+		return "Metadata only"
 	}
 }
 
 func artifactSyncLabel(s *app.ArtifactSyncStatus) string {
 	if s.Reason != "" {
 		reason := map[string]string{
-			"metadata-selected": "选择仅同步元数据", "payload-size": "文件超过同步大小上限",
-			"sensitive": "敏感内容", "excluded-format": "文件类型不纳入同步", "history-pause": "Git 历史体积限制",
-			"payload-unavailable": "发布时内容不可用", "publication-budget": "发布额度限制", "staging-budget": "暂存额度限制",
+			"metadata-selected": "Metadata-only selected", "payload-size": "Payload exceeds sync size limit",
+			"sensitive": "Sensitive content", "excluded-format": "Format excluded from sync", "history-pause": "Git history size limit",
+			"payload-unavailable": "Payload unavailable at publication", "publication-budget": "Publication budget limit", "staging-budget": "Staging budget limit",
 		}[s.Reason]
 		if reason == "" {
 			reason = s.Reason
 		}
 		if s.State == "pending" {
-			return "待发布 · 仅元数据 · " + reason
+			return "Waiting · metadata only · " + reason
 		}
-		return "仅元数据 · " + reason
+		return "Metadata only · " + reason
 	}
 	switch s.State {
 	case "shared":
-		return "元数据和文件"
+		return "Metadata and bytes"
 	case "pending":
-		return "待发布"
+		return "Waiting for publication"
 	case "withdrawn":
-		return "已撤回"
+		return "Withdrawn"
 	default:
 		return s.State
 	}

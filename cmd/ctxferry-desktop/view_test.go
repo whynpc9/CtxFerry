@@ -19,7 +19,7 @@ func requireLabels(t *testing.T, window *ui.Tester, labels ...string) {
 	}
 }
 
-func TestNavigateOverviewAndSync(t *testing.T) {
+func TestNavigateHomeAndSync(t *testing.T) {
 	d := desktop{route: desktopRoute{Page: pageOverview}, data: app.DesktopSnapshot{
 		ReadAt:       time.Now(),
 		QueuePending: 1,
@@ -34,20 +34,20 @@ func TestNavigateOverviewAndSync(t *testing.T) {
 			{ID: "conflict", ProjectID: "project", Project: "sample", Title: "conflict title", Conflict: true},
 		},
 	}}
-	window := ui.NewTester(d.view, 1180, 750)
-	requireLabels(t, window, "/checkout/sample", "查看冲突")
-	if err := window.Click("查看冲突"); err != nil {
+	window := ui.NewTester(d.view, 1280, 800)
+	requireLabels(t, window, "/checkout/sample", "Queue · Conflicts")
+	if err := window.Click("Queue · Conflicts"); err != nil {
 		t.Fatal(err)
 	}
-	requireLabels(t, window, "https://github.com/example/workspace.git", "conflict title", "创建备份…")
+	requireLabels(t, window, "conflict title", "Open comparison")
 	if _, ok := window.Access("pending title"); ok {
 		t.Fatal("conflict filter exposed a pending-only record")
 	}
-	if err := window.Click("设备总览"); err != nil {
+	if err := window.Click("Home"); err != nil {
 		t.Fatal(err)
 	}
 	requireLabels(t, window, "/checkout/sample")
-	if err := window.Click("同步"); err != nil {
+	if err := window.Click("Sync"); err != nil {
 		t.Fatal(err)
 	}
 	requireLabels(t, window, "conflict title")
@@ -57,28 +57,31 @@ func TestNavigateOverviewAndSync(t *testing.T) {
 }
 
 func TestSyncWithoutRemoteShowsLocalEvidence(t *testing.T) {
-	d := desktop{route: desktopRoute{Page: pageSync}, data: app.DesktopSnapshot{
+	d := desktop{route: desktopRoute{Page: pageSync}, syncState: syncPageState{tab: syncQueueTab}, data: app.DesktopSnapshot{
 		QueuePending: 1,
 		ReadAt:       time.Date(2026, 11, 20, 12, 34, 56, 0, time.Local),
 		Sync:         app.SyncResult{State: "disabled", Pending: 1},
 		Queue:        []app.DesktopQueueRecord{{ID: "local-pending-record", Pending: true}},
 	}}
-	window := ui.NewTester(d.view, 1180, 750)
-	requireLabels(t, window, "尚未配置同步仓库", "local-pending-record", "连接私有仓库",
-		"本机快照 · 2026-11-20 12:34:56", "ctxferry sync init --preview PREVIEW_ID")
+	window := ui.NewTester(d.view, 1280, 800)
+	requireLabels(t, window, "local-pending-record", "Read 12:34:56")
+	if err := window.Click("Repository"); err != nil {
+		t.Fatal(err)
+	}
+	requireLabels(t, window, "No private repository configured", "Connect a private repository")
 }
 
 func TestCatalogFailuresAndIncompleteSnapshot(t *testing.T) {
 	d := desktop{route: desktopRoute{Page: pageOverview}, err: store.ErrNotInitialized}
-	window := ui.NewTester(d.view, 780, 480)
-	requireLabels(t, window, "尚未初始化工作区")
+	window := ui.NewTester(d.view, 1024, 680)
+	requireLabels(t, window, "Welcome to CtxFerry")
 	d.err = store.ErrUnsupportedSchema
-	window = ui.NewTester(d.view, 780, 480)
-	requireLabels(t, window, "本机目录来自较新版本")
+	window = ui.NewTester(d.view, 1024, 680)
+	requireLabels(t, window, "This catalog is from a newer CtxFerry")
 	d.err = errors.New("sensitive database diagnostics")
 	d.data = app.DesktopSnapshot{ReadAt: time.Now(), SyncErr: d.err}
-	window = ui.NewTester(d.view, 780, 480)
-	requireLabels(t, window, "刷新失败，正在显示上次读取的本机快照。请检查当前工作区后重试。", "未知")
+	window = ui.NewTester(d.view, 1024, 680)
+	requireLabels(t, window, "Refresh failed; showing a stale snapshot", "Sync evidence is unavailable")
 	if _, ok := window.Access("sensitive database diagnostics"); ok {
 		t.Fatal("raw diagnostics appeared in the desktop")
 	}

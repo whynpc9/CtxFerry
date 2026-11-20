@@ -42,7 +42,7 @@ func TestDesktopLocalSnapshot(t *testing.T) {
 	defer db.Close()
 	for _, query := range []string{
 		"INSERT INTO sync_config VALUES(1,'https://github.com/example/workspace.git','workspace','main','identity')",
-		"INSERT INTO sync_state(singleton,epoch,confirmed_head,history_bytes) VALUES(1,'test','head',4096)",
+		"INSERT INTO sync_state(singleton,epoch,confirmed_head,history_bytes,pending) VALUES(1,'test','head',4096,'{\"previewId\":\"original-preview\"}')",
 		"INSERT INTO sync_conflicts(token,id,local,remote,head,active) VALUES('conflict-id','record',X'00',X'00','head',1)",
 		"INSERT INTO sync_outbox(id,proposed,operation_id,epoch) VALUES('pending-record',X'00','operation','test')",
 	} {
@@ -56,6 +56,9 @@ func TestDesktopLocalSnapshot(t *testing.T) {
 	}
 	if s.Sync.State != "conflict" || s.Sync.Config.Branch != "main" || s.Sync.Head != "head" || s.Sync.History.RawBytes != 4096 || len(s.Sync.Conflicts) != 1 {
 		t.Fatalf("unexpected sync evidence: %+v", s.Sync)
+	}
+	if !s.PublicationPending || s.PublicationPreview != "original-preview" {
+		t.Fatalf("publication journal: %+v", s)
 	}
 	if len(s.PendingIDs) != s.Sync.Pending || s.QueuePending != 1 {
 		t.Fatalf("pending records %v, count %d, waiting %d", s.PendingIDs, s.Sync.Pending, s.QueuePending)

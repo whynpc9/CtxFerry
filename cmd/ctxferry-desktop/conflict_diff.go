@@ -49,10 +49,10 @@ func conflictTextDiffs(detail app.ConflictDetail) [3]map[string]*conflictTextDif
 
 func (diff *conflictTextDiff) show(c *ui.Context, label string) {
 	if diff.parts == nil {
-		ui.Text(c, label+" · 有差异").FontSize(13).Bold().TextColor(muted)
+		ui.Text(c, label+" · changed").FontSize(13).Bold().TextColor(tk.Muted)
 		value := diff.version
 		ui.TextArea(c, &value).ReadOnly(true).Label(label).Height(112).FillWidth()
-		ui.Collapsible(c, "查看逐行增删", &diff.open, func() {
+		ui.Collapsible(c, "View line additions and removals", &diff.open, func() {
 			if diff.viewer == nil {
 				diff.viewer = &editor.DiffState{
 					Old: editor.NewBuffer(diff.base), New: editor.NewBuffer(diff.version),
@@ -80,18 +80,18 @@ func (diff *conflictTextDiff) show(c *ui.Context, label string) {
 		spans = append(spans, span)
 	}
 	ui.Row(c).Gap(8).Children(func() {
-		ui.Text(c, label).FontSize(13).Bold().TextColor(muted)
+		ui.Text(c, label).FontSize(13).Bold().TextColor(tk.Muted)
 		if added {
-			ui.Text(c, "+ 新增").FontSize(13).Bold().TextColor(ui.Hex("#256042"))
+			ui.Text(c, "+ Added").FontSize(13).Bold().TextColor(ui.Hex("#256042"))
 		}
 	})
 	if diff.version == "" {
-		ui.Text(c, "（空文本）").TextColor(muted)
+		ui.Text(c, "(empty text)").TextColor(tk.Muted)
 	} else {
 		ui.RichText(c, spans...).FontSize(15).TextColor(ink).Selectable()
 	}
 	if len(removed) > 0 {
-		ui.Text(c, "− 移除").FontSize(13).Bold().TextColor(ui.Hex("#823632"))
+		ui.Text(c, "− Removed").FontSize(13).Bold().TextColor(ui.Hex("#823632"))
 		for _, text := range removed {
 			ui.Text(c, text).TextColor(ui.Hex("#823632")).Strikethrough().Selectable()
 		}

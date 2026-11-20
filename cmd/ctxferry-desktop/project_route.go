@@ -12,6 +12,7 @@ func init() {
 
 func (d *desktop) projectsView(c *ui.Context) {
 	p := &d.project
+	p.host = d
 	if p.run == nil {
 		p.core, p.ctx = d.core, d.ctx
 		p.run = func(work func() func()) {
@@ -49,18 +50,21 @@ func (d *desktop) projectManagementLink(c *ui.Context, tab int) {
 	var page, label string
 	switch tab {
 	case projectResources:
-		page, label = pageFleet, "打开设备与资源"
+		page, label = pageFleet, "Open Resources & environments"
 	case projectSkills:
-		page, label = pageSkills, "打开 Skills 管理"
+		page, label = pageSkills, "Open Skills"
 	case projectArtifacts:
-		page, label = pageArtifacts, "打开产物管理"
+		page, label = pageArtifacts, "Open Run artifacts"
 	default:
 		return
 	}
 	if desktopPages[page] == nil {
 		return
 	}
-	if ui.Button(c, label).AlignSelf(ui.Start).Disabled(d.project.busy).Clicked() {
-		d.navigate(desktopRoute{Page: page, ProjectID: d.project.target.ProjectID})
-	}
+	card(c).Children(func() {
+		cardHeader(c, icGrid, "Catalog handoff", "The Project ID is supplied automatically; Back restores this Project section.", nil)
+		linkButton(c, label, icArrowR).AlignSelf(ui.Start).Disabled(d.project.busy).OnClick(func() {
+			d.navigate(desktopRoute{Page: page, ProjectID: d.project.target.ProjectID})
+		})
+	})
 }

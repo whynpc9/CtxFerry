@@ -5,6 +5,7 @@ import "github.com/egoist/mygo/ui"
 const (
 	pageOverview  = "overview"
 	pageProjects  = "projects"
+	pageCatalog   = "catalog"
 	pageFleet     = "fleet"
 	pageSecrets   = "secrets"
 	pageSkills    = "skills"
@@ -13,46 +14,10 @@ const (
 	pageConflict  = "conflict"
 )
 
-// desktopRoute carries IDs, never display labels. Conflict is a detail under
-// Sync, so selecting the sidebar still returns to the queue's existing state.
 type desktopRoute struct {
 	Page, ProjectID, RecordID string
 }
 
-type desktopPage struct {
-	id, title string
-	icon      *ui.SVG
-}
-
-var desktopSections = []struct {
-	title string
-	pages []desktopPage
-}{
-	{"工作空间", []desktopPage{
-		{pageOverview, "设备总览", navIcon("M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z")},
-		{pageProjects, "项目", navIcon("M2 7h8l2 2h10v11H2z M3 7V4h7l2 3")},
-	}},
-	{"管理", []desktopPage{
-		{pageFleet, "设备与资源", navIcon("M3 3h18v13H3z M8 21h8 M12 16v5")},
-		{pageSecrets, "凭据绑定", navIcon("M14 3a5 5 0 1 1-2 9l-6 7H3v-4l7-7a5 5 0 0 1 4-5z")},
-		{pageSkills, "Skills", navIcon("M12 2l10 5-10 5-10-5z M2 12l10 5 10-5 M2 17l10 5 10-5")},
-		{pageArtifacts, "产物", navIcon("M3 6l9-4 9 4v13l-9 3-9-3z M3 6l9 5 9-5 M12 11v11")},
-	}},
-	{"维护", []desktopPage{
-		{pageSync, "同步", navIcon("M3 10a9 9 0 0 1 16-5l2 3 M21 3v5h-5 M21 14a9 9 0 0 1-16 5l-2-3 M3 21v-5h5")},
-	}},
-}
-
-func navIcon(path string) *ui.SVG {
-	icon, err := ui.ParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" d="` + path + `"/></svg>`))
-	if err != nil {
-		panic(err)
-	}
-	return icon
-}
-
-// Each follow-up page can register its renderer in its own file. A renderer
-// receives the current route and can use navigate and back on the window.
 var desktopPages = map[string]func(*desktop, *ui.Context){}
 
 func init() {
@@ -60,61 +25,236 @@ func init() {
 	desktopPages[pageSync] = (*desktop).syncPage
 }
 
+func catalogTool(page string) bool {
+	switch page {
+	case pageFleet, pageSecrets, pageSkills, pageArtifacts:
+		return true
+	}
+	return false
+}
+
+func primaryPage(page string) string {
+	if catalogTool(page) {
+		return pageCatalog
+	}
+	if page == pageConflict {
+		return pageSync
+	}
+	return page
+}
+
+func (d *desktop) pushOrigin(route desktopRoute) {
+	if route.Page == "" || route.Page == pageConflict {
+		return
+	}
+	if len(d.origins) > 0 && d.origins[len(d.origins)-1] == route {
+		return
+	}
+	d.origins = append(d.origins, route)
+}
+
 func (d *desktop) navigate(route desktopRoute) {
-	if desktopPages[route.Page] == nil || d.route == route || d.writingConflict() {
+	if desktopPages[route.Page] == nil || d.route == route || d.writingConflict() || d.syncState.backingUp {
 		return
 	}
 	if route.Page == pageConflict {
 		d.syncState.returnRoute = d.route
+		d.route = route
+		d.openConflict(route.RecordID)
+		return
+	}
+
+	origin := d.route
+	preserveOrigin := false
+	switch {
+	case catalogTool(route.Page) && origin.Page != pageCatalog:
+		d.pushOrigin(origin)
+		preserveOrigin = true
+	case route.Page == pageProjects && catalogTool(origin.Page):
+		d.pushOrigin(origin)
+		preserveOrigin = true
+	case route.Page == pageSync && origin.Page == pageOverview:
+		d.pushOrigin(origin)
+		preserveOrigin = true
+	}
+	if !preserveOrigin && (route.Page == pageOverview || route.Page == pageProjects || route.Page == pageCatalog || route.Page == pageSync) {
+		d.origins = nil
 	}
 	d.route = route
-	if route.Page == pageConflict {
-		d.openConflict(route.RecordID)
-	} else {
-		d.conflict = nil
-	}
+	d.conflict = nil
 	d.enterWorkPage(false)
 }
 
+func (d *desktop) navigateRoot(page string) {
+	if page == pageSync && d.route.Page == pageConflict {
+		d.back()
+		return
+	}
+	d.origins = nil
+	d.navigate(desktopRoute{Page: page})
+}
+
 func (d *desktop) back() {
-	if d.route.Page == pageConflict && !d.writingConflict() {
+	if d.writingConflict() || d.syncState.backingUp {
+		return
+	}
+	if d.route.Page == pageConflict {
 		p := d.conflict
 		d.conflict = nil
 		d.route = d.syncState.returnRoute
+		d.syncState.tab = syncQueueTab
 		if p != nil {
 			d.syncState.restoreRecord = p.id
 			if p.review {
 				d.refresh()
 			}
 		}
+		return
+	}
+	if len(d.origins) > 0 {
+		last := len(d.origins) - 1
+		route := d.origins[last]
+		d.origins = d.origins[:last]
+		d.route = route
+		d.enterWorkPage(false)
+		return
+	}
+	if catalogTool(d.route.Page) {
+		d.route = desktopRoute{Page: pageCatalog}
+		d.enterWorkPage(false)
+		return
+	}
+	if d.route.Page == pageProjects && d.route.ProjectID != "" {
+		d.route.ProjectID = ""
+		d.project.selectProject("")
 	}
 }
 
-func (d *desktop) sidebar(c *ui.Context) {
-	selected := d.route.Page
-	if selected == pageConflict {
-		selected = pageSync
+func originRouteLabel(route desktopRoute) string {
+	switch route.Page {
+	case pageOverview:
+		return "Home"
+	case pageProjects:
+		if route.ProjectID != "" {
+			return "Project"
+		}
+		return "Projects"
+	case pageFleet:
+		return "Resources & environments"
+	case pageSecrets:
+		return "Credential bindings"
+	case pageSkills:
+		return "Skills"
+	case pageArtifacts:
+		return "Run artifacts"
+	case pageSync:
+		return "Sync"
+	case pageCatalog:
+		return "Catalog"
 	}
+	return "Back"
+}
+
+func (d *desktop) backLabel() string {
+	if d.route.Page == pageConflict {
+		switch queueFilter(d.syncState.filter) {
+		case queueConflicts:
+			return "Queue · Conflicts"
+		case queueBlocked:
+			return "Queue · Blocked"
+		case queuePending:
+			return "Queue · Waiting"
+		default:
+			return "Queue"
+		}
+	}
+	if len(d.origins) > 0 {
+		return originRouteLabel(d.origins[len(d.origins)-1])
+	}
+	if catalogTool(d.route.Page) {
+		return "Catalog"
+	}
+	if d.route.Page == pageProjects && d.route.ProjectID != "" {
+		return "Projects"
+	}
+	return ""
+}
+
+func (d *desktop) breadcrumbs() []string {
+	page := d.route.Page
+	switch page {
+	case pageOverview:
+		return []string{"Home"}
+	case pageProjects:
+		crumbs := []string{"Projects"}
+		if d.route.ProjectID != "" {
+			name := d.route.ProjectID
+			if project := d.project.currentProject(); project != nil {
+				name = project.Slug
+			}
+			crumbs = append(crumbs, name)
+		}
+		return crumbs
+	case pageCatalog:
+		return []string{"Catalog"}
+	case pageFleet:
+		return []string{"Catalog", "Resources & environments"}
+	case pageSecrets:
+		return []string{"Catalog", "Credential bindings"}
+	case pageSkills:
+		return []string{"Catalog", "Skills"}
+	case pageArtifacts:
+		return []string{"Catalog", "Run artifacts"}
+	case pageConflict:
+		return []string{"Sync", "Queue", "Resolve conflict"}
+	case pageSync:
+		crumbs := []string{"Sync"}
+		crumbs = append(crumbs, []string{"Repository", "Queue", "Backup"}[d.syncState.tab])
+		return crumbs
+	}
+	return nil
+}
+
+func (d *desktop) sidebar(c *ui.Context) {
+	selected := primaryPage(d.route.Page)
 	previous := selected
+	items := []struct {
+		id, title string
+		icon      *ui.SVG
+	}{
+		{pageOverview, "Home", icHome},
+		{pageProjects, "Projects", icFolder},
+		{pageCatalog, "Catalog", icGrid},
+		{pageSync, "Sync", icSync},
+	}
 	ui.Sidebar(c, &selected, func() {
-		for _, group := range desktopSections {
-			ui.SidebarSection(c, group.title, nil, func() {
-				for _, item := range group.pages {
-					entry := ui.SidebarItem(c, item.id, item.icon, item.title)
-					if desktopPages[item.id] == nil {
-						entry.Disabled(true)
-					}
-					if previous == item.id {
-						entry.BorderWidth(0, 0, 0, 3).BorderColor(accent)
-					}
-					if d.route.Page == pageConflict && item.id == pageSync && entry.Clicked() {
+		ui.SidebarSection(c, "", nil, func() {
+			for _, item := range items {
+				entry := ui.SidebarItem(c, item.id, item.icon, item.title).Disabled(d.data.ReadAt.IsZero())
+				if previous == item.id {
+					entry.BorderWidth(0, 0, 0, 3).BorderColor(tk.Accent)
+				}
+				if item.id == pageSync {
+					entry.Children(func() {
+						if n := d.attentionCount(); n > 0 {
+							ui.Badge(c, d.attentionText()).Background(tk.ConflictSoft).TextColor(tk.Conflict).
+								Label(d.attentionText() + ": " + d.attentionDetail()).Tooltip(d.attentionDetail())
+						}
+					})
+				}
+				if entry.Clicked() {
+					switch {
+					case item.id == pageCatalog && catalogTool(d.route.Page):
+						d.navigateRoot(pageCatalog)
+					case item.id == pageSync && d.route.Page == pageConflict:
 						d.back()
+					case item.id == pageCatalog && d.route.Page == pageCatalog:
+					case item.id == previous && d.route.Page == item.id:
+					default:
+						d.navigateRoot(item.id)
 					}
 				}
-			})
-		}
-	}).Grow(1).FillWidth()
-	if selected != previous {
-		d.navigate(desktopRoute{Page: selected})
-	}
+			}
+		})
+	}).Grow(1).FillWidth().Padding(0, sp2)
 }

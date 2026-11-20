@@ -19,7 +19,9 @@ func TestNavigateCredentialsAndFleet(t *testing.T) {
 	}}
 	req := app.DesktopCredentialRequirement{Name: "login", Purpose: "runtime", Type: "connection-string"}
 	d := desktop{route: desktopRoute{Page: pageOverview}, data: app.DesktopSnapshot{Device: local, ReadAt: time.Now()},
-		projects: desktopProjects{ready: true, items: []app.Project{p}},
+		projects:       desktopProjects{ready: true, items: []app.Project{p}},
+		workProjects:   workProjects{loaded: true, items: []app.Project{p}},
+		catalogProject: p.ID,
 		secrets: secretsView{ready: true, project: p.ID, profile: "dev", task: "task", requirement: req.Name,
 			catalog: app.DesktopCredentialCatalog{Profiles: []string{"dev"}, Tasks: []app.DesktopCredentialTask{
 				{ID: "task", Name: "check-db", Slots: []app.DesktopCredentialRequirement{req}},
@@ -39,45 +41,51 @@ func TestNavigateCredentialsAndFleet(t *testing.T) {
 			Probe: &app.DesktopResourceProbe{DeviceID: local.ID, Scope: app.ObservationScope{Target: "127.0.0.1:5432"}},
 		}},
 	}
-	window := ui.NewTester(d.view, 1180, 750)
-	if err := window.Click("凭据绑定"); err != nil {
+	window := ui.NewTester(d.view, 1280, 1400)
+	if err := window.Click("Catalog"); err != nil {
 		t.Fatal(err)
 	}
-	for _, label := range []string{"共享槽位绑定", "已绑定", "需登录", "条目可读取", "TCP 可达",
-		"无运行证据", "/db · DB_READER", "更换共享绑定…", "打开 Infisical 控制台 ↗"} {
+	if err := window.Click("Open Credential bindings"); err != nil {
+		t.Fatal(err)
+	}
+	for _, label := range []string{"Shared credential binding", "Mapped", "Sign-in required", "Entry readable", "TCP reachable",
+		"No run evidence", "/db · DB_READER", "Change shared binding…", "Open Infisical console ↗"} {
 		if _, ok := window.Access(label); !ok {
 			t.Errorf("credential page missing %q", label)
 		}
 	}
-	if _, ok := window.Access("检查条目可读性"); ok {
+	if _, ok := window.Access("Check entry readability"); ok {
 		t.Error("entry check appeared before confirming authentication")
 	}
-	if err := window.Click("打开资源观察"); err != nil {
+	if err := window.Click("Open Resource test-database"); err != nil {
 		t.Fatal(err)
 	}
 	if expected := (desktopRoute{Page: pageFleet, ProjectID: p.ID, RecordID: resource.ID}); d.route != expected {
 		t.Fatalf("resource navigation lost its scope: %+v", d.route)
 	}
-	for _, label := range []string{"Windows · amd64", "WSL · wsl", "127.0.0.1:5432", "在本机探测 TCP…"} {
+	for _, label := range []string{"Windows · amd64", "WSL · wsl", "127.0.0.1:5432", "Probe TCP on this device…"} {
 		if _, ok := window.Access(label); !ok {
 			t.Errorf("fleet page missing %q", label)
 		}
 	}
 	d.fleet.devices.Choose(2)
 	window.Frame()
-	if _, ok := window.Access("此设备的会话状态未知"); !ok {
+	if _, ok := window.Access("Session state is unknown on this device"); !ok {
 		t.Error("remote selection did not report unknown provider state")
 	}
-	if _, ok := window.Access("在本机探测 TCP…"); ok {
+	if _, ok := window.Access("Probe TCP on this device…"); ok {
 		t.Error("probe was offered from a remote selection")
 	}
-	if err := window.Click("设备总览"); err != nil {
+	if err := window.Click("Home"); err != nil {
 		t.Fatal(err)
 	}
-	if err := window.Click("设备与资源"); err != nil {
+	if err := window.Click("Catalog"); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := window.Access("此设备的会话状态未知"); !ok {
-		t.Error("returning to Fleet lost the selected environment")
+	if err := window.Click("Open Resources & environments"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := window.Access("Session state is unknown on this device"); !ok {
+		t.Error("returning to Resources lost the selected environment")
 	}
 }

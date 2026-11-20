@@ -65,15 +65,18 @@ func (d *desktop) managementReady(c *ui.Context) bool {
 		d.refreshManagement()
 	}
 	if !d.projects.ready {
-		ui.Text(c, "正在读取本地项目…")
+		muted(c, "Reading subscribed Projects…")
 		return false
 	}
 	if d.projects.err != nil {
-		ui.Text(c, "本地项目读取失败，请刷新本地视图。")
+		banner(c, toneBlocked, "Projects could not be read", "Refresh the local view before selecting a Catalog scope.", nil)
 		return false
 	}
 	if len(d.projects.items) == 0 {
-		ui.Text(c, "暂无已订阅项目。")
+		card(c).Children(func() {
+			cardHeader(c, icFolder, "No subscribed Projects", "Open Projects to subscribe or bind one. Device-wide Skills remain available from Catalog.", nil)
+			linkButton(c, "Open Projects", icArrowR).AlignSelf(ui.Start).OnClick(func() { d.navigateRoot(pageProjects) })
+		})
 		return false
 	}
 	return true
@@ -90,7 +93,7 @@ func (d *desktop) projectOptions() []desktopOption {
 }
 
 func (d *desktop) workspaceBreadcrumb() string {
-	parts := []string{"本地工作区"}
+	parts := []string{"Local Workspace"}
 	switch d.route.Page {
 	case pageSecrets:
 		status := d.secrets.slot.Status
@@ -114,14 +117,13 @@ func (d *desktop) workspaceBreadcrumb() string {
 	return strings.Join(parts, " / ")
 }
 
-// Use stable IDs in the controller while showing names in the native picker.
 func optionPicker(c *ui.Context, title, selected string, options []desktopOption, disabled bool, onChange func(string)) {
 	labels := make([]string, len(options))
 	counts := make(map[string]int, len(options))
 	for _, o := range options {
 		counts[o.label]++
 	}
-	current := "请选择"
+	current := "Select"
 	for i, o := range options {
 		labels[i] = o.label
 		if counts[o.label] > 1 {
@@ -132,7 +134,7 @@ func optionPicker(c *ui.Context, title, selected string, options []desktopOption
 		}
 	}
 	ui.Column(c).Grow(1).MinWidth(0).Gap(4).Children(func() {
-		ui.Text(c, title).TextColor(muted)
+		ui.Text(c, title).TextColor(tk.Muted).FontSize(fsMeta)
 		picker := ui.Select(c, &current, labels).Label(title).FillWidth().Disabled(disabled || len(labels) == 0)
 		if picker.Changed() {
 			if i := slices.Index(labels, current); i >= 0 {
@@ -149,37 +151,37 @@ func managementColumns(c *ui.Context, main, inspector func()) {
 		inspector()
 		return
 	}
-	ui.Row(c).FillWidth().AlignItems(ui.Stretch).Gap(16).Children(func() {
-		ui.Column(c).Grow(1).MinWidth(0).Gap(12).Children(main)
-		ui.Column(c).Width(310).Gap(10).Children(inspector)
+	ui.Row(c).FillWidth().AlignItems(ui.Start).Gap(sp4).Children(func() {
+		ui.Column(c).Grow(1).MinWidth(0).Gap(sp3).Children(main)
+		ui.Column(c).Width(340).Gap(sp3).Children(inspector)
 	})
 }
 
 func inspectorPanel(c *ui.Context, content func()) {
-	ui.Column(c).FillWidth().Background(panel).Radius(7).Padding(14).Gap(8).Children(content)
+	card(c).FillWidth().Children(content)
 }
 
 func labelValue(c *ui.Context, label, value string) {
 	ui.Column(c).FillWidth().Gap(3).Children(func() {
-		ui.Text(c, label).FontSize(13).TextColor(muted)
-		ui.Text(c, value).FillWidth().TextColor(ink)
+		ui.Text(c, label).FontSize(fsMeta).TextColor(tk.Muted)
+		ui.Text(c, value).FillWidth().TextColor(tk.Text).LineHeight(1.4)
 	})
 }
 
 func inspectorField(c *ui.Context, label, value string) {
-	ui.Row(c).FillWidth().Gap(8).Children(func() {
-		ui.Text(c, label).Width(91).FontSize(13).TextColor(muted)
-		ui.Text(c, value).Grow(1).MinWidth(0).TextColor(ink)
+	ui.Row(c).FillWidth().Gap(sp2).Children(func() {
+		ui.Text(c, label).Width(112).FontSize(fsMeta).TextColor(tk.Muted)
+		ui.Text(c, value).Grow(1).MinWidth(0).TextColor(tk.Text)
 	})
 }
 
 func timeLabel(timestamp string) string {
 	t, err := time.Parse(time.RFC3339Nano, timestamp)
 	if err != nil {
-		return "尚未观察"
+		return "Not observed"
 	}
 	if t.Local().Format(time.DateOnly) == time.Now().Format(time.DateOnly) {
-		return t.Local().Format("今天 15:04:05")
+		return t.Local().Format("today 15:04:05")
 	}
 	return t.Local().Format("2006-01-02 15:04:05")
 }
@@ -187,37 +189,37 @@ func timeLabel(timestamp string) string {
 func managementError(code string) string {
 	switch code {
 	case "binding-missing":
-		return "槽位缺少有效的共享凭据映射。"
+		return "The requirement has no valid shared credential mapping."
 	case "binding-conflict":
-		return "共享配置存在冲突，请先到同步页处理。"
+		return "Shared Configuration has a conflict. Resolve it in Sync first."
 	case "incompatible":
-		return "要求、资源或共享引用不兼容。"
+		return "The requirement, Resource or shared reference is incompatible."
 	case "authentication-required":
-		return "请在当前执行环境完成 provider 登录或解锁，再更新本机会话。"
+		return "Sign in or unlock the provider in this execution environment, then adopt its session."
 	case "credential-storage-unavailable":
-		return "当前执行环境的安全凭据存储不可用。"
+		return "Secure credential storage is unavailable in this execution environment."
 	case "secret-unavailable":
-		return "无法确认该引用条目可读取。"
+		return "The referenced entry could not be confirmed readable."
 	case "provider-link-unavailable":
-		return "无法核对 provider 管理地址，请在 provider 中按条目定位信息查找。"
+		return "The provider management URL could not be verified. Find the entry by its displayed locator."
 	case "invalid-secret-binding", "usage":
-		return "请核对别名、认证方式和条目定位字段。"
+		return "Review the alias, authentication method and entry locator."
 	case "selection-changed":
-		return "所选配置已改变，请刷新并重新确认。"
+		return "The selected configuration changed. Refresh and confirm again."
 	case "profile-not-found", "profile-required":
-		return "配置方案不可用，请刷新后重新选择。"
+		return "The Profile is unavailable. Refresh and choose it again."
 	case "task-not-found":
-		return "任务已不可用，请刷新后重新选择。"
+		return "The Task is unavailable. Refresh and select it again."
 	case "store-busy":
-		return "本机数据库正忙，请重试。"
+		return "The local database is busy. Retry after the current writer finishes."
 	default:
-		return "操作未完成，请刷新本地记录后重试。"
+		return "The operation did not complete. Refresh local records and retry."
 	}
 }
 
 func showManagementError(c *ui.Context, code string) {
 	if code != "" {
-		ui.Text(c, managementError(code)+" ["+code+"]").FillWidth().TextColor(ui.Hex("#834706"))
+		banner(c, toneAttention, "Action needs attention", managementError(code)+" ["+code+"]", nil)
 	}
 }
 
@@ -231,9 +233,9 @@ func failureCode(err error) string {
 func environmentLabel(env app.DesktopEnvironment) string {
 	switch {
 	case env.Local && env.Kind != "":
-		return env.Device.Name + " · " + env.Kind + "（本机）"
+		return env.Device.Name + " · " + env.Kind + " (local)"
 	case env.Local:
-		return env.Device.Name + "（本机）"
+		return env.Device.Name + " (local)"
 	case env.Device.Name != "":
 		return env.Device.Name
 	default:
@@ -251,7 +253,7 @@ func environmentLabel(env app.DesktopEnvironment) string {
 			case "darwin":
 				kind = "macOS"
 			default:
-				kind = "设备"
+				kind = "Device"
 			}
 		}
 		return kind + " · " + id
@@ -260,7 +262,7 @@ func environmentLabel(env app.DesktopEnvironment) string {
 
 func environmentSystem(os, arch string) string {
 	if os == "" {
-		return "环境未知"
+		return "Unknown environment"
 	}
 	switch os {
 	case "darwin":

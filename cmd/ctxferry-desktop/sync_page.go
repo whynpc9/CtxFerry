@@ -3,12 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"github.com/google/uuid"
 	"github.com/whynpc9/CtxFerry/internal/app"
 )
 
@@ -16,16 +14,23 @@ type queueFilter int
 
 const (
 	queueAll queueFilter = iota
-	queuePending
 	queueConflicts
+	queueBlocked
+	queuePending
+)
+
+const (
+	syncRepositoryTab = iota
+	syncQueueTab
+	syncBackupTab
 )
 
 type syncPageState struct {
+	tab           int
 	filter        int
 	list          ui.ListState
 	selected      int
 	returnRoute   desktopRoute
-	copiedRecord  string
 	restoreRecord string
 	scroll        ui.ScrollState
 
@@ -34,13 +39,19 @@ type syncPageState struct {
 	remoteErr  bool
 	browserErr bool
 
-	backupOpen   bool
-	backupPath   string
-	includeLocal bool
-	backingUp    bool
-	backup       app.WorkspaceBackupResult
-	backupAt     time.Time
-	backupErr    string
+	previewing   bool
+	firstPreview app.SyncResult
+	previewErr   string
+
+	backupPath       string
+	includeLocal     bool
+	backupReview     bool
+	backupAck        bool
+	backingUp        bool
+	backup           app.WorkspaceBackupResult
+	backupAt         time.Time
+	backupSourceRead time.Time
+	backupErr        string
 }
 
 type remoteObservation struct {
@@ -58,40 +69,43 @@ func (s *syncPageState) setFilter(filter queueFilter) {
 }
 
 func (d *desktop) syncPage(c *ui.Context) {
-	s := d.data.Sync
-	subtitle := "尚未配置同步仓库"
-	if s.Config != nil && d.data.SyncErr == nil {
-		subtitle = "分支 " + s.Config.Branch + " · " + syncState(s.State)
-	}
+	state := &d.syncState
+	pageHeader(c, "Sync", "Repository evidence, local publication state and recovery.", func() { d.syncSummary(c) })
 	if d.data.SyncErr != nil {
-		subtitle = "本机同步记录不可用"
+		banner(c, toneBlocked, "Local sync records are unavailable", "Run ctxferry doctor, then Refresh. Other local Project data remains available.", nil)
+	} else if message := syncProblem(d.data.LastOutcome); message != "" {
+		banner(c, toneAttention, "Repository attention", message, nil)
 	}
-	pageHeading(c, "同步", subtitle)
-	if d.data.SyncErr != nil {
-		notice(c, "无法读取本机同步记录。请运行 ctxferry doctor，再刷新本地视图。")
-	} else {
-		metrics(c, func() {
-			metric(c, "待发布队列", strconv.Itoa(d.data.QueuePending), nil)
-			metric(c, "未解决冲突", strconv.Itoa(len(s.Conflicts)), nil)
-			metric(c, "上次确认同步", observedTime(s.LastSyncAt), nil)
-		})
-		if m := syncProblem(d.data.LastOutcome); m != "" {
-			notice(c, m)
+	queueLabel := "Queue"
+	if d.data.SyncErr == nil {
+		queueLabel = fmt.Sprintf("Queue · %d", len(d.data.Queue))
+	}
+	previous := state.tab
+	ui.Tabs(c, &state.tab, "Repository", queueLabel, "Backup").Label("Sync sections")
+	if previous != state.tab {
+		state.scroll = ui.ScrollState{}
+	}
+	switch state.tab {
+	case syncQueueTab:
+		if d.data.SyncErr == nil {
+			d.queue(c)
 		}
-		d.queue(c)
+	case syncBackupTab:
+		d.backupPage(c)
+	default:
+		d.repository(c)
 	}
-	ui.Divider(c)
-	d.repository(c)
-	d.backupDialog(c)
 }
 
 func (d *desktop) queue(c *ui.Context) {
 	state := &d.syncState
 	previous := state.filter
-	ui.Row(c).FillWidth().Gap(8).Children(func() {
-		section(c, "记录队列")
-		ui.Spacer(c)
-		ui.Segmented(c.Key("queue-filter"), &state.filter, "全部", "待发布", "冲突")
+	ui.Row(c).FillWidth().Gap(sp2).AlignItems(ui.Center).Children(func() {
+		ui.Column(c).Grow(1).Gap(3).Children(func() {
+			section(c, "Publication queue")
+			muted(c, "Waiting means pending with neither a conflict nor a blocked-only flag. Each stable record ID appears once.")
+		})
+		ui.Segmented(c.Key("queue-filter"), &state.filter, "All", "Conflicts", "Blocked", "Waiting").Label("Queue filter")
 	})
 	if previous != state.filter {
 		filter := state.filter
@@ -106,42 +120,32 @@ func (d *desktop) queue(c *ui.Context) {
 				break
 			}
 		}
-		ui.Row(c).Gap(8).Children(func() {
-			secondary(c, "项目 "+name)
-			if ui.Button(c, "清除项目筛选").Clicked() {
+		ui.Row(c).Gap(sp2).AlignItems(ui.Center).Children(func() {
+			scopeBar(c, []scopeItem{{label: "Project", value: name, id: d.route.ProjectID, icon: icFolder}}, nil).Grow(1)
+			ui.Button(c, "Clear Project filter").OnClick(func() {
 				d.route.ProjectID = ""
 				state.list, state.selected = ui.ListState{}, 0
-			}
+			})
 		})
 	}
-	var rows []app.DesktopQueueRecord
-	for _, r := range d.data.Queue {
-		if d.route.ProjectID != "" && r.ProjectID != d.route.ProjectID {
-			continue
-		}
-		switch queueFilter(state.filter) {
-		case queuePending:
-			if !r.Waiting() {
-				continue
-			}
-		case queueConflicts:
-			if !r.Conflict {
-				continue
-			}
-		}
-		rows = append(rows, r)
-	}
+	rows := d.filteredQueue()
 	restore := state.restoreRecord
 	state.restoreRecord = ""
 	if len(rows) == 0 {
-		switch {
-		case len(d.data.Queue) == 0:
-			secondary(c, "本机队列为空，当前没有冲突。")
-		case state.filter == int(queueConflicts):
-			secondary(c, "当前筛选没有冲突记录。")
-		default:
-			secondary(c, "当前筛选没有匹配的记录。")
-		}
+		card(c).Children(func() {
+			cardHeader(c, icInbox, "No records in this view", "", nil)
+			switch {
+			case len(d.data.Queue) == 0:
+				muted(c, "The Workspace queue is empty: there are no waiting, conflicted or blocked records.")
+			case state.filter == int(queueConflicts):
+				muted(c, "No active conflicts match this filter. The last resolution receipt remains separate from publication evidence.")
+			default:
+				muted(c, "No records match this filter. Choose All to inspect the complete local queue.")
+			}
+			if state.filter != int(queueAll) {
+				ui.Button(c, "Show all records").AlignSelf(ui.Start).OnClick(func() { state.setFilter(queueAll) })
+			}
+		})
 		return
 	}
 	state.list.Selected = &state.selected
@@ -153,151 +157,299 @@ func (d *desktop) queue(c *ui.Context) {
 			}
 		}
 	}
-	state.list.RowHeight = 32
+	state.list.RowHeight = 34
 	state.list.Key = func(row int) any { return rows[row].ID }
 	state.list.Label = func(row int) string { return recordName(rows[row]) }
-	ui.Row(c).FillWidth().AlignItems(ui.Stretch).Gap(14).Children(func() {
-		cols := []ui.TableColumn{{Title: "记录"}, {Title: "项目", Width: 116}, {Title: "状态", Width: 82}}
-		ui.Table(c.Key("sync-queue"), &state.list, cols, len(rows), func(row, col int) {
-			r := rows[row]
-			ui.Text(c, []string{recordName(r), valueOr(r.Project, "—"), recordState(r)}[col]).NoWrap()
-		}).Label("同步记录队列").Grow(1).Height(tableHeight(len(rows)))
+	managementColumns(c, func() {
+		card(c).Padding(0).Clip().Children(func() {
+			columns := []ui.TableColumn{{Title: "Record"}, {Title: "Project", Width: 130}, {Title: "State", Width: 92}}
+			ui.Table(c.Key("sync-queue"), &state.list, columns, len(rows), func(row, col int) {
+				r := rows[row]
+				ui.Text(c, []string{recordName(r), valueOr(r.Project, "—"), recordState(r)}[col]).NoWrap()
+			}).Label("Sync record queue").Grow(1).Height(tableHeight(len(rows)))
+			listFooter(c, fmt.Sprintf("Showing %d of %d · stable record IDs", len(rows), len(rows)), nil)
+		})
 		if restore != "" {
 			state.list.Focus(c)
 		}
-		ui.Column(c).Width(235).Padding(10, 12).Gap(5).Radius(6).Background(panel).Children(func() {
-			secondary(c, "所选记录")
-			if state.selected < 0 || state.selected >= len(rows) {
-				secondary(c, "选择一行查看记录")
-				return
-			}
-			r := rows[state.selected]
-			section(c, recordName(r))
-			secondary(c, recordState(r)+" · "+valueOr(r.Project, "项目未知"))
-			identifier(c, "记录 ID", r.ID)
-			if r.Waiting() && r.Revision != "" {
-				if r.Revision == d.resolvedRevision {
-					secondary(c, "已生成本机修订 · 待发布")
-				}
-				identifier(c, "本机修订", r.Revision)
-			}
-			if r.Conflict {
-				if desktopPages[pageConflict] != nil {
-					if ui.PrimaryButton(c, "比较冲突版本").Clicked() {
-						d.navigate(desktopRoute{Page: pageConflict, ProjectID: r.ProjectID, RecordID: r.ID})
-					}
-				} else if id, err := uuid.Parse(r.ID); err == nil && id.String() == r.ID {
-					label := "复制比较命令"
-					if state.copiedRecord == r.ID {
-						label = "比较命令已复制"
-					}
-					if ui.Button(c, label).Tooltip("在终端查看此记录的三方版本").Clicked() {
-						mygo.Clipboard.WriteText("ctxferry sync conflicts " + id.String())
-						state.copiedRecord = r.ID
-					}
-				}
-			}
-		})
+	}, func() {
+		if state.selected < 0 || state.selected >= len(rows) {
+			card(c).Children(func() { muted(c, "Select a record to inspect its local evidence.") })
+			return
+		}
+		d.queueInspector(c, rows[state.selected])
 	})
 }
 
-func tableHeight(rows int) float32 { return float32(min(rows, 6)*33 + 33) }
+func (d *desktop) filteredQueue() []app.DesktopQueueRecord {
+	var rows []app.DesktopQueueRecord
+	for _, r := range d.data.Queue {
+		if d.route.ProjectID != "" && r.ProjectID != d.route.ProjectID {
+			continue
+		}
+		switch queueFilter(d.syncState.filter) {
+		case queuePending:
+			if !r.Waiting() {
+				continue
+			}
+		case queueConflicts:
+			if !r.Conflict {
+				continue
+			}
+		case queueBlocked:
+			if !r.Blocked || r.Conflict {
+				continue
+			}
+		}
+		rows = append(rows, r)
+	}
+	return rows
+}
+
+func (d *desktop) queueInspector(c *ui.Context, r app.DesktopQueueRecord) {
+	t := tonePending
+	if r.Conflict {
+		t = toneConflict
+	} else if r.Blocked {
+		t = toneBlocked
+	}
+	card(c).Children(func() {
+		cardHeader(c, t.icon(), recordName(r), valueOr(r.Kind, "Shared record"), func() { pill(c, t, recordState(r)) })
+		kvGrid(c, []kvRow{
+			{k: "Record ID", v: r.ID, mono: true},
+			{k: "Project", v: valueOr(r.Project, "Unknown or unavailable locally")},
+			{k: "Project ID", v: valueOr(r.ProjectID, "—"), mono: true},
+		})
+		if r.Revision != "" {
+			detail(c, "Local revision", r.Revision)
+			if r.Revision == d.resolvedRevision {
+				pill(c, tonePending, "New local revision · waiting")
+			}
+		}
+		if r.Blocked {
+			for _, blocked := range d.data.Sync.Blocked {
+				if blocked.ID == r.ID {
+					detail(c, "Blocking reason", blocked.Reason)
+				}
+			}
+		}
+		if r.Waiting() {
+			evidenceList(c, evidence{
+				written: "Saved locally", writtenDetail: valueOr(r.Revision, "Revision evidence unavailable"),
+				read: "Read " + d.data.ReadAt.Local().Format("15:04:05"), readDetail: "Still in Waiting after the latest local reread",
+				published: "Not yet", pubDetail: valueOr(d.waitingHold(), "Queued for the running service"), pubTone: tonePending,
+			})
+			d.commandBlock(c, desktopCommand(d.core.DataDir, "sync"), false)
+			d.afterRun(c, "After sync finishes, Refresh rereads the confirmed commit, journal and queue.")
+		}
+		if r.Conflict {
+			ui.PrimaryButton(c, "Open comparison").OnClick(func() {
+				d.navigate(desktopRoute{Page: pageConflict, ProjectID: r.ProjectID, RecordID: r.ID})
+			})
+		} else if r.Blocked {
+			d.commandBlock(c, desktopCommand(d.core.DataDir, "sync", "status"), true)
+			muted(c, "Repair the named definition or dependency in the CLI, run sync, then Refresh to see whether this record can publish.")
+			if r.ProjectID != "" {
+				ui.Button(c, "Open Project").AlignSelf(ui.Start).OnClick(func() {
+					d.navigate(desktopRoute{Page: pageProjects, ProjectID: r.ProjectID})
+				})
+			}
+		}
+	})
+}
+
+func tableHeight(rows int) float32 { return float32(min(rows, 8)*35 + 35) }
 
 func recordName(r app.DesktopQueueRecord) string { return valueOr(r.Title, r.ID) }
 func recordState(r app.DesktopQueueRecord) string {
 	switch {
 	case r.Conflict:
-		return "冲突"
+		return "Conflict"
 	case r.Blocked:
-		return "已阻塞"
+		return "Blocked"
 	default:
-		return "待发布"
+		return "Waiting"
 	}
 }
 
 func syncState(state string) string {
 	return valueOr(map[string]string{
-		"enabled": "等待首次发布", "pending": "有待处理变更", "synced": "已有确认版本",
-		"conflict": "存在未解决冲突", "offline": "上次同步远端不可用", "auth-required": "上次同步需要认证",
-		"unlock-required": "上次同步需要解锁", "history-rewritten": "远端历史已改写",
-		"incomplete": "同步数据不完整", "unsupported-schema": "远端格式不受支持",
-		"privacy-unconfirmed": "远端私有性未确认", "missing-branch": "远端分支缺失",
-	}[state], "本机同步记录")
+		"enabled": "Waiting for first publication", "pending": "Local changes waiting", "synced": "Confirmed version available",
+		"conflict": "Unresolved conflicts", "offline": "Remote unavailable during the last sync", "auth-required": "Authentication required",
+		"unlock-required": "Credential helper unlock required", "history-rewritten": "Remote history rewritten",
+		"incomplete": "Sync data incomplete", "unsupported-schema": "Remote format unsupported",
+		"privacy-unconfirmed": "Repository privacy unconfirmed", "missing-branch": "Remote branch missing",
+	}[state], "Local sync records")
 }
 
 func syncProblem(outcome string) string {
 	return map[string]string{
-		"offline":             "上次同步时远端不可用。下面仍显示本机记录和最后确认的版本。",
-		"auth-required":       "上次同步需要 Git 或 GitHub 认证。更新本机登录后，可重新检查远端。",
-		"unlock-required":     "上次同步需要解锁本机凭据助手或 SSH agent。",
-		"history-rewritten":   "远端历史已改写，安全同步已暂停。请运行 ctxferry sync status 查看恢复信息。",
-		"incomplete":          "上次同步的远端数据不完整。请检查远端，再核对本机保留的记录。",
-		"unsupported-schema":  "远端使用当前版本无法读取的格式。请升级 CtxFerry。",
-		"privacy-unconfirmed": "上次同步无法确认远端仓库为私有。请核对仓库，再重新检查远端。",
-		"missing-branch":      "上次同步未找到配置的远端分支。请检查远端分支。",
+		"offline":             "The remote was unreachable during the last sync. Local records and the last confirmed version remain inspectable.",
+		"auth-required":       "The last sync requires Git or GitHub authentication. Update the local login, then check the remote again.",
+		"unlock-required":     "The last sync requires an unlocked local credential helper or SSH agent.",
+		"history-rewritten":   "Remote history was rewritten and safe synchronization is paused. Run ctxferry sync status for recovery.",
+		"incomplete":          "The last sync found incomplete remote data. Check the remote and compare retained local records.",
+		"unsupported-schema":  "The remote uses a format this version cannot read. Update CtxFerry.",
+		"privacy-unconfirmed": "The remote could not be confirmed private. Review the repository before any publication.",
+		"missing-branch":      "The configured remote branch was not found during the last sync.",
 	}[outcome]
 }
 
 func (d *desktop) repository(c *ui.Context) {
 	s, state := d.data.Sync, &d.syncState
-	ui.Row(c).FillWidth().Gap(10).Children(func() {
-		section(c, "仓库与备份")
-		ui.Spacer(c)
-		if ui.Button(c, "创建备份…").Disabled(d.err != nil || d.loading || state.backingUp).Clicked() {
-			state.backupErr = ""
-			state.backupOpen = true
-		}
-	})
-
-	// A write receipt or error belongs with the action that produced it.
-	if state.backingUp || !state.backupAt.IsZero() || state.backupErr != "" {
-		d.backupStatus(c)
+	if d.data.SyncErr != nil {
+		return
 	}
-
+	if d.publicationUnknown() {
+		d.publicationRecovery(c)
+	}
 	switch {
-	case d.data.SyncErr != nil:
-		detail(c, "仓库", "未知 · 本机同步记录不可用")
 	case s.Config == nil:
-		secondary(c, "首次发布前需核验仓库为私有。发布后，共享正文会以明文写入 Git 历史。")
-		detail(c, "远端确认", "不适用 · 尚未配置仓库")
-		section(c, "连接私有仓库")
-		ui.Text(c, "在终端用专用私有 GitHub 仓库的地址替换示例，配置后刷新：")
-		command(c, "ctxferry sync enable --remote git@github.com:OWNER/REPO.git")
-		firstPublishHelp(c)
+		card(c).Children(func() {
+			cardHeader(c, icCloudOff, "No private repository configured", "Local work is fully available without a remote.", nil)
+			kvGrid(c, []kvRow{{k: "Remote", v: "Not configured"}, {k: "Confirmed commit", v: "None"}, {k: "Sync service", v: d.serviceLabel()}})
+		})
+		d.recoveryCommand(c, "Connect a private repository", "Replace the example with a dedicated private GitHub repository. Privacy must be verified before publication.", desktopCommand(d.core.DataDir, "sync", "enable", "--remote", "git@github.com:OWNER/REPO.git"))
 	default:
-		ui.Row(c).FillWidth().Gap(6).Children(func() {
-			ui.Column(c).Grow(1).Children(func() { detail(c, "仓库", s.Config.Remote) })
-			if ui.Button(c, "在浏览器打开").Disabled(d.err != nil || d.loading).Clicked() {
-				state.browserErr = mygo.Shell.OpenExternal(d.data.RepositoryURL) != nil
+		card(c).Children(func() {
+			cardHeader(c, icDatabase, "Sync repository", syncState(s.State), func() {
+				ui.Button(c, "Check remote").Disabled(d.err != nil || d.loading || state.checking).OnClick(func() { d.remoteButton(c) })
+			})
+			kvGrid(c, []kvRow{
+				{k: "Remote", v: s.Config.Remote, mono: true},
+				{k: "Branch", v: s.Config.Branch, mono: true},
+				{k: "Confirmed head", v: valueOr(s.Head, "No confirmed publication"), mono: true},
+				{k: "History size", v: d.historyLabel()},
+				{k: "Sync service", v: d.serviceLabel()},
+			})
+			ui.Row(c).Gap(sp2).Children(func() {
+				ui.Button(c, "Open in browser").Disabled(d.err != nil || d.loading).OnClick(func() {
+					state.browserErr = mygo.Shell.OpenExternal(d.data.RepositoryURL) != nil
+				})
+				if state.browserErr {
+					muted(c, "The system browser could not be opened.")
+				}
+			})
+			d.remoteStatus(c)
+		})
+		if h := s.History; h != nil && h.Warning != "" {
+			message := "Git history is large; previously published plaintext remains in history."
+			if h.AutomaticPayloadPause {
+				message = "The Git history limit paused automatic publication of new artifact payloads."
+			}
+			banner(c, toneAttention, "History size warning", message, nil)
+		}
+		if !d.publicationUnknown() {
+			if s.Head == "" {
+				d.firstPublication(c)
+			} else {
+				d.routineSync(c)
+			}
+		}
+	}
+}
+
+func (d *desktop) historyLabel() string {
+	if d.data.Sync.History == nil {
+		return "Not measured"
+	}
+	return historySize(d.data.Sync.History.RawBytes)
+}
+
+func (d *desktop) firstPublication(c *ui.Context) {
+	state := &d.syncState
+	check := d.currentRemoteCheck()
+	verified := check != nil && check.GitReachable && check.Privacy == "private"
+	card(c).Children(func() {
+		cardHeader(c, icUpload, "Review first publication", "A preview describes possible effects; only sync init publishes.", nil)
+		ui.Row(c).Gap(sp2).AlignItems(ui.Center).Children(func() {
+			stepNumber(c, "1", map[bool]tone{true: toneOk, false: toneUnknown}[verified])
+			body(c, "Check that the remote is reachable and private.").Grow(1)
+			if !verified {
+				muted(c, "Use Check remote above first")
 			}
 		})
-		if state.browserErr {
-			notice(c, "无法打开系统浏览器。")
+		ui.Row(c).Gap(sp2).AlignItems(ui.Center).Children(func() {
+			stepNumber(c, "2", toneUnknown)
+			body(c, "Generate and inspect the actual export manifest.").Grow(1)
+			ui.Button(c, "Review export…").Disabled(!verified || state.previewing || d.err != nil).OnClick(d.reviewFirstPublication)
+		})
+		if state.previewing {
+			muted(c, "Building the local export preview…")
 		}
-		detail(c, "分支", s.Config.Branch)
-		detail(c, "确认的 head", valueOr(s.Head, "尚无确认"))
-		history := "尚未测量"
-		if s.History != nil {
-			history = historySize(s.History.RawBytes)
+		if state.previewErr != "" {
+			banner(c, toneBlocked, "Preview failed", state.previewErr, nil)
 		}
-		detail(c, "Git 历史体积", history)
-		if h := s.History; h != nil && h.Warning != "" {
-			if h.AutomaticPayloadPause {
-				notice(c, "Git 历史体积已达到上限，自动发布新的产物内容已暂停。")
+		if state.firstPreview.PreviewID != "" {
+			preview := state.firstPreview
+			previewBadge(c)
+			detail(c, "Preview ID", preview.PreviewID)
+			detail(c, "Files", fmt.Sprintf("%d export files with paths, sizes and SHA-256 digests", len(preview.Files)))
+			ui.Scroll(c).Height(132).FillWidth().Children(func() {
+				ui.Column(c).Gap(sp2).Children(func() {
+					for _, file := range preview.Files {
+						ui.Row(c).Gap(sp2).AlignItems(ui.Start).Children(func() {
+							mono(c, file.Path).Width(220).Shrink(0)
+							muted(c, fmt.Sprintf("%d B", file.Bytes)).Width(76).Shrink(0)
+							monoMuted(c, file.SHA256).Grow(1).Selectable()
+						})
+					}
+				})
+			})
+			banner(c, toneAttention, "Plaintext review is separate", "Inspect original shared documents and artifact payloads for pasted secrets. A manifest hash does not make sensitive content safe to publish.", nil)
+			strong(c, "Creates "+d.data.Sync.Config.Branch+" only if absent. Pushed history cannot be recalled.")
+			d.commandBlock(c, desktopCommand(d.core.DataDir, "sync", "init", "--preview", preview.PreviewID), true)
+			d.afterRun(c, "After it finishes, Refresh rereads the confirmed commit and publication journal before unlocking Backup or Conflict.")
+		}
+	})
+}
+
+func (d *desktop) reviewFirstPublication() {
+	state := &d.syncState
+	state.previewing, state.previewErr, state.firstPreview = true, "", app.SyncResult{}
+	runDesktop(d, d.core.PreviewSync, func(result app.SyncResult, err error) {
+		state.previewing = false
+		if err != nil {
+			state.previewErr = "The export was not generated. Reread the Workspace and retry (" + app.Classify(err).Code + ")."
+			return
+		}
+		state.firstPreview = result
+	})
+}
+
+func (d *desktop) routineSync(c *ui.Context) {
+	card(c).Children(func() {
+		cardHeader(c, icSync, "Sync via CLI", "Run one cycle for this exact data root. A running service normally processes eligible records automatically.", nil)
+		muted(c, valueOr(d.waitingHold(), "The service is running. Waiting records remain queued until a confirmed commit includes them."))
+		d.commandBlock(c, desktopCommand(d.core.DataDir, "sync"), true)
+		d.afterRun(c, "After it finishes, Refresh rereads the confirmed commit, journal and queue.")
+	})
+}
+
+func (d *desktop) publicationRecovery(c *ui.Context) {
+	if d.data.Sync.Head == "" {
+		preview := d.data.PublicationPreview
+		card(c).Children(func() {
+			cardHeader(c, icAlert, "Resume first publication", "The first push lost its acknowledgement. Reuse the original reviewed preview ID; a new ID cannot reconcile this journal.", func() {
+				pill(c, toneAttention, "Outcome unknown")
+			})
+			detail(c, "Original preview ID", valueOr(preview, "Unavailable · inspect sync status"))
+			if preview != "" {
+				d.commandBlock(c, desktopCommand(d.core.DataDir, "sync", "init", "--preview", preview), true)
 			} else {
-				notice(c, "Git 历史体积较大，已发布的明文仍保留在历史中。")
+				d.commandBlock(c, desktopCommand(d.core.DataDir, "sync", "status"), true)
 			}
-		}
-		detail(c, "明文边界", "共享记录和正文以明文保留在 Git 历史中。仅本机记录、绑定目录、路由和 TCP 观察、凭据与认证不上传。")
-		secondary(c, "发布前检查正文是否粘贴了敏感信息。")
-		d.remoteStatus(c)
-		if s.Head == "" {
-			firstPublishHelp(c)
-		}
+			d.afterRun(c, "After reconciliation, Refresh rereads the confirmed commit and journal before unlocking Backup or Conflict.")
+		})
+		return
 	}
-	if !state.backingUp && state.backupAt.IsZero() && state.backupErr == "" {
-		d.backupStatus(c)
-	}
+	card(c).Children(func() {
+		cardHeader(c, icAlert, "Reconcile publication", "A routine push has an uncertain outcome. Local work is preserved; Backup and Conflict remain locked until the journal clears.", func() {
+			pill(c, toneAttention, "Outcome unknown")
+		})
+		d.commandBlock(c, desktopCommand(d.core.DataDir, "sync"), true)
+		d.afterRun(c, "After reconciliation, Refresh rereads the confirmed commit and clears the journal before another write.")
+	})
 }
 
 func historySize(bytes int64) string {
@@ -307,22 +459,9 @@ func historySize(bytes int64) string {
 	return fmt.Sprintf("%.1f MiB (%d B)", float64(bytes)/(1<<20), bytes)
 }
 
-func command(c *ui.Context, text string) { ui.Text(c, text).Font("monospace").FillWidth() }
-func firstPublishHelp(c *ui.Context) {
-	section(c, "首次发布")
-	secondary(c, "启用同步后，在终端预览将发布的记录和对象。")
-	command(c, "ctxferry sync preview --format json")
-	secondary(c, "核对范围后，用返回的 previewId 替换 PREVIEW_ID。")
-	command(c, "ctxferry sync init --preview PREVIEW_ID")
-}
-
 func (d *desktop) remoteButton(c *ui.Context) {
 	state := &d.syncState
-	label := "检查远端"
 	if state.checking {
-		label = "正在检查…"
-	}
-	if !ui.Button(c.Key("check-remote"), label).Disabled(d.err != nil || d.loading || state.checking).Clicked() {
 		return
 	}
 	state.checking, state.remoteErr, state.remote = true, false, remoteObservation{}
@@ -341,6 +480,7 @@ func (d *desktop) remoteButton(c *ui.Context) {
 			return
 		}
 		current.remote = result
+		current.firstPreview = app.SyncResult{}
 	})
 }
 
@@ -355,29 +495,25 @@ func (d *desktop) currentRemoteCheck() *app.SyncCheck {
 
 func (d *desktop) remoteStatus(c *ui.Context) {
 	if d.syncState.remoteErr {
-		notice(c, "远端检查未完成。请运行 ctxferry sync check 查看本机 Git 配置，刷新后重试。")
+		banner(c, toneBlocked, "Remote check did not complete", "Run ctxferry sync check to inspect local Git configuration, then Refresh and retry.", nil)
 	}
 	check := d.currentRemoteCheck()
 	if check == nil {
-		detail(c, "远端检查", "尚未检查 · 可联网读取")
+		detail(c, "Latest check", "Not checked in this window")
 		return
 	}
-	git := "远端读取失败"
+	git := "Remote read failed"
 	if check.GitReachable {
-		git = "远端读取成功"
+		git = "Remote readable"
 	}
-	privacy := valueOr(map[string]string{
-		"private": "已核验私有仓库", "public": "公开仓库 · 发布受阻",
-	}[check.Privacy], "私有性未确认")
-	detail(c, "远端检查", git+" · "+privacy+" · "+d.syncState.remote.at.Format("15:04:05"))
+	privacy := valueOr(map[string]string{"private": "private repository verified", "public": "public repository · publication blocked"}[check.Privacy], "privacy unconfirmed")
+	detail(c, "Latest check", git+" · "+privacy+" · "+d.syncState.remote.at.Format("15:04:05"))
 	if check.Failure != "" {
 		message := valueOr(map[string]string{
-			"offline":             "无法连接 GitHub 检查私有性。",
-			"git-error":           "Git 读取失败。请检查本机网络和 Git 认证后重试。",
-			"auth-required":       "当前检查需要 Git 或 GitHub 认证。",
-			"unlock-required":     "当前检查需要解锁 Git 凭据助手或 SSH agent。",
-			"privacy-unconfirmed": "当前远端无法通过私有性检查。",
-		}[check.Failure], "远端检查未全部通过。")
-		notice(c, message)
+			"offline": "The GitHub privacy check could not be reached.", "git-error": "Git read failed; check network and authentication.",
+			"auth-required": "This check requires Git or GitHub authentication.", "unlock-required": "Unlock the Git credential helper or SSH agent.",
+			"privacy-unconfirmed": "The remote did not pass the privacy check.",
+		}[check.Failure], "The remote check did not pass completely.")
+		banner(c, toneAttention, "Remote check", message, nil)
 	}
 }
