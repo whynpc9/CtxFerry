@@ -473,6 +473,7 @@ func (a App) Conflict(ctx context.Context, id string) (ConflictDetail, error) {
 // Every explicit choice is a new revision against precisely the inspected remote.
 func (a App) Resolve(ctx context.Context, id, token, take string, input []byte) (SyncResult, error) {
 	out := SyncResult{Boundary: plaintextBoundary, State: "pending"}
+	var revision string
 	release, e := a.syncOwner(ctx)
 	if e != nil {
 		return out, e
@@ -542,6 +543,7 @@ func (a App) Resolve(ctx context.Context, id, token, take string, input []byte) 
 		}
 		r.PreviousRevision = prior.Revision
 		r.Revision = uuid.NewString()
+		revision = r.Revision
 		r.OperationID = uuid.NewString()
 		r.Provenance.UpdatedAt = now()
 		if r.Kind == "configuration" {
@@ -584,6 +586,9 @@ func (a App) Resolve(ctx context.Context, id, token, take string, input []byte) 
 		_, e = c.ExecContext(ctx, "UPDATE sync_state SET outcome='pending'")
 		return e
 	})
+	if e == nil {
+		out.ResolvedRevision = revision
+	}
 	return out, e
 }
 

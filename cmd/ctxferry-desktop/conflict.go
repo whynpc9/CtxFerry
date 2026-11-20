@@ -11,6 +11,7 @@ import (
 type conflictPage struct {
 	id       string
 	detail   app.ConflictDetail
+	diffs    [3]map[string]*conflictTextDiff
 	choice   string
 	draft    *conflictDraft
 	scroll   ui.ScrollState
@@ -20,7 +21,7 @@ type conflictPage struct {
 	loading  bool
 	writing  bool
 	review   bool
-	resolved bool
+	revision string
 	err      string
 }
 
@@ -39,12 +40,13 @@ func (d *desktop) openConflict(id string) {
 
 func (d *desktop) loadConflict() {
 	p := d.conflict
-	if p.loading || p.writing || p.resolved {
+	if p.loading || p.writing || p.revision != "" {
 		return
 	}
 	p.loading, p.confirm = true, false
 	go func() {
 		detail, err := d.core.Conflict(d.ctx, p.id)
+		diffs := conflictTextDiffs(detail)
 		d.update(func() {
 			if d.ctx.Err() != nil || d.conflict != p {
 				return
@@ -66,6 +68,7 @@ func (d *desktop) loadConflict() {
 				p.err = ""
 			}
 			p.detail, p.review = detail, false
+			p.diffs = diffs
 		})
 	}()
 }
@@ -121,7 +124,7 @@ func (p *conflictPage) startDraft() {
 }
 
 func (p *conflictPage) canConfirm() bool {
-	if p.loading || p.writing || p.review || p.resolved || p.detail.ConflictID == "" {
+	if p.loading || p.writing || p.review || p.revision != "" || p.detail.ConflictID == "" {
 		return false
 	}
 	if p.version(p.choice) != nil {
@@ -169,7 +172,7 @@ func (d *desktop) resolveConflict(p *conflictPage) {
 	token := p.detail.ConflictID
 	p.writing, p.err = true, ""
 	go func() {
-		_, err := d.core.Resolve(d.ctx, p.id, token, take, input)
+		result, err := d.core.Resolve(d.ctx, p.id, token, take, input)
 		d.update(func() {
 			if d.ctx.Err() != nil {
 				return
@@ -183,8 +186,8 @@ func (d *desktop) resolveConflict(p *conflictPage) {
 				}
 				return
 			}
-			p.resolved = true
-			d.resolvedRecord = p.id
+			p.revision = result.ResolvedRevision
+			d.resolvedRevision = result.ResolvedRevision
 			d.refresh()
 		})
 	}()

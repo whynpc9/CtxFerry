@@ -112,7 +112,20 @@ func TestConflictFromQueueToSharedRevision(t *testing.T) {
 	visible("测试环境说明")
 	click("比较版本 · " + base.ID)
 	applyUpdate()
-	visible("共同基线", "本机版本", "远端版本", "共同正文", "本机正文", "远端正文", "设备 "+peer.DeviceID)
+	click("返回同步队列")
+	if !window.Focused("比较版本 · " + base.ID) {
+		t.Fatal("returning to the queue lost focus on the triggering record")
+	}
+	click("比较版本 · " + base.ID)
+	applyUpdate()
+	click("设备总览")
+	click("查看冲突队列")
+	if d.conflict != nil {
+		t.Fatal("opening the queue from Overview reopened the prior comparison")
+	}
+	click("比较版本 · " + base.ID)
+	applyUpdate()
+	visible("共同基线", "本机版本", "远端版本", "共同正文", "本机正文", "远端正文", peer.DeviceID, "+ 新增", "− 移除")
 	if d.conflict.canConfirm() || d.conflict.choice != "" {
 		t.Fatal("opened a conflict with a preselected result")
 	}
@@ -166,11 +179,12 @@ func TestConflictFromQueueToSharedRevision(t *testing.T) {
 		doc.Revision == peer.Revision || doc.DeviceID != snapshot.Device.ID {
 		t.Fatalf("incorrect resolve result: %+v", doc)
 	}
+	visible("记录 ID "+base.ID, "本机修订 "+doc.Revision)
 	if len(d.data.Sync.Conflicts) != 0 || len(d.data.PendingIDs) != 1 || d.data.PendingIDs[0] != base.ID || d.data.Sync.Head != d.conflict.detail.Head {
 		t.Fatalf("write should leave one pending resolution at the inspected head: %+v", d.data)
 	}
 	click("返回同步队列")
-	visible(conflictReceipt + " · " + base.ID)
+	visible("已生成本机修订 · 待发布", "测试环境说明", "记录 ID "+base.ID, "本机修订 "+doc.Revision)
 	_, err = local.Sync(ctx)
 	require(err)
 	_, err = remote.Sync(ctx)

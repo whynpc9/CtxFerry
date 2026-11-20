@@ -27,7 +27,6 @@ func (d *desktop) conflictQueueRow(c *ui.Context, id string) {
 		button := ui.Button(c, "比较版本").Label("比较版本 · " + id)
 		if d.restoreQueueID == id {
 			button.Focus()
-			d.restoreQueueID = ""
 		}
 		if button.Clicked() {
 			d.openConflict(id)
@@ -46,7 +45,7 @@ func (d *desktop) conflictView(c *ui.Context) {
 			}
 		}
 		ui.Text(c, "本地工作区 / 同步 / 冲突").Grow(1).MinWidth(0).TextColor(muted)
-		if !p.resolved && ui.Button(c, "刷新比较").Disabled(p.loading || p.writing).Clicked() {
+		if p.revision == "" && ui.Button(c, "刷新比较").Disabled(p.loading || p.writing).Clicked() {
 			d.loadConflict()
 		}
 	})
@@ -54,10 +53,12 @@ func (d *desktop) conflictView(c *ui.Context) {
 	ui.Scroll(c).Key(p.id).TrackScroll(&p.scroll).Grow(1).FillWidth().Children(func() {
 		ui.Column(c).FillWidth().Gap(14).Padding(20, 24).Children(func() {
 			ui.Text(c, "冲突处理").FontSize(27).Bold().TextColor(ink)
-			if p.resolved {
+			if p.revision != "" {
 				ui.Column(c).Gap(6).Padding(16).Radius(6).Background(panel).Children(func() {
 					section(c, conflictReceipt)
-					ui.Text(c, p.title())
+					ui.Text(c, p.resolvedTitle()).Bold()
+					ui.Text(c, "记录 ID "+p.id).Font("monospace").Selectable()
+					ui.Text(c, "本机修订 "+p.revision).Font("monospace").Selectable()
 					ui.Text(c, "修订已加入本机发布队列，由后续同步发布。").TextColor(muted)
 				})
 				return
@@ -81,15 +82,32 @@ func (d *desktop) conflictView(c *ui.Context) {
 
 func (p *conflictPage) title() string {
 	for _, v := range []*app.ConflictVersion{p.detail.Local, p.detail.Remote, p.detail.Base} {
-		if v != nil {
-			for _, field := range []string{"title", "name", "slug"} {
-				if name, ok := payload(v)[field].(string); ok && name != "" {
-					return name
-				}
-			}
+		if name := conflictVersionTitle(v); name != "" {
+			return name
 		}
 	}
 	return p.id
+}
+
+func (p *conflictPage) resolvedTitle() string {
+	if p.choice == "edit" {
+		return p.draft.input.Title
+	}
+	if title := conflictVersionTitle(p.version(p.choice)); title != "" {
+		return title
+	}
+	return p.title()
+}
+
+func conflictVersionTitle(v *app.ConflictVersion) string {
+	if v != nil {
+		for _, field := range []string{"title", "name", "slug"} {
+			if label, ok := payload(v)[field].(string); ok && label != "" {
+				return label
+			}
+		}
+	}
+	return ""
 }
 
 func (p *conflictPage) description() string {
@@ -208,13 +226,13 @@ func (d *desktop) conflictComparison(c *ui.Context, p *conflictPage) {
 				card.Grow(1).Basis(0)
 			}
 			card.Children(func() {
-				d.conflictCard(c, names[i], v, selected, maps[i], fields, p.all)
+				d.conflictCard(c, names[i], v, selected, maps[i], fields, p.diffs[i], p.all)
 			})
 		}
 	})
 }
 
-func (d *desktop) conflictCard(c *ui.Context, name string, v *app.ConflictVersion, selected bool, values map[string]any, fields []comparisonField, all bool) {
+func (d *desktop) conflictCard(c *ui.Context, name string, v *app.ConflictVersion, selected bool, values map[string]any, fields []comparisonField, diffs map[string]*conflictTextDiff, all bool) {
 	ui.Row(c).FillWidth().Gap(6).Children(func() {
 		ui.Text(c, name).FontSize(17).Bold().TextColor(ink)
 		if selected {
@@ -226,11 +244,16 @@ func (d *desktop) conflictCard(c *ui.Context, name string, v *app.ConflictVersio
 		return
 	}
 	ui.Text(c, d.conflictDevice(v.Provenance.DeviceID)).TextColor(ink).Selectable()
+	ui.Text(c, v.Provenance.DeviceID).Font("monospace").FontSize(11).TextColor(muted).Selectable()
 	ui.Text(c, conflictTime(v.Provenance.UpdatedAt)).TextColor(muted)
-	ui.Text(c, "修订 "+v.Revision).Font("monospace").FontSize(12).TextColor(muted).Selectable()
+	ui.Text(c, "修订 "+v.Revision).Font("monospace").FontSize(11).TextColor(muted).Selectable()
 	ui.Divider(c)
 	for _, field := range fields {
 		if !all && !field.changed && !(field.key == "record.deleted" && v.Deleted) {
+			continue
+		}
+		if diff := diffs[field.key]; diff != nil {
+			diff.show(c, field.label)
 			continue
 		}
 		value, present := values[field.key]
@@ -253,7 +276,7 @@ func (d *desktop) conflictDevice(id string) string {
 	if local := d.data.Device; id == local.ID && local.Name != "" {
 		return local.Name + " · " + local.OS + "/" + local.Arch
 	}
-	return "设备 " + id
+	return "设备环境未知"
 }
 
 func conflictTime(raw string) string {
@@ -358,6 +381,7 @@ func (d *desktop) conflictPreview(c *ui.Context, v *app.ConflictVersion) {
 			return
 		}
 		ui.Text(c, "来源 · "+d.conflictDevice(v.Provenance.DeviceID)).TextColor(muted)
+		ui.Text(c, v.Provenance.DeviceID).Font("monospace").FontSize(11).TextColor(muted).Selectable()
 		if v.Kind == "context" {
 			for _, field := range []comparisonField{{key: "summary", label: "文档摘要"}, {key: "body", label: "正文"}} {
 				value, present := payload(v)[field.key]
