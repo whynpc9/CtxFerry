@@ -1,0 +1,38 @@
+---
+import { getCollection } from "astro:content";
+import { getDocsPage, getDocsStaticPaths } from "@cloudflare/nimbus-docs/runtime";
+import { guideGroups } from "../navigation";
+import "../styles/docs.css";
+
+export const getStaticPaths = getDocsStaticPaths;
+const page = await getDocsPage(Astro);
+if (page instanceof Response) return page;
+const { entry, Content } = page;
+const home = import.meta.env.BASE_URL;
+const titles = new Map((await getCollection("docs")).map(doc => [doc.id, doc.data.title]));
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{entry.data.title} · CtxFerry</title>
+    <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
+  </head>
+  <body>
+    <header><a href={home}>CtxFerry</a><a href="https://github.com/whynpc9/CtxFerry">GitHub ↗</a></header>
+    <main>
+      <nav aria-label="Documentation">
+        {guideGroups.map(group => (
+          <section>
+            <h2>{group.label}</h2>
+            <ul>{group.pages.map(id => (
+              <li><a href={home + id + "/"} aria-current={id === entry.id ? "page" : undefined}>{titles.get(id)}</a></li>
+            ))}</ul>
+          </section>
+        ))}
+      </nav>
+      <article data-pagefind-body><h1>{entry.data.title}</h1><Content /></article>
+    </main>
+  </body>
+</html>

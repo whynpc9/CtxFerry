@@ -1,0 +1,44 @@
+---
+import FerrySymbols from "../components/FerrySymbols.astro";
+import FirstRun from "../components/FirstRun.astro";
+import NotePolicy from "../components/NotePolicy.astro";
+import "../styles/landing.css";
+const homeUrl = import.meta.env.BASE_URL;
+const docsUrl = homeUrl + "docs/";
+---
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CtxFerry — Local-first development context</title>
+  <meta name="description" content="Bind local project context, choose what agents can read, and sync selected notes to your private GitHub repository.">
+</head>
+<body>
+  <FerrySymbols />
+  <header class="wrap mast">
+    <a href={homeUrl} class="brand" aria-label="CtxFerry home"><svg aria-hidden="true"><use href="#ferry"/></svg>CtxFerry</a>
+    <nav aria-label="Main"><a href={docsUrl}>Docs</a><a href="https://github.com/whynpc9/CtxFerry">GitHub <svg class="icon"><use href="#out"/></svg></a></nav>
+  </header>
+  <main id="top">
+    <section class="wrap hero" aria-labelledby="hero-title">
+      <div class="intro">
+        <h1 id="hero-title">Project context,<br><em>ready to travel.</em></h1>
+        <p class="lead">CtxFerry is a local-first CLI. Give agents project summaries and sync selected notes in full to your private GitHub repo.</p>
+        <div class="actions"><a class="cta" href={docsUrl}>Read the docs <svg class="icon"><use href="#arrow"/></svg></a></div>
+      </div>
+      <FirstRun />
+    </section>
+    <section class="policy" aria-labelledby="note-policy">
+      <div class="wrap comparison">
+        <div class="comparison-heading">
+          <h2 id="note-policy">One note, two decisions.</h2>
+          <p>These settings apply together. An agent can read a summary while sync sends the same note’s full body to your dedicated private GitHub repository.</p>
+        </div>
+        <NotePolicy />
+      </div>
+    </section>
+  </main>
+  <footer class="wrap"><a href={homeUrl} class="brand"><svg aria-hidden="true"><use href="#ferry"/></svg>CtxFerry</a><a href={docsUrl}>Docs <svg class="icon"><use href="#arrow"/></svg></a></footer>
+</body>
+</html>
