@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/whynpc9/CtxFerry/internal/app"
@@ -276,6 +277,9 @@ func (p *projectPage) profilePicker(c *ui.Context) {
 				choice = ""
 			}
 			p.selectProfile(choice)
+		}
+		if !p.busy && disabled && len(p.config.Profiles) != 0 {
+			ui.Text(c, strings.Join(p.config.Profiles, "、")).MinWidth(0).Multiline(true).TextColor(muted).FontSize(12)
 		}
 	})
 }

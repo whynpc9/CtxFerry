@@ -78,27 +78,23 @@ func (a App) changeConfiguration(ctx context.Context, selector, cwd string, chan
 		return out, err
 	}
 	defer db.Close()
-	var loc configurationLocation
-	switch {
-	case resolve != nil:
-		// The desktop pins its location inside the write transaction.
-	case change.Layer == layerGlobal:
-		err = db.QueryRowContext(ctx, "SELECT id FROM workspace").Scan(&loc.workspace)
-	default:
-		loc, err = configLocation(ctx, db, selector, cwd)
-	}
-	if err != nil {
-		return out, err
-	}
-	locationForWrite := func(c *sql.Conn) (configurationLocation, error) {
-		if resolve != nil {
-			return resolve(ctx, c)
+	if resolve == nil {
+		var loc configurationLocation
+		if change.Layer == layerGlobal {
+			err = db.QueryRowContext(ctx, "SELECT id FROM workspace").Scan(&loc.workspace)
+		} else {
+			loc, err = configLocation(ctx, db, selector, cwd)
 		}
-		return loc, nil
+		if err != nil {
+			return out, err
+		}
+		resolve = func(context.Context, projectReader) (configurationLocation, error) {
+			return loc, nil
+		}
 	}
 	if local {
 		err = store.Write(ctx, db, func(c *sql.Conn) error {
-			loc, err := locationForWrite(c)
+			loc, err := resolve(ctx, c)
 			if err != nil {
 				return err
 			}
@@ -132,7 +128,7 @@ func (a App) changeConfiguration(ctx context.Context, selector, cwd string, chan
 		return out, err
 	}
 	err = store.Write(ctx, db, func(c *sql.Conn) error {
-		loc, err := locationForWrite(c)
+		loc, err := resolve(ctx, c)
 		if err != nil {
 			return err
 		}
