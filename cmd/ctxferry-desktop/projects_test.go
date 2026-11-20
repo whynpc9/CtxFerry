@@ -10,6 +10,18 @@ import (
 	"github.com/whynpc9/CtxFerry/internal/app"
 )
 
+func clickProjectTab(t *testing.T, window *ui.Tester, name string) {
+	t.Helper()
+	for _, control := range window.AccessAll() {
+		if control.Segment && control.Name == name {
+			box := control.Bounds
+			window.ClickAt(box.X+box.W/2, box.Y+box.H/2)
+			return
+		}
+	}
+	t.Fatalf("missing Project tab %q", name)
+}
+
 func TestProjectResetThroughNativeView(t *testing.T) {
 	ctx := t.Context()
 	core := app.App{DataDir: t.TempDir()}
@@ -39,7 +51,7 @@ func TestProjectResetThroughNativeView(t *testing.T) {
 		project: projectPage{
 			core: core, ctx: ctx, run: func(work func() func()) { work()() },
 		}}
-	window := ui.NewTester(d.view, 1180, 750)
+	window := ui.NewTester(d.view, 1280, 1400)
 	click := func(label string) {
 		t.Helper()
 		if err := window.Click(label); err != nil {
@@ -52,20 +64,21 @@ func TestProjectResetThroughNativeView(t *testing.T) {
 			t.Fatalf("missing %q", label)
 		}
 	}
-	click("项目")
+	click("Projects")
 	access("sample")
-	click("sample")
-	access("项目 · sample")
-	click("预览恢复继承…")
-	access("90 秒 → 60 秒")
-	click("取消")
+	click("Open Project sample")
+	access("sample")
+	clickProjectTab(t, window, "Configuration")
+	click("Preview removal from Device…")
+	access("90 seconds → 60 seconds")
+	click("Cancel")
 	before, err := core.ExplainConfiguration(ctx, project.Project.ID, checkout, "")
 	if err != nil || len(before.Values) != 1 || before.Values[0].Value != 90 {
 		t.Fatalf("cancel changed the configuration: %#v, %v", before, err)
 	}
-	click("预览恢复继承…")
-	click("确认恢复继承")
-	access("已恢复继承 · timeoutSeconds · 设备层 · 仅本机")
+	click("Preview removal from Device…")
+	click("Remove from Device")
+	access("Removed override · timeoutSeconds · Device layer · local only")
 
 	after, err := core.ExplainConfiguration(ctx, project.Project.ID, checkout, "")
 	if err != nil || len(after.Values) != 1 || after.Values[0].Value != 60 || after.Values[0].Origin.Layer != "project" {
@@ -75,9 +88,9 @@ func TestProjectResetThroughNativeView(t *testing.T) {
 
 func TestProjectManagementLinksUseRegisteredRoutes(t *testing.T) {
 	for _, tc := range []struct{ page, tab, action string }{
-		{pageFleet, "资源", "打开设备与资源"},
-		{pageSkills, "Skills", "打开 Skills 管理"},
-		{pageArtifacts, "产物", "打开产物管理"},
+		{pageFleet, "Resources", "Open Resources & environments"},
+		{pageSkills, "Skills", "Open Skills"},
+		{pageArtifacts, "Artifacts", "Open Run artifacts"},
 	} {
 		t.Run(tc.page, func(t *testing.T) {
 			ctx := t.Context()
@@ -105,39 +118,28 @@ func TestProjectManagementLinksUseRegisteredRoutes(t *testing.T) {
 					core: core, ctx: ctx, run: func(work func() func()) { work()() },
 				},
 			}
-			window := ui.NewTester(d.view, 1180, 750)
-			if _, ok := window.Access("项目 · sample"); !ok {
+			window := ui.NewTester(d.view, 1280, 800)
+			if _, ok := window.Access("sample"); !ok {
 				t.Fatal("project route did not open the requested Project")
 			}
-			clickTab := func(name string) {
-				t.Helper()
-				for _, control := range window.AccessAll() {
-					if control.Segment && control.Name == name {
-						box := control.Bounds
-						window.ClickAt(box.X+box.W/2, box.Y+box.H/2)
-						return
-					}
-				}
-				t.Fatalf("missing Project tab %q", name)
-			}
-			clickTab(tc.tab)
+			clickProjectTab(t, window, tc.tab)
 			if _, ok := window.Access(tc.action); ok {
 				t.Fatal("showed an entry for an unavailable management page")
 			}
 			desktopPages[tc.page] = func(d *desktop, c *ui.Context) {
-				if ui.Button(c, "返回项目").Clicked() {
+				if ui.Button(c, "Return to Project").Clicked() {
 					d.navigate(desktopRoute{Page: pageProjects, ProjectID: d.route.ProjectID})
 				}
 			}
-			clickTab("配置")
-			clickTab(tc.tab)
+			clickProjectTab(t, window, "Configuration")
+			clickProjectTab(t, window, tc.tab)
 			if err := window.Click(tc.action); err != nil {
 				t.Fatal(err)
 			}
 			if want := (desktopRoute{Page: tc.page, ProjectID: bound.Project.ID}); d.route != want {
 				t.Fatalf("management route got %#v; want %#v", d.route, want)
 			}
-			if err := window.Click("返回项目"); err != nil {
+			if err := window.Click("Return to Project"); err != nil {
 				t.Fatal(err)
 			}
 			if _, ok := window.Access(tc.action); !ok || d.project.target.CheckoutID != bound.Binding.ID {

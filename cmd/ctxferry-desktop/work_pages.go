@@ -9,24 +9,73 @@ import (
 )
 
 func init() {
+	desktopPages[pageCatalog] = (*desktop).catalogPage
 	desktopPages[pageSkills] = func(d *desktop, c *ui.Context) {
-		d.workHeading(c, "Skills", "核对共享意图和本机文件变更", d.skills.project)
+		d.workHeading(c, "Skills", "Compare approved pins, local installations and candidate file changes.", d.skills.project)
 		d.skillsPage(c)
 	}
 	desktopPages[pageArtifacts] = func(d *desktop, c *ui.Context) {
-		d.workHeading(c, "产物", "追溯运行结果与内容位置", d.artifacts.project)
+		d.workHeading(c, "Run artifacts", "Inspect provenance, content availability and verified exports.", d.artifacts.project)
 		d.artifactsPage(c)
 	}
 }
 
-func (d *desktop) workHeading(c *ui.Context, title, subtitle, project string) {
-	ui.Row(c).FillWidth().Gap(8).Wrap().Children(func() {
-		pageHeading(c, title, subtitle)
-		if project != "" && desktopPages[pageProjects] != nil {
-			ui.Spacer(c)
-			ui.Button(c, "打开项目").OnClick(func() { d.navigate(desktopRoute{Page: pageProjects, ProjectID: project}) })
+func (d *desktop) catalogPage(c *ui.Context) {
+	pageHeader(c, "Catalog", "Tools and records shared across Projects.", nil)
+	if d.workProjects.err != nil {
+		workMessage(c, "The Project directory could not be read", d.workProjects.err)
+	}
+	card(c).Children(func() {
+		cardHeader(c, icFolder, "Project scope", "Scoped tools use subscribed Projects only. Device-wide Skills remain available without a Project.", nil)
+		if len(d.workProjects.items) == 0 && !d.workProjects.loading {
+			muted(c, "No subscribed Projects yet. Open Projects to subscribe or bind one; the device Skill catalog is still available below.")
+			linkButton(c, "Open Projects", icArrowR).AlignSelf(ui.Start).OnClick(func() { d.navigateRoot(pageProjects) })
+		} else {
+			d.projectPicker(c, d.catalogProject, false, d.workProjects.loading, func(id string) { d.catalogProject = id })
 		}
 	})
+	ui.Grid(c).ColumnTracks(ui.Fr(1), ui.Fr(1)).GapX(sp4).GapY(sp4).AlignItems(ui.Stretch).Children(func() {
+		d.catalogToolCard(c, pageFleet, icServer, "Resources & environments", "Inspect configured endpoints, local routes, per-environment observations and exact TCP probe targets.", true)
+		d.catalogToolCard(c, pageSecrets, icKey, "Credential bindings", "Map provider references without exposing values, then check authentication and entry readability separately.", true)
+		d.catalogToolCard(c, pageSkills, icSkill, "Skills", "Compare approved pins with installed files, inspect candidate and drift diffs, and confirm local changes.", true)
+		d.catalogToolCard(c, pageArtifacts, icPackage, "Run artifacts", "Filter runs, inspect provenance and digests, and verify or export available bytes to a new file.", true)
+	})
+	card(c).Children(func() {
+		cardHeader(c, icSkill, "Device Skill catalog", "Includes local packages and installation receipts outside a single Project selection.", nil)
+		linkButton(c, "Open device-wide Skills", icArrowR).AlignSelf(ui.Start).OnClick(func() {
+			d.navigate(desktopRoute{Page: pageSkills})
+		})
+	})
+}
+
+func (d *desktop) catalogToolCard(c *ui.Context, page string, icon *ui.SVG, title, description string, scoped bool) {
+	card(c).Children(func() {
+		cardHeader(c, icon, title, description, nil)
+		if scoped && d.catalogProject == "" {
+			muted(c, "Choose a subscribed Project above to open this tool with an explicit scope.")
+			return
+		}
+		linkButton(c, "Open "+title, icArrowR).AlignSelf(ui.Start).OnClick(func() {
+			d.navigate(desktopRoute{Page: page, ProjectID: d.catalogProject})
+		})
+	})
+}
+
+func (d *desktop) workHeading(c *ui.Context, title, subtitle, project string) {
+	pageHeader(c, title, subtitle, func() {
+		if project != "" && desktopPages[pageProjects] != nil {
+			linkButton(c, "Open Project", icArrowR).OnClick(func() { d.navigate(desktopRoute{Page: pageProjects, ProjectID: project}) })
+		}
+	})
+	if project != "" {
+		name := project
+		for _, p := range d.workProjects.items {
+			if p.ID == project {
+				name = p.Slug
+			}
+		}
+		scopeBar(c, []scopeItem{{label: "Project", value: name, id: project, icon: icFolder}}, nil)
+	}
 }
 
 type workProjects struct {
@@ -50,7 +99,7 @@ func desktopJob[T any](d *desktop, read func(context.Context) (T, error), done f
 }
 
 func (d *desktop) enterWorkPage(refresh bool) {
-	if d.route.Page != pageSkills && d.route.Page != pageArtifacts || d.data.ReadAt.IsZero() {
+	if d.data.ReadAt.IsZero() {
 		return
 	}
 	switch d.route.Page {
@@ -81,6 +130,9 @@ func (d *desktop) loadWorkProjects(refresh bool) {
 		if err != nil {
 			return
 		}
+		if d.catalogProject == "" && len(projects) > 0 {
+			d.catalogProject = projects[0].ID
+		}
 		a := &d.artifacts
 		if d.route.Page == pageArtifacts && a.project == "" && len(projects) > 0 {
 			d.setArtifactProject(projects[0].ID)
@@ -90,16 +142,17 @@ func (d *desktop) loadWorkProjects(refresh bool) {
 
 func (d *desktop) projectPicker(c *ui.Context, id string, allowAll, disabled bool, changed func(string)) {
 	if d.workProjects.err != nil {
-		workMessage(c, "项目目录读取失败", d.workProjects.err)
+		workMessage(c, "The Project directory could not be read", d.workProjects.err)
 		return
 	}
 	options := make([]string, 0, len(d.workProjects.items)+1)
+	allLabel := "Device catalog"
 	if allowAll {
-		options = append(options, "全部 Skills")
+		options = append(options, allLabel)
 	}
-	label := "选择项目"
-	if allowAll {
-		label = "全部 Skills"
+	label := "Select Project"
+	if allowAll && id == "" {
+		label = allLabel
 	}
 	for _, project := range d.workProjects.items {
 		options = append(options, project.Slug)
@@ -107,14 +160,14 @@ func (d *desktop) projectPicker(c *ui.Context, id string, allowAll, disabled boo
 			label = project.Slug
 		}
 	}
-	if id != "" && (label == "全部 Skills" || label == "选择项目") {
-		label = "项目不可用"
+	if id != "" && label == "Select Project" {
+		label = "Project unavailable"
 	}
-	workPicker(c, "项目", &label, options, disabled || d.workProjects.loading, func() {
+	workPicker(c, "Project scope", &label, options, disabled || d.workProjects.loading, func() {
 		index := slices.IndexFunc(d.workProjects.items, func(p app.Project) bool { return p.Slug == label })
 		if index >= 0 {
 			changed(d.workProjects.items[index].ID)
-		} else if allowAll && label == "全部 Skills" {
+		} else if allowAll && label == allLabel {
 			changed("")
 		}
 	})
@@ -122,7 +175,7 @@ func (d *desktop) projectPicker(c *ui.Context, id string, allowAll, disabled boo
 
 func workPicker(c *ui.Context, label string, value *string, choices []string, disabled bool, onChange func()) {
 	ui.Column(c).Grow(1).MinWidth(120).Gap(4).Children(func() {
-		ui.Text(c, label).TextColor(muted)
+		ui.Text(c, label).TextColor(tk.Muted).FontSize(fsMeta)
 		ui.Select(c, value, choices).FillWidth().Label(label).Disabled(disabled || len(choices) == 0).OnChange(onChange)
 	})
 }
@@ -132,36 +185,36 @@ func workMessage(c *ui.Context, label string, err error) {
 	message := e.Message
 	switch e.Code {
 	case "store-error":
-		message = "无法完成请求。请检查本机目录后重试。"
+		message = "The request could not complete. Check the local data root and retry."
 	case "not-subscribed":
-		message = "此项目尚未在本机订阅。"
+		message = "This Project is not subscribed on the current device."
 	case "skill-plan-changed":
-		message = "计划已变化。请重新扫描并核对差异。"
+		message = "The plan changed. Rescan and review the new diff."
 	case "skill-candidate-changed":
-		message = "候选 pin 已变化。请刷新本地视图并重新选择。"
+		message = "The candidate pin changed. Refresh and select it again."
 	case "skill-no-previous-version":
-		message = "这个目标没有可恢复的上一版本。"
+		message = "This target has no previous version available for rollback."
 	case "artifact-hash-mismatch":
-		message = "内容与登记的大小或 SHA-256 不一致。"
+		message = "The content does not match its registered size or SHA-256."
 	case "output-exists":
-		message = "目标文件已存在，请另选文件名。"
+		message = "The destination file already exists. Choose another filename."
 	}
-	ui.Column(c).Gap(4).FillWidth().Padding(9, 12).Radius(6).Background(workWarningBG).Children(func() {
-		ui.Text(c, label).Bold().TextColor(workWarning)
-		ui.Text(c, message+" · "+e.Code).TextColor(workWarning)
+	ui.Column(c).Gap(4).FillWidth().Padding(sp3, sp4).Radius(radiusCard).Background(tk.ConflictSoft).Children(func() {
+		ui.Text(c, label).Bold().TextColor(tk.Conflict)
+		ui.Text(c, message+" · "+e.Code).TextColor(tk.Conflict)
 	})
 }
 
-var workWarning = ui.Hex("#754a0b")
-var workWarningBG = ui.Hex("#fff2d6")
+var workWarning = tk.Conflict
+var workWarningBG = tk.ConflictSoft
 
 func workInspector(c *ui.Context, build func()) {
-	ui.Column(c).WidthPercent(35).MinWidth(210).Gap(8).Padding(14, 14).Radius(7).Background(panel).Children(build)
+	card(c).WidthPercent(35).MinWidth(240).Children(build)
 }
 
 func workDetail(c *ui.Context, label, value string) {
 	ui.Column(c).FillWidth().Gap(2).Children(func() {
-		ui.Text(c, label).FontSize(12).TextColor(muted)
-		ui.Text(c, value).FillWidth().TextColor(ink).Selectable()
+		ui.Text(c, label).FontSize(fsMeta).TextColor(tk.Muted)
+		ui.Text(c, value).FillWidth().TextColor(tk.Text).Selectable().LineHeight(1.4)
 	})
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"path/filepath"
@@ -41,6 +42,7 @@ type ProjectConfigurationValue struct {
 // ProjectConfigurationPreview is produced by the core and checked inside the
 // write transaction. The selected context and the proposed change are pinned.
 type ProjectConfigurationPreview struct {
+	PreviewID string `json:"previewId,omitempty"`
 	Target    ProjectConfigurationTarget
 	Change    ConfigurationChange
 	Before    ProjectConfigurationValue
@@ -261,6 +263,7 @@ func previewProjectConfiguration(ctx context.Context, q projectReader, loc confi
 	raw, err := json.Marshal([]any{loc.workspace, loc.device, loc.project.ID, loc.checkout, profile, current, change, out.Before, out.After, out.Checkouts})
 	if err == nil {
 		out.token = sha256.Sum256(raw)
+		out.PreviewID = hex.EncodeToString(out.token[:])
 	}
 	return out, err
 }

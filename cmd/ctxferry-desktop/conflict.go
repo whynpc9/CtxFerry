@@ -4,26 +4,28 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/whynpc9/CtxFerry/internal/app"
 )
 
 type conflictPage struct {
-	id       string
-	detail   app.ConflictDetail
-	diffs    [3]map[string]*conflictTextDiff
-	choice   string
-	draft    *conflictDraft
-	scroll   ui.ScrollState
-	all      bool
-	metadata bool
-	confirm  bool
-	loading  bool
-	writing  bool
-	review   bool
-	revision string
-	err      string
+	id         string
+	detail     app.ConflictDetail
+	diffs      [3]map[string]*conflictTextDiff
+	choice     string
+	draft      *conflictDraft
+	scroll     ui.ScrollState
+	all        bool
+	metadata   bool
+	confirm    bool
+	loading    bool
+	writing    bool
+	review     bool
+	revision   string
+	resolvedAt time.Time
+	err        string
 }
 
 type conflictDraft struct {
@@ -67,11 +69,11 @@ func (d *desktop) loadConflict() {
 			return
 		}
 		if p.detail.ConflictID != "" && p.detail.ConflictID != result.detail.ConflictID {
-			p.err = "比较后记录已变化。已载入最新版本，请重新选择解决方式。"
+			p.err = "The record changed after comparison. The latest versions are loaded; choose the resolution again."
 			p.choice = ""
 			if p.draft != nil {
 				p.draft.input.Policy.AgentDisclosure = ""
-				p.err += "正文草稿已保留，请重新核对草稿及披露范围。"
+				p.err += " Your document draft is preserved; review it and choose disclosure again."
 			}
 		} else {
 			p.err = ""
@@ -162,7 +164,7 @@ func (draft *conflictDraft) replacement() ([]byte, error) {
 }
 
 func (d *desktop) resolveConflict(p *conflictPage) {
-	if !p.canConfirm() {
+	if d.err != nil || d.publicationUnknown() || !p.canConfirm() {
 		return
 	}
 	take := p.choice
@@ -194,6 +196,7 @@ func (d *desktop) resolveConflict(p *conflictPage) {
 			return
 		}
 		p.revision = result.ResolvedRevision
+		p.resolvedAt = time.Now()
 		d.resolvedRevision = result.ResolvedRevision
 		d.refresh()
 	})
@@ -203,18 +206,18 @@ func conflictError(err error) string {
 	code := app.Classify(err).Code
 	switch code {
 	case "stale-conflict":
-		return "比较后记录已变化，请载入最新版本。草稿仍保留在此页。"
+		return "The record changed after comparison. Load the latest versions; your draft remains on this page."
 	case "conflict-not-found":
-		return "这条记录已无活动冲突。请返回同步队列查看当前状态。"
+		return "This record no longer has an active conflict. Return to the Queue for its current state."
 	case "sync-busy", "store-busy":
-		return "本机同步目录正在使用中，请稍后重试。"
+		return "The local sync directory is busy. Retry after the current writer finishes."
 	case "push-pending":
-		return "上次发布仍待确认。同步完成后可重试解决冲突。"
+		return "A publication outcome is uncertain. Reconcile it in Repository before resolving a conflict."
 	case "size-limit":
-		return "编辑内容超过大小上限，请缩短正文或其他字段。"
+		return "The replacement exceeds the size limit. Shorten its body or metadata."
 	case "incomplete", "invalid-policy", "unsupported-schema":
-		return "核心无法使用此结果生成修订。请核对解决方式及编辑字段（" + code + "）。"
+		return "The core cannot create a revision from this result. Review the resolution and edited fields (" + code + ")."
 	default:
-		return "操作未完成，请重试（" + code + "）。"
+		return "The operation did not complete. Reread the conflict before retrying (" + code + ")."
 	}
 }

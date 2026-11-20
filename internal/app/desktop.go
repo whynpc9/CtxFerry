@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"maps"
 	"slices"
@@ -15,21 +16,23 @@ import (
 // DesktopSnapshot contains local catalog evidence and metadata-only connection
 // observations. A failed section must not be interpreted as an empty result.
 type DesktopSnapshot struct {
-	ReadAt         time.Time
-	Workspace      Workspace
-	Device         Device
-	Bindings       []DesktopBinding
-	BindingsErr    error
-	Sync           SyncResult
-	SyncErr        error
-	LastOutcome    string
-	RepositoryURL  string
-	PendingIDs     []string
-	QueuePending   int
-	Queue          []DesktopQueueRecord
-	Providers      []DoctorProvider
-	ProvidersErr   error
-	BackgroundSync DoctorCheck
+	ReadAt             time.Time
+	Workspace          Workspace
+	Device             Device
+	Bindings           []DesktopBinding
+	BindingsErr        error
+	Sync               SyncResult
+	SyncErr            error
+	LastOutcome        string
+	RepositoryURL      string
+	PendingIDs         []string
+	QueuePending       int
+	Queue              []DesktopQueueRecord
+	Providers          []DoctorProvider
+	ProvidersErr       error
+	BackgroundSync     DoctorCheck
+	PublicationPending bool
+	PublicationPreview string
 }
 
 type DesktopBinding struct {
@@ -151,6 +154,17 @@ func (s *DesktopSnapshot) readSync(ctx context.Context, tx *sql.Tx) error {
 		s.RepositoryURL = "https://github.com/" + repo
 		if err := tx.QueryRowContext(ctx, "SELECT outcome FROM sync_state WHERE singleton=1").Scan(&s.LastOutcome); err != nil {
 			return err
+		}
+		var pending string
+		if err := tx.QueryRowContext(ctx, "SELECT pending FROM sync_state WHERE singleton=1").Scan(&pending); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if pending != "" {
+			s.PublicationPending = true
+			var journal pendingPush
+			if err := json.Unmarshal([]byte(pending), &journal); err == nil {
+				s.PublicationPreview = journal.PreviewID
+			}
 		}
 	case Classify(err).Code == "sync-disabled":
 		// A local queue and conflict evidence can exist without a remote.

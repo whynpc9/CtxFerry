@@ -1,0 +1,209 @@
+{
+  "implementationRevision": "93bc2d0f47f00e589c17000a6a501618510df5a3",
+  "renderer": "Running MyGo native window via desktop_smoke automation",
+  "isolatedDataDir": "/tmp/ctxferry-redesign-93bc2d0/data-b",
+  "fixture": {
+    "confirmedHead": "cd2813d9c3db44627bd64dc0da245e068b3937ec",
+    "pending": 1,
+    "conflicts": 1,
+    "resource": {
+      "identity": "postgres-primary",
+      "kind": "database",
+      "stage": "dev",
+      "purpose": "Preview database",
+      "endpoints": [
+        "db.example.com:5432"
+      ],
+      "platforms": [],
+      "id": "70efa283-a1b7-4231-a623-cba3c17e980d",
+      "scope": {
+        "kind": "project",
+        "id": "15e5e541-8148-474e-82ec-a98dbb19ced5"
+      },
+      "policy": {
+        "storage": "shared",
+        "agentDisclosure": "full"
+      },
+      "revision": "ef525231-e118-4d65-b235-f82823def06f",
+      "updatedAt": "2026-11-20T23:26:41.072777196Z"
+    },
+    "task": {
+      "name": "deploy-preview",
+      "purpose": "Deploy the preview environment",
+      "inputs": [],
+      "resourceSlots": [
+        {
+          "name": "db",
+          "kind": "database",
+          "stage": "dev"
+        }
+      ],
+      "credentialRequirements": [
+        {
+          "name": "db-password",
+          "resourceSlot": "db",
+          "purpose": "preview-runtime",
+          "type": "connection-string",
+          "env": "DATABASE_URL"
+        }
+      ],
+      "membershipId": "7158f3a7-f40a-42e9-b58d-ec5c6afc4060",
+      "workingDirectory": ".",
+      "program": "deploy",
+      "argv": [],
+      "platforms": [],
+      "id": "bde4e973-5179-4a96-ab47-5d96df55848c",
+      "scope": {
+        "kind": "project",
+        "id": "15e5e541-8148-474e-82ec-a98dbb19ced5"
+      },
+      "policy": {
+        "storage": "shared",
+        "agentDisclosure": "full"
+      },
+      "revision": "3ac84098-48f1-41a9-81b1-ba6c01d9a364",
+      "updatedAt": "2026-11-20T23:26:41.090452597Z"
+    },
+    "probeTarget": "127.0.0.1:46510",
+    "skill": "release-notes",
+    "projects": [
+      "atlas-api"
+    ],
+    "profile": "staging",
+    "artifactCount": 2
+  },
+  "images": {
+    "00-readiness": {
+      "sha256": "d7d0d830cfb647733528ba3e17ce0fe1de88c8b5d61eff876c1febec885f1860",
+      "width": 1280,
+      "height": 800,
+      "state": "Fresh isolated data root with real create and join choices"
+    },
+    "01-home": {
+      "sha256": "37a156a54693c390d9e519f146b7c2947c89d406c4310cf1a828e806a8c44e9b",
+      "width": 1280,
+      "height": 800,
+      "state": "Real Home: one active conflict, local queue evidence and one bound Project"
+    },
+    "02-projects": {
+      "sha256": "bce1959b755d25e55623067f120de7fc150a557b7b5d5366e9a4ffdd35b3408d",
+      "width": 1280,
+      "height": 800,
+      "state": "Real subscribed Project list"
+    },
+    "03-project-overview": {
+      "sha256": "e053711479374ebe6b9aa9af5f98459b18b346e71a30399088a702080b51dba2",
+      "width": 1280,
+      "height": 800,
+      "state": "atlas-api overview with its real Checkout and staging Profile"
+    },
+    "04-configuration": {
+      "sha256": "e5ec07dfb102c4215e4c18d190617a9b828f2526e9c5740d3ca360ea47d826df",
+      "width": 1280,
+      "height": 800,
+      "state": "Real effective timeoutSeconds and ordered layer contributions"
+    },
+    "05-configuration-preview": {
+      "sha256": "f92324853ecd782093c3eacccd6a9ec69b85f34a885a31324a1549537442954c",
+      "width": 1280,
+      "height": 800,
+      "state": "Unconfirmed removal of the Device override; actual preview token and effects"
+    },
+    "06-task-probe": {
+      "sha256": "f05127ffedfa5e632c3f6f4f9cd6d51dc15c8430b6cc4e0a8932a67497e810cc",
+      "width": 1280,
+      "height": 800,
+      "state": "Task slot mapped to postgres-primary with the exact local TCP target and observation timestamp"
+    },
+    "07-resource": {
+      "sha256": "c3cfb94a272867372995b0130b90f19f0b98324553a16386d7bab02183555378",
+      "width": 1280,
+      "height": 800,
+      "state": "Resource route and per-environment observations returned from the Task"
+    },
+    "08-credentials": {
+      "sha256": "386534735b899b4ef9a835ed90029b1205208758c49910a84b47ec0c42f9efc1",
+      "width": 1280,
+      "height": 800,
+      "state": "Real shared credential reference and independently unknown provider authentication"
+    },
+    "09-catalog": {
+      "sha256": "38d76bde3e8f4f8f214002b6f5a76855904f4b6e4927fd50ffe6fe37ec6f36f2",
+      "width": 1280,
+      "height": 800,
+      "state": "Catalog directory with atlas-api scope"
+    },
+    "10-skill-drift": {
+      "sha256": "f12a33f920ca0c7c1f6419f4114b1c78792d0643351450168300e72ea0556139",
+      "width": 1280,
+      "height": 800,
+      "state": "Blocked Skill update showing installed-to-local drift"
+    },
+    "11-skill-candidate": {
+      "sha256": "8fbe7b14b5c40f12fb52573621938bd4e719d4441a1f8c633af57764178c8eaf",
+      "width": 1280,
+      "height": 800,
+      "state": "The same file showing installed-to-candidate changes"
+    },
+    "12-artifacts": {
+      "sha256": "e51a362db03529f5041f3a11aa0d6e4866c67526712bc6f4cfcf26c3b4606e09",
+      "width": 1280,
+      "height": 800,
+      "state": "Two real local run artifacts with provenance and full digests"
+    },
+    "13-repository": {
+      "sha256": "733de05f6ca62622b923e59f03ec0f5d0d9fdf8535d8a864f29841aaa9b0c05d",
+      "width": 1280,
+      "height": 800,
+      "state": "Confirmed repository history and a real reachability/privacy check"
+    },
+    "14-queue": {
+      "sha256": "df374f1920051d63ab440cf003fd8f6cf9be7e0daa9ceb8d670c99d3bc195f7d",
+      "width": 1280,
+      "height": 800,
+      "state": "Real conflict and waiting records grouped by stable ID"
+    },
+    "15-conflict": {
+      "sha256": "5e593ff3da0baad96850e6cada151be3290250c9a86c870d0bc09f912939a135",
+      "width": 1280,
+      "height": 800,
+      "state": "Unresolved real conflict with Keep local version preview and conflict token"
+    },
+    "16-backup-review": {
+      "sha256": "5c375879d50ec7a90ef491fc87a99b1ff41234b431292e298bfc60d0905d031c",
+      "width": 1280,
+      "height": 800,
+      "state": "Real backup scope, exclusions and plaintext exposure before writing"
+    },
+    "17-backup-receipt": {
+      "sha256": "f3a0450d95f2305f6f0ed41a93d28f5e66a97a9c67da9f7932210f9fe1d64b2c",
+      "width": 1280,
+      "height": 800,
+      "state": "Verified new backup and manifest receipt"
+    },
+    "18-compact-home": {
+      "sha256": "e4db899ad5914d930a2fa8ce7cf8e0afa46c85580222e7063c717b7df3e033fe",
+      "width": 1024,
+      "height": 680,
+      "state": "1024x680 native compact Home with icon rail"
+    },
+    "19-compact-configuration": {
+      "sha256": "28643b47815d5d9722818ef7f933ad6486d950a3266fa0b99847f469fc21210b",
+      "width": 1024,
+      "height": 680,
+      "state": "1024x680 Configuration preview with pinned token and confirmation"
+    },
+    "20-compact-conflict": {
+      "sha256": "41ea13f99c1d126341d51c9a69ce8a6968905a396a527ab094f3d9e733e167d4",
+      "width": 1024,
+      "height": 680,
+      "state": "1024x680 conflict resolution with pinned conflict token and action"
+    },
+    "21-compact-backup": {
+      "sha256": "f37d9f768deed9b5e2214fb0ed83cc9f3f3d1c9ed572dc89a7fcabbc974f7648",
+      "width": 1024,
+      "height": 680,
+      "state": "1024x680 Backup review with pinned exposure acknowledgement and write"
+    }
+  }
+}

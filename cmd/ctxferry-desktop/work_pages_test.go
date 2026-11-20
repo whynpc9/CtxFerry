@@ -58,7 +58,7 @@ func TestNavigateSkillsAndArtifacts(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := desktop{core: core, route: desktopRoute{Page: pageOverview}, data: snapshot}
-	window := ui.NewTester(d.view, 1180, 750)
+	window := ui.NewTester(d.view, 1280, 1400)
 	click := func(label string) {
 		t.Helper()
 		if err := window.Click(label); err != nil {
@@ -68,19 +68,20 @@ func TestNavigateSkillsAndArtifacts(t *testing.T) {
 	see := func(label string) {
 		t.Helper()
 		if _, ok := window.Access(label); !ok {
-			t.Fatalf("missing %q", label)
+			t.Fatalf("missing %q · route=%+v catalog=%s skills=%+v target=%+v", label, d.route, d.catalogProject, d.skills, d.skills.targetState)
 		}
 	}
-	click("Skills")
-	see("预览安装…")
+	click("Catalog")
+	click("Open device-wide Skills")
+	see("Preview install…")
 	d.navigate(desktopRoute{Page: pageSkills, ProjectID: projectID})
 	window.Frame()
 	if d.skills.project != projectID || d.skills.name != "sample-skill" {
 		t.Fatalf("Skills route did not retain Project ID: %+v", d.skills.entries)
 	}
-	click("预览安装…")
-	see("安装计划")
-	see("确认安装")
+	click("Preview install…")
+	see("install plan")
+	see("Confirm install")
 	if d.skills.preview.Confirmation == "" || len(d.skills.preview.Files) != 1 || d.skills.preview.Files[0].Path != "SKILL.md" {
 		t.Fatal("view did not store the core preview")
 	}
@@ -88,14 +89,14 @@ func TestNavigateSkillsAndArtifacts(t *testing.T) {
 	if _, err := os.Stat(target); !os.IsNotExist(err) {
 		t.Fatalf("preview touched target: %v", err)
 	}
-	click("确认安装")
+	click("Confirm install")
 	if _, err := os.Stat(filepath.Join(target, "SKILL.md")); err != nil {
 		t.Fatal(err)
 	}
 	if d.skills.targetState.Installed == nil {
 		t.Fatal("view did not reload the installation receipt")
 	}
-	see("候选 pin")
+	see("Candidate pin")
 	if err := os.WriteFile(skillFile, []byte(first+"Approved change\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -105,28 +106,27 @@ func TestNavigateSkillsAndArtifacts(t *testing.T) {
 	}
 	d.loadSkills()
 	window.Frame()
-	click("预览更新…")
-	click("确认更新")
+	click("Preview update…")
+	click("Confirm update")
 	prior := d.skills.targetState.Previous
 	if prior == nil {
 		t.Fatal("update did not retain the previous pin")
 	}
-	click("共享 · " + skillShortPin(&approved))
-	click("上次本机 · " + skillShortPin(prior))
-	click("预览回滚…")
-	see("回滚计划")
+	click("Shared · " + skillShortPin(&approved))
+	click("Previous local · " + skillShortPin(prior))
+	click("Preview rollback…")
+	see("rollback plan")
 	if d.skills.preview.After == nil || d.skills.preview.After.Digest != prior.Digest {
 		t.Fatal("rollback did not preview the selected pin")
 	}
-	click("确认回滚")
+	click("Confirm rollback")
 	if got, err := os.ReadFile(filepath.Join(target, "SKILL.md")); err != nil || string(got) != first {
 		t.Fatalf("rollback bytes %q: %v", got, err)
 	}
 
-	click("产物")
 	d.navigate(desktopRoute{Page: pageArtifacts, ProjectID: projectID})
 	window.Frame()
-	see("运行产物 · 2 项")
+	see("2 artifacts · newest first")
 	see("synthetic complete")
 	if d.artifacts.project != projectID || len(d.artifacts.items) != 2 {
 		t.Fatal("Artifacts route did not retain Project ID")
@@ -134,9 +134,9 @@ func TestNavigateSkillsAndArtifacts(t *testing.T) {
 	d.artifacts.run = artifactRunLabel(d.artifacts.items[1].Run)
 	d.artifacts.filterArtifacts()
 	window.Frame()
-	see("运行产物 · 1 项")
-	click("校验本机内容")
-	see("本机内容已校验")
+	see("1 artifact · newest first")
+	click("Verify local content")
+	see("Local content verified")
 	if d.artifacts.visible[0].Run.DeviceID != init.Device.ID {
 		t.Fatal("artifact used the wrong source device")
 	}
@@ -145,9 +145,15 @@ func TestNavigateSkillsAndArtifacts(t *testing.T) {
 	if linked.artifacts.project != projectID || len(linked.artifacts.items) != 2 {
 		t.Fatal("initial route lost its explicit Project ID to the default")
 	}
-	click("sample")
+	for _, control := range window.AccessAll() {
+		if control.Name == "Project scope" && control.Bounds.H > 20 {
+			box := control.Bounds
+			window.ClickAt(box.X+box.W/2, box.Y+box.H/2)
+			break
+		}
+	}
 	click("alternate")
-	see("这个项目还没有登记运行产物。")
+	see("This Project has no registered run artifacts.")
 }
 
 func TestActualProjectLinksToSkillsAndArtifacts(t *testing.T) {
@@ -168,8 +174,8 @@ func TestActualProjectLinksToSkillsAndArtifacts(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, task := range []struct{ page, tab, link, empty string }{
-		{pageSkills, "Skills", "打开 Skills 管理", "此项目尚未选择共享 Skills。"},
-		{pageArtifacts, "产物", "打开产物管理", "这个项目还没有登记运行产物。"},
+		{pageSkills, "Skills", "Open Skills", "This Project has no shared Skills selected."},
+		{pageArtifacts, "Artifacts", "Open Run artifacts", "This Project has no registered run artifacts."},
 	} {
 		t.Run(task.page, func(t *testing.T) {
 			d := desktop{
@@ -194,7 +200,7 @@ func TestActualProjectLinksToSkillsAndArtifacts(t *testing.T) {
 			if _, ok := window.Access(task.empty); !ok {
 				t.Fatalf("missing scoped state %q", task.empty)
 			}
-			if err := window.Click("打开项目"); err != nil {
+			if err := window.Click("Open Project"); err != nil {
 				t.Fatal(err)
 			}
 			if d.route.Page != pageProjects || d.route.ProjectID != bound.Project.ID || d.project.target.CheckoutID != bound.Binding.ID {

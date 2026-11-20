@@ -19,7 +19,7 @@ const (
 	backupArtifacts = "artifacts"
 	backupManifest  = "manifest.json"
 	backupRef       = "refs/ctxferry/backup"
-	backupBoundary  = "Plaintext backup. Protect the destination. Credential stores, provider sessions, Git authentication and execution trust are excluded. Review user-authored content for pasted secrets."
+	backupBoundary  = "Plaintext backup. Protect the destination. Provider-held credential values, provider sessions, Git authentication, execution trust, Skill installation receipts and installed Skill files are excluded. Git history and user-authored content can contain pasted secrets; review them before writing."
 )
 
 type WorkspaceBackup struct {

@@ -12,15 +12,19 @@ import (
 )
 
 type desktop struct {
-	core    app.App
-	window  *mygo.Window
-	update  func(func())
-	ctx     context.Context
-	route   desktopRoute
-	loading bool
-	reload  bool
-	data    app.DesktopSnapshot
-	err     error
+	core          app.App
+	window        *mygo.Window
+	update        func(func())
+	ctx           context.Context
+	route         desktopRoute
+	origins       []desktopRoute
+	setup         setupState
+	loading       bool
+	reload        bool
+	compact       bool
+	data          app.DesktopSnapshot
+	err           error
+	copiedCommand string
 
 	overviewState    overviewState
 	project          projectPage
@@ -28,6 +32,7 @@ type desktop struct {
 	conflict         *conflictPage
 	resolvedRevision string
 	workProjects     workProjects
+	catalogProject   string
 	skills           skillsState
 	artifacts        artifactsState
 
@@ -38,6 +43,7 @@ type desktop struct {
 }
 
 func main() {
+	registerFonts()
 	dir, err := platform.DataDir("", false)
 	if err != nil {
 		log.Fatal(err)
@@ -46,7 +52,8 @@ func main() {
 	mygo.App.WhenReady(func() {
 		ctx, cancel := context.WithCancel(context.Background())
 		d := &desktop{core: app.App{DataDir: dir, Providers: platform.ProviderServices()}, ctx: ctx, route: desktopRoute{Page: pageOverview}}
-		options := mygo.WindowOptions{Title: "CtxFerry", Width: 1180, Height: 750, MinWidth: 780, MinHeight: 480, Content: ui.View(d.view)}
+		options := mygo.WindowOptions{Title: "CtxFerry", Width: 1280, Height: 800, MinWidth: 1024, MinHeight: 680, Content: ui.View(d.view)}
+		applyDesktopSmokeWindowOptions(&options)
 		if _, isolated := os.LookupEnv("CTXFERRY_DATA_DIR"); !isolated {
 			options.StateKey = "workspace"
 		}
@@ -94,6 +101,7 @@ func (d *desktop) refresh() {
 					d.route.Page = pageOverview
 				}
 				d.workProjects, d.skills, d.artifacts = workProjects{}, skillsState{}, artifactsState{}
+				d.catalogProject, d.origins = "", nil
 				d.route = desktopRoute{Page: d.route.Page}
 				d.managementGeneration++
 				d.projects = desktopProjects{}
