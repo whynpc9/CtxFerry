@@ -1,0 +1,32 @@
+{
+  "revision": "da5ff0c1cf9b68599547f2c59e3d44c08339b47a",
+  "base": "ce3a4ab498fb3df3dcda450dd6c3be9b1259e50d",
+  "routes": {
+    "设备与资源": "clicked and page rendered",
+    "凭据绑定": "clicked and page rendered",
+    "Skills": "clicked and dbark/db-check shown",
+    "产物": "clicked and dbark/integration-018/trace.json shown"
+  },
+  "observations": [
+    "Skills shared v2 pin and installed copy, two private snapshot labels",
+    "trace metadata only 1048589 B, oversized omission reason",
+    "Sidebar enables Fleet and Secrets"
+  ],
+  "cleanup": {
+    "native_close": true,
+    "controller_exited": true,
+    "matching_processes": ""
+  },
+  "screenshots": {
+    "01-skills-intent-receipt": {
+      "sha256": "4bf80d9d818fdf8ecefae28d35d59c614b6689b2a705c79c8626f3bbb6686817",
+      "width": 2360,
+      "height": 1436
+    },
+    "02-trace-metadata": {
+      "sha256": "3dca1c346da01d58d472752d5d6a8a175bc324f1631d542303c4032489864216",
+      "width": 2360,
+      "height": 1436
+    }
+  }
+}

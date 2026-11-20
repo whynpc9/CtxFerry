@@ -188,23 +188,23 @@ func finishArtifactCopy(src io.Reader, out *os.File, p ArtifactPayload) error {
 	return out.Close()
 }
 
-func (a App) fetchArtifactObject(p ArtifactPayload, output string) error {
+func (a App) openCachedArtifact(p ArtifactPayload) (*os.File, error) {
 	if !validArtifactHash(p.SHA256) || p.Size < 0 || p.Location != artifactLocation(p.SHA256) || p.Storage != "local-only" {
-		return Fail("artifact-invalid", "artifact manifest has an invalid payload location or identity")
+		return nil, Fail("artifact-invalid", "artifact manifest has an invalid payload location or identity")
 	}
 	source := filepath.Join(a.artifactRoot(), filepath.FromSlash(p.Location))
 	in, size, err := openArtifactFile(source)
 	if errors.Is(err, os.ErrNotExist) {
-		return Fail("artifact-unavailable", "artifact payload is missing from the local cache")
+		return nil, Fail("artifact-unavailable", "artifact payload is missing from the local cache")
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer in.Close()
 	if size != p.Size {
-		return Fail("artifact-hash-mismatch", "cached artifact payload size does not match")
+		in.Close()
+		return nil, Fail("artifact-hash-mismatch", "cached artifact payload size does not match")
 	}
-	return a.writeArtifactOutput(in, p, output)
+	return in, nil
 }
 
 func (a App) writeArtifactOutput(in io.Reader, p ArtifactPayload, output string) error {

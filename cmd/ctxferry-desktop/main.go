@@ -27,6 +27,9 @@ type desktop struct {
 	syncState        syncPageState
 	conflict         *conflictPage
 	resolvedRevision string
+	workProjects     workProjects
+	skills           skillsState
+	artifacts        artifactsState
 
 	managementGeneration uint64
 	projects             desktopProjects
@@ -90,6 +93,7 @@ func (d *desktop) refresh() {
 				if d.route.Page == pageConflict {
 					d.route.Page = pageOverview
 				}
+				d.workProjects, d.skills, d.artifacts = workProjects{}, skillsState{}, artifactsState{}
 				d.route = desktopRoute{Page: d.route.Page}
 				d.managementGeneration++
 				d.projects = desktopProjects{}
@@ -99,6 +103,9 @@ func (d *desktop) refresh() {
 			d.data = snapshot
 		}
 		d.err, d.loading = err, false
+		if err == nil {
+			d.enterWorkPage(true)
+		}
 		if d.reload {
 			d.reload = false
 			d.refresh()

@@ -1,0 +1,12 @@
+{
+  "01-skills-intent-receipt": {
+    "sha256": "4bf80d9d818fdf8ecefae28d35d59c614b6689b2a705c79c8626f3bbb6686817",
+    "width": 2360,
+    "height": 1436
+  },
+  "02-trace-metadata": {
+    "sha256": "3dca1c346da01d58d472752d5d6a8a175bc324f1631d542303c4032489864216",
+    "width": 2360,
+    "height": 1436
+  }
+}
