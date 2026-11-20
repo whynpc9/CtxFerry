@@ -68,3 +68,5 @@ T3 记录使用 `kimi-code/k3.1-pro`，传入 `thinking=max`。Provider 的独�
 集成版本 `da5ff0c1cf9b68599547f2c59e3d44c08339b47a` 基于 `ce3a4ab498fb3df3dcda450dd6c3be9b1259e50d`。实机依次打开“设备与资源”“凭据绑定”“Skills”和“产物”。共享侧栏保留各入口，Skills 仍显示共享 v2 和本机已装 v1，`trace.json` 仍显示仅元数据及超额原因。两页功能源文件与最终实现复核版一致。[Skills 原图](screenshots/issue-32/integrated/01-skills-intent-receipt.png) · [产物原图](screenshots/issue-32/integrated/02-trace-metadata.png) · [原图 SHA-256](screenshots/issue-32/integrated/manifest.json) · [导航和关闭回执](screenshots/issue-32/integrated/outcomes.json)
 
 合入 #30 后重新运行桌面全量测试、桌面与核心静态检查、Skills 与产物核心专项测试和真实 Git 接收端的产物专项测试，均通过。与 [#29 PR](https://github.com/whynpc9/CtxFerry/pull/63) 的 `e88ca11` 再次临时集成，两条项目往返路径均通过。
+
+Kimi K3.1 Pro 复核了两张集成原图的完整哈希和关键原像素区域，并与冻结稿及最终实机原图比对。复查通过。侧栏、两页控件、共享与本机 pin、产物可用性和可读性均无实质回归。
