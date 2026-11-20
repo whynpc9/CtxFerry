@@ -8,6 +8,7 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+	"github.com/google/uuid"
 	"github.com/whynpc9/CtxFerry/internal/app"
 )
 
@@ -20,10 +21,11 @@ const (
 )
 
 type syncPageState struct {
-	filter      int
-	list        ui.ListState
-	selected    int
-	returnRoute desktopRoute
+	filter       int
+	list         ui.ListState
+	selected     int
+	returnRoute  desktopRoute
+	copiedRecord string
 
 	checking   bool
 	remote     remoteObservation
@@ -163,8 +165,15 @@ func (d *desktop) queue(c *ui.Context) {
 					if ui.PrimaryButton(c, "比较冲突版本").Clicked() {
 						d.navigate(desktopRoute{Page: pageConflict, ProjectID: r.ProjectID, RecordID: r.ID})
 					}
-				} else {
-					secondary(c, "在终端运行 ctxferry sync conflicts RECORD_ID 查看三方版本。")
+				} else if id, err := uuid.Parse(r.ID); err == nil && id.String() == r.ID {
+					label := "复制比较命令"
+					if state.copiedRecord == r.ID {
+						label = "比较命令已复制"
+					}
+					if ui.Button(c, label).Tooltip("在终端查看此记录的三方版本").Clicked() {
+						mygo.Clipboard.WriteText("ctxferry sync conflicts " + id.String())
+						state.copiedRecord = r.ID
+					}
 				}
 			}
 		})

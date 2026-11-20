@@ -69,7 +69,7 @@ func (d *desktop) backupStatus(c *ui.Context) {
 	case s.backupAt.IsZero():
 		detail(c, "工作区备份", "此窗口尚无备份回执 · 可创建本机备份")
 	default:
-		detail(c, "备份已创建", s.backupAt.Format("2006-01-02 15:04:05"))
+		detail(c, "备份已创建", s.backupAt.Format("2006-01-02 15:04:05")+" · 校验清单 manifest.json")
 		detail(c, "备份目录", s.backup.Destination)
 		scope := "共享数据"
 		if s.backup.IncludesLocalOnly {

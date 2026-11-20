@@ -212,6 +212,7 @@ def smoke(root, server):
                     window.capture(root, "01-overview-configured", images)
                     window.click("查看冲突")
                     window.label("测试环境说明")
+                    window.label("复制比较命令")
                     window.click("全部")
                     window.label("运行手册")
                     window.click("检查远端")
@@ -227,6 +228,7 @@ def smoke(root, server):
                     window.capture(root, "03-backup-confirm", images)
                     window.click("确认创建备份")
                     window.label("备份已创建")
+                    wait_for(lambda: any("校验清单 manifest.json" in n.get("label", "") for n in window.nodes()))
                     wait_for(lambda: (output / "manifest.json").is_file())
                     window.capture(root, "04-backup-receipt", images)
                     manifest = json.loads((output / "manifest.json").read_text())
@@ -243,7 +245,7 @@ def smoke(root, server):
 
                     # Run a real user service alongside the window. Hold the Git
                     # round before it reads the remote so publication proves the
-                    # already-running job continued after File > Close.
+                    # already-running job continued after File > Close Window.
                     with sqlite3.connect(db_path) as db:
                         db.execute("DELETE FROM records WHERE id=?", (secret["id"],))
                     run("/bin/launchctl", "bootstrap", job.rsplit("/", 1)[0], plist)
@@ -251,7 +253,7 @@ def smoke(root, server):
                     wait_for(lambda: gate.with_suffix(".entered").is_file())
                     assert cli_call("b", "sync", "status")["head"] == fixture["head"]
                     try:
-                        window.call("menu", path=["File", "Close"])
+                        window.call("menu", path=["File", "Close Window"])
                     except ConnectionError:
                         pass
 
@@ -266,13 +268,12 @@ def smoke(root, server):
                         proc.terminate()
                     proc.wait(timeout=10)
 
-        if service_pid:
-            assert service_pid and job_pid() == service_pid
-            gate.touch()
-            wait_for(lambda: cli_call("b", "sync", "status")["head"] != fixture["head"])
-            assert job_pid() == service_pid
-            cli_call("a", "sync")
-            assert cli_call("a", "context", "get", pending["id"])["document"]["body"] == "待发布修订"
+        assert service_pid and job_pid() == service_pid
+        gate.touch()
+        wait_for(lambda: cli_call("b", "sync", "status")["head"] != fixture["head"])
+        assert job_pid() == service_pid
+        cli_call("a", "sync")
+        assert cli_call("a", "context", "get", pending["id"])["document"]["body"] == "待发布修订"
     finally:
         if service_pid or plist.exists():
             subprocess.run(["/bin/launchctl", "bootout", job], capture_output=True)
