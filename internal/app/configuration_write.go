@@ -30,7 +30,7 @@ func (a App) ChangeConfiguration(ctx context.Context, selector, cwd string, chan
 	return a.changeConfiguration(ctx, selector, cwd, change, nil)
 }
 
-func (a App) changeConfiguration(ctx context.Context, selector, cwd string, change ConfigurationChange, preview *ProjectConfigurationPreview) (ConfigurationReceipt, error) {
+func (a App) changeConfiguration(ctx context.Context, selector, cwd string, change ConfigurationChange, resolve func(context.Context, rowQuerier) (configurationLocation, error)) (ConfigurationReceipt, error) {
 	out := ConfigurationReceipt{Layer: change.Layer, Profile: change.Profile, Field: change.Field, Storage: "shared"}
 	local := change.Layer == layerDevice || change.Layer == layerCheckout
 	if local {
@@ -80,8 +80,8 @@ func (a App) changeConfiguration(ctx context.Context, selector, cwd string, chan
 	defer db.Close()
 	var loc configurationLocation
 	switch {
-	case preview != nil:
-		// Resolve the exact desktop binding while holding the write transaction.
+	case resolve != nil:
+		// The desktop pins its location inside the write transaction.
 	case change.Layer == layerGlobal:
 		err = db.QueryRowContext(ctx, "SELECT id FROM workspace").Scan(&loc.workspace)
 	default:
@@ -91,8 +91,8 @@ func (a App) changeConfiguration(ctx context.Context, selector, cwd string, chan
 		return out, err
 	}
 	locationForWrite := func(c *sql.Conn) (configurationLocation, error) {
-		if preview != nil {
-			return preview.verify(ctx, c)
+		if resolve != nil {
+			return resolve(ctx, c)
 		}
 		return loc, nil
 	}

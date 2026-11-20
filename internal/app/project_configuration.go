@@ -58,6 +58,9 @@ func projectConfigurationLocation(ctx context.Context, q rowQuerier, target Proj
 	if err != nil {
 		return loc, err
 	}
+	if project.ID != target.ProjectID {
+		return loc, Fail("project-not-found", "the selected Project is no longer in the catalog")
+	}
 	loc.project = project
 	if err := requireSubscription(ctx, q, project.ID); err != nil {
 		return loc, err
@@ -286,15 +289,14 @@ func (a App) ApplyProjectConfiguration(ctx context.Context, preview ProjectConfi
 	if preview.token == ([sha256.Size]byte{}) {
 		return ConfigurationReceipt{}, Fail("usage", "preview the configuration change first")
 	}
-	return a.changeConfiguration(ctx, "", "", preview.Change, &preview)
+	return a.changeConfiguration(ctx, "", "", preview.Change, preview.verify)
 }
 
 func (a App) CreateProjectProfile(ctx context.Context, projectID, name string) (ConfigurationReceipt, error) {
 	// Profile creation is Project-scoped, independent of any checkout selection.
-	if projectID == "" {
-		return ConfigurationReceipt{}, Fail("project-not-found", "choose a Project")
-	}
-	return a.ChangeConfiguration(ctx, projectID, a.DataDir, ConfigurationChange{
+	return a.changeConfiguration(ctx, "", "", ConfigurationChange{
 		Layer: layerProfile, Profile: name, Create: true,
+	}, func(ctx context.Context, q rowQuerier) (configurationLocation, error) {
+		return projectConfigurationLocation(ctx, q, ProjectConfigurationTarget{ProjectID: projectID})
 	})
 }
