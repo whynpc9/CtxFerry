@@ -2,6 +2,7 @@ package tests
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -111,6 +112,30 @@ func TestArtifactSyncTwoDevices(t *testing.T) {
 			t.Fatalf("sender %+v, receiver %+v", local, got)
 		}
 		failure(t, b.Run(t, "artifact", "fetch", id, "--project", "checkout", "--output", filepath.Join(t.TempDir(), "unavailable"), "--format=json"), "artifact-unavailable")
+	}
+	// The desktop projection reads the same received catalog and distinguishes
+	// snapshot content from an oversized remote artifact with only metadata.
+	core := app.App{DataDir: b.DataDir}
+	ctx := context.Background()
+	desktop, err := core.ListDesktopArtifacts(ctx, m.Run.ProjectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]app.DesktopArtifact{}
+	for _, item := range desktop {
+		byID[item.ID] = item
+	}
+	if got := byID[m.ID]; got.Content != "snapshot" || got.Location == "" || len(got.Observations) != 1 {
+		t.Fatalf("desktop snapshot state: %+v", got)
+	}
+	if got := byID[over.ID]; got.Content != "metadata-only" || got.Location != "" || got.Sync == nil || got.Sync.Reason != "payload-size" {
+		t.Fatalf("desktop metadata state: %+v", got)
+	}
+	if err := core.CheckDesktopArtifact(ctx, m.Run.ProjectID, m.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := core.CheckDesktopArtifact(ctx, m.Run.ProjectID, over.ID); err == nil || app.Classify(err).Code != "artifact-unavailable" {
+		t.Fatalf("desktop metadata-only check: %v", err)
 	}
 	fetchSyncedArtifact(t, a, over.ID, atLimit+"x")
 	head := git(t, a, "--git-dir", remote, "rev-parse", "ctxferry-v1")
