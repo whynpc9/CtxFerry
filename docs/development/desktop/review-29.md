@@ -53,3 +53,9 @@ Kimi Code 的 `kimi-code/k3.1-pro`（`thinking=max`）复核了实现 `7eb6c154b
 ## 测试
 
 macOS 上以 `CGO_ENABLED=0` 通过 Go 全仓测试、应用核心与 CLI 专项、桌面模块测试和静态检查，并构建了生产桌面二进制。全仓测试最初触及 10 分钟和 15 分钟上限，改用 25 分钟上限后通过。`TestProjectResetThroughNativeView` 走正常页面路径，验证取消、确认和核心解释结果。`TestProjectManagementLinksUseRegisteredRoutes` 使用测试 renderer 验证路由注册、项目范围及返回后的选择。
+
+## Fleet 注册后的集成验证
+
+#30 随 PR #62 合入后，#29 的提交移植到 `ce3a4ab498fb3df3dcda450dd6c3be9b1259e50d`。运行实现 `5286f8be3b2d9f171c98b514dd0172b768bb5fec`，重跑 13 个项目和配置实机场景，并验证注册后的原生 Fleet 导航。在同时存在 `aaa-control/control-db` 和 `dbark/test-db` 的合成工作区，从 `dbark` 的资源分段打开 Fleet，页面仍选择 `dbark/test-db`。通过侧栏回到项目后，原 Checkout 和资源分段均保留。四张截图采集于前台窗口，SHA-256 已核对，应用退出码为 0。[配置](screenshots/project-29/fleet-integration/02-configuration.png) · [资源入口](screenshots/project-29/fleet-integration/10-resource.png) · [Fleet 项目筛选](screenshots/project-29/fleet-integration/10a-fleet-scoped.png) · [返回项目](screenshots/project-29/fleet-integration/10b-project-return.png) · [清单](screenshots/project-29/fleet-integration/manifest.json)
+
+Kimi K3.1 Pro（Thinking Max）逐张复核该实现的四张原图并核对 SHA-256。配置、资源入口、Fleet 项目筛选和返回画面均通过，评审覆盖画面及清单。点击和返回过程由上述实机验证覆盖。

@@ -86,6 +86,40 @@ func TestAuthenticationEvidence(t *testing.T) {
 	}
 }
 
+func TestManagementURLUsesLocalWebVault(t *testing.T) {
+	t.Setenv(profileEnv, "team")
+	profile := provider.Profile{Provider: Name, Name: "team", Method: Method}
+	ref := provider.Locator{EntryID: itemID}
+	for _, tc := range []struct {
+		name, status, origin string
+	}{
+		{"cloud", `{"serverUrl":null}`, "https://vault.bitwarden.com/"},
+		{"self-hosted", `{"serverUrl":"https://vault.example.invalid/team"}`, "https://vault.example.invalid/team/"},
+		{"untrusted credentials", `{"serverUrl":"https://fake-credential@vault.example.invalid"}`, ""},
+		{"untrusted scheme", `{"serverUrl":"file:///vault"}`, ""},
+		{"untrusted query", `{"serverUrl":"https://vault.example.invalid/?token=private-value"}`, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := &adapter{run: func(_ context.Context, session []byte, args ...string) ([]byte, error) {
+				if len(session) != 0 || !slices.Equal(args, []string{"status", "--nointeraction"}) {
+					t.Fatal("opening management page granted unexpected provider access")
+				}
+				return []byte(tc.status), nil
+			}}
+			link, err := a.ManagementURL(t.Context(), profile, ref)
+			if tc.origin == "" {
+				if err == nil || link != "" {
+					t.Fatal("unsafe management link was accepted")
+				}
+				return
+			}
+			if err != nil || link != tc.origin+"#/vault?itemId="+itemID {
+				t.Fatalf("unexpected web vault destination: %v", err)
+			}
+		})
+	}
+}
+
 func TestResolveUnavailable(t *testing.T) {
 	t.Setenv(profileEnv, "")
 	p := provider.Profile{Provider: Name, Name: "default", Method: Method}

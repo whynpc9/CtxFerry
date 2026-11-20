@@ -134,6 +134,12 @@ func (a App) LoginProvider(ctx context.Context, p provider.Profile) (ProviderLog
 	if err := db.QueryRowContext(ctx, "SELECT workspace.id, device.id FROM workspace CROSS JOIN device").Scan(&key.WorkspaceID, &key.DeviceID); err != nil {
 		return out, err
 	}
+	return a.loginProvider(ctx, key)
+}
+
+func (a App) loginProvider(ctx context.Context, key provider.SessionKey) (ProviderLoginResult, error) {
+	p := key.Profile
+	out := ProviderLoginResult{Profile: p}
 	credentials, err := a.secureCredentials(ctx)
 	if err != nil {
 		return out, err

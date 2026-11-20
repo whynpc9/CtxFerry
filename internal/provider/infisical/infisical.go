@@ -81,6 +81,12 @@ func (*adapter) Capabilities() []provider.MethodCapabilities {
 	}
 }
 
+func (a *adapter) ManagementURL(context.Context, provider.Profile, provider.Locator) (string, error) {
+	// Infisical's project routes require an organization ID. The shared
+	// locator has no org ID, so open the provider's project picker.
+	return a.baseURL, nil
+}
+
 func (a *adapter) Login(ctx context.Context, p provider.Profile) ([]byte, error) {
 	if p.Provider == Name && p.Name != "" {
 		switch p.Method {

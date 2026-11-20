@@ -53,7 +53,14 @@ func (d *desktop) view(c *ui.Context) {
 		ui.Column(c).Grow(1).Children(func() {
 			d.toolbar(c)
 			ui.Divider(c)
-			ui.Scroll(c.Key(d.route.Page)).Grow(1).FillWidth().Children(func() {
+			body := ui.Scroll(c.Key(d.route.Page)).Grow(1).FillWidth()
+			switch d.route.Page {
+			case pageSecrets:
+				body.TrackScroll(&d.secrets.scroll)
+			case pageFleet:
+				body.TrackScroll(&d.fleet.scroll)
+			}
+			body.Children(func() {
 				ui.Column(c).FillWidth().Padding(18, 22).Gap(12).Children(func() {
 					if d.data.ReadAt.IsZero() {
 						d.catalogState(c)
@@ -73,7 +80,7 @@ func (d *desktop) view(c *ui.Context) {
 
 func (d *desktop) toolbar(c *ui.Context) {
 	ui.Row(c).FillWidth().Padding(8, 20).Gap(10).Background(ui.Hex("#f8faf8")).Children(func() {
-		secondary(c, "本地工作区")
+		secondary(c, d.workspaceBreadcrumb())
 		ui.Spacer(c)
 		if !d.data.ReadAt.IsZero() {
 			ui.Text(c, "本机快照 · "+d.data.ReadAt.Local().Format("2006-01-02 15:04:05")).FontSize(12).TextColor(muted)
@@ -84,6 +91,9 @@ func (d *desktop) toolbar(c *ui.Context) {
 		}
 		if ui.Button(c.Key("refresh-local"), refresh).Disabled(d.loading || d.syncState.backingUp).Clicked() {
 			d.refresh()
+			if d.route.Page == pageSecrets || d.route.Page == pageFleet {
+				d.refreshManagement()
+			}
 		}
 		if d.route.Page == pageSync && d.data.SyncErr == nil && d.data.Sync.Config != nil {
 			d.remoteButton(c)
