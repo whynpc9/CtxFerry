@@ -275,7 +275,9 @@ func (p *projectPage) projectDetail(c *ui.Context, project app.DesktopProject) {
 		}
 		p.relatedView(c)
 	}
-	p.editorView(c, project)
+	if p.tab != projectConfig || p.editor.create {
+		p.editorView(c, project)
+	}
 }
 
 func (p *projectPage) scopeLine(c *ui.Context, project app.DesktopProject) {

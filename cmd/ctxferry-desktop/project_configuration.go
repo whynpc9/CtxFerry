@@ -54,6 +54,18 @@ type configurationReceiptState struct {
 }
 
 func (p *projectPage) configurationView(c *ui.Context) {
+	if p.editor.open && !p.editor.create {
+		project := p.currentProject()
+		if project == nil {
+			return
+		}
+		if p.host != nil && p.host.compact {
+			p.editorView(c, *project)
+			return
+		}
+		managementColumns(c, func() { p.fieldTable(c) }, func() { p.editorView(c, *project) })
+		return
+	}
 	ui.Row(c).FillWidth().Gap(sp2).Children(func() {
 		ui.Column(c).Grow(1).Gap(3).Children(func() {
 			section(c, "Effective Configuration")

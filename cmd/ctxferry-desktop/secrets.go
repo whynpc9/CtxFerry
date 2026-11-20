@@ -313,9 +313,9 @@ func (d *desktop) providerActions(c *ui.Context, profile provider.Profile) {
 	if authed != nil && *authed {
 		ui.PrimaryButton(c, "Check entry readability").Disabled(s.wait).FillWidth().OnClick(func() { d.checkBinding(true) })
 	}
-	ui.Row(c).FillWidth().Gap(sp2).Children(func() {
-		ui.Button(c, "Check local authentication").Disabled(s.wait).Grow(1).OnClick(func() { d.checkBinding(false) })
-		ui.Button(c, "Adopt configured session").Disabled(s.wait).Grow(1).OnClick(d.loginForBinding)
+	ui.Column(c).FillWidth().Gap(sp2).Children(func() {
+		ui.Button(c, "Check local authentication").Disabled(s.wait).FillWidth().OnClick(func() { d.checkBinding(false) })
+		ui.Button(c, "Adopt configured session").Disabled(s.wait).FillWidth().OnClick(d.loginForBinding)
 	})
 	label := "Manage entry in provider ↗"
 	if profile.Provider == infisical.Name {

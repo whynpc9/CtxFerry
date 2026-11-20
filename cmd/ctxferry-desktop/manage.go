@@ -262,7 +262,10 @@ func environmentLabel(env app.DesktopEnvironment) string {
 
 func environmentSystem(os, arch string) string {
 	if os == "" {
-		return "Unknown environment"
+		if arch == "" {
+			return "Unknown"
+		}
+		return "Unknown OS · " + arch
 	}
 	switch os {
 	case "darwin":

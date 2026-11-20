@@ -80,17 +80,27 @@ class Window:
     def click(self, text):
         node = self.label(text)
         self.call("act", id=node["id"], action="scrollIntoView")
-        node = self.label(text)
-        bounds = node["bounds"]
-        self.call("input", events=[{"type": "click", "x": bounds["x"] + bounds["width"] / 2,
-                                    "y": bounds["y"] + bounds["height"] / 2}])
+        time.sleep(0.2)
+        self.call("act", id=node["id"], action="press")
+        time.sleep(0.2)
+
+    def label_prefix(self, prefix):
+        return wait_for(lambda: next((node for node in self.nodes() if node.get("label", "").startswith(prefix)), None))
 
     def click_prefix(self, prefix):
-        node = wait_for(lambda: next((node for node in self.nodes() if node.get("label", "").startswith(prefix)), None))
+        node = self.label_prefix(prefix)
         self.call("act", id=node["id"], action="scrollIntoView")
-        bounds = node["bounds"]
-        self.call("input", events=[{"type": "click", "x": bounds["x"] + bounds["width"] / 2,
-                                    "y": bounds["y"] + bounds["height"] / 2}])
+        time.sleep(0.2)
+        self.call("act", id=node["id"], action="press")
+        time.sleep(0.2)
+
+    def scroll_to_bottom(self):
+        page = self.label("Page content")
+        bounds = page["bounds"]
+        for _ in range(4):
+            self.call("input", events=[{"type": "wheel", "x": bounds["x"] + bounds["width"] / 2,
+                                        "y": bounds["y"] + bounds["height"] / 2, "dy": 1200}])
+            time.sleep(0.15)
 
     def set_value(self, label, text):
         field = self.label(label)
@@ -154,7 +164,7 @@ def cli_fixture(root, server_port, binary, home):
                 "--credential-requirement", '{"name":"db-password","resourceSlot":"db","purpose":"preview-runtime","type":"connection-string","env":"DATABASE_URL"}')
     call("a", "profile", "map-resource", "staging", "deploy-preview", "db", resource["id"])
     call("a", "profile", "select", "staging")
-    call("a", "secret", "bind", "deploy-preview", "db-password", "--profile", "staging", "--alias", "atlas/staging/db",
+    call("a", "secret", "bind", "deploy-preview", "db-password", "--profile", "staging", "--alias", "atlas-staging-db",
          "--provider", "infisical", "--provider-profile", "synthetic", "--method", "universal-auth",
          "--backend-project", "synthetic-backend", "--environment", "dev", "--path", "/db", "--key", "DATABASE_URL")
     base = document("a", "Deployment runbook", "# Deployment\n\n1. Review the candidate.\n2. Deploy the preview.\n")
@@ -172,6 +182,7 @@ def cli_fixture(root, server_port, binary, home):
     call("b", "join", REMOTE, "--all-projects")
     call("b", "project", "bind", ".", "--project", "atlas-api")
     call("b", "config", "set", "timeoutSeconds", "90", "--layer", "device")
+    call("b", "profile", "select", "staging")
     call("b", "skill", "apply", "release-notes", "--target", "codex")
     installed = home / ".agents" / "skills" / "release-notes" / "SKILL.md"
     installed.write_text(installed.read_text() + "\nLocal drift for review.\n")
@@ -257,8 +268,6 @@ def capture_wide(binary, data_dir, home, root, images, states):
         window.click("Preview removal from Device…")
         window.label("Preview removal from Device")
 
-        node = window.label("Confirms against preview token")
-        window.call("act", id=node["id"], action="scrollIntoView")
         window.capture(root, "05-configuration-preview", "Unconfirmed removal of the Device override; actual preview token and effects")
         window.click("Cancel")
         window.click("Tasks")
@@ -277,7 +286,7 @@ def capture_wide(binary, data_dir, home, root, images, states):
         window.capture(root, "09-catalog", "Catalog directory with atlas-api scope")
         window.click("Open Skills")
         window.click("Preview update…")
-        window.label("Installed version → current local file (drift)")
+        window.label_prefix("Installed version → current local file (drift)")
         window.capture(root, "10-skill-drift", "Blocked Skill update showing installed-to-local drift")
         window.click("View installed → candidate")
         window.capture(root, "11-skill-candidate", "The same file showing installed-to-candidate changes")
@@ -285,7 +294,7 @@ def capture_wide(binary, data_dir, home, root, images, states):
         window.click("Open Run artifacts")
         window.label("Run record")
         window.capture(root, "12-artifacts", "Two real local run artifacts with provenance and full digests")
-        window.click("Sync")
+        window.click_prefix("Sync")
         window.click("Check remote")
         wait_for(lambda: any("private repository verified" in node.get("label", "") for node in window.nodes()))
         window.capture(root, "13-repository", "Confirmed repository history and a real reachability/privacy check")
@@ -295,13 +304,13 @@ def capture_wide(binary, data_dir, home, root, images, states):
         window.click("Open comparison")
         window.label("Three-way comparison")
         window.click("Keep local version")
+        window.scroll_to_bottom()
         window.capture(root, "15-conflict", "Unresolved real conflict with Keep local version preview and conflict token")
         window.click("Cancel")
         window.click("Backup")
         window.set_value("Backup destination", str(root / "wide-backup"))
         window.click("Review backup")
-        node = window.label("Acknowledge plaintext backup exposure")
-        window.call("act", id=node["id"], action="scrollIntoView")
+        window.scroll_to_bottom()
         window.capture(root, "16-backup-review", "Real backup scope, exclusions and plaintext exposure before writing")
         window.click("Acknowledge plaintext backup exposure")
         window.click("Write backup")
@@ -325,20 +334,20 @@ def capture_compact(binary, data_dir, home, root, images, states):
         window.click("Open Project atlas-api")
         window.click("Configuration")
         window.click("Preview removal from Device…")
-        node = window.label("Confirmation actions")
-        window.call("act", id=node["id"], action="scrollIntoView")
         window.capture(root, "19-compact-configuration", "1024x680 Configuration preview with pinned token and confirmation")
         window.click("Cancel")
         window.click("Home")
         window.click("Queue · Conflicts")
         window.click("Open comparison")
         window.click("Keep local version")
+        window.scroll_to_bottom()
         window.capture(root, "20-compact-conflict", "1024x680 conflict resolution with pinned conflict token and action")
         window.click("Cancel")
-        window.click("Sync")
+        window.click_prefix("Sync")
         window.click("Backup")
         window.set_value("Backup destination", str(root / "compact-backup"))
         window.click("Review backup")
+        window.scroll_to_bottom()
         window.capture(root, "21-compact-backup", "1024x680 Backup review with pinned exposure acknowledgement and write")
     finally:
         if proc.poll() is None:
