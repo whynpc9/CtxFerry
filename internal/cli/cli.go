@@ -14,8 +14,6 @@ import (
 	"github.com/whynpc9/CtxFerry/internal/app"
 	"github.com/whynpc9/CtxFerry/internal/platform"
 	"github.com/whynpc9/CtxFerry/internal/provider"
-	"github.com/whynpc9/CtxFerry/internal/provider/bitwarden"
-	"github.com/whynpc9/CtxFerry/internal/provider/infisical"
 )
 
 type envelope struct {
@@ -26,22 +24,7 @@ type envelope struct {
 }
 
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
-	return RunWithProviders(ctx, args, stdout, stderr, provider.Services{
-		Adapters: map[string]provider.Adapter{
-			bitwarden.Name: bitwarden.New(),
-			infisical.Name: infisical.New(),
-		},
-		Credentials: platform.SystemCredentials(),
-		InjectedSession: func(key provider.SessionKey) []byte {
-			if key.Profile.Provider == bitwarden.Name {
-				return bitwarden.RuntimeSession.Load(key)
-			}
-			return infisical.InjectedSession(key)
-		},
-		HasInjectedSession: func(key provider.SessionKey) bool {
-			return bitwarden.RuntimeSession.Present(key) || infisical.HasInjectedSession(key)
-		},
-	})
+	return RunWithProviders(ctx, args, stdout, stderr, platform.ProviderServices())
 }
 
 // Services are the device-local seams behind the CLI.
