@@ -87,3 +87,9 @@ PR #60 的 squash 为 `86780e2289aa69cee501876043c544897c5a252b`。集成实现 
 集成后的桌面烟测、带竞态检测的冲突烟测、核心测试、CLI 冲突与双目录同步回归、根模块和桌面静态检查均通过。集成版独立图像复核结论记录于 [PR #61](https://github.com/whynpc9/CtxFerry/pull/61)。
 
 在集成版 `8206ff1f952d4f475c677f717710b47933211096` 上运行更新后的 `smoke_macos.py` 通过。脚本走实际窗口的比较入口，核对三方版本后返回同步队列，并完成原有回归和测试窗口清理。该修订后的 Python 测试调整仅改变回归断言，实机截图仍对应上面记录的 Go 实现。
+
+## #62 合并后的侧栏复核
+
+PR #62 合并为 `ce3a4ab498fb3df3dcda450dd6c3be9b1259e50d`。这次移植在公共窗口状态和滚动容器中保留了同步、三方比较、凭据绑定、设备与资源各自的状态。Terra 使用实现 `8acb7538484dbdf04c8646c9b800102c3f0deec2` 构建的真实窗口，在新的隔离项目验证了：[冲突队列](screenshots/issue-31-shared-shell/01-queue.jpg)与[三方比较](screenshots/issue-31-shared-shell/02-compare.jpg)仍能往返且保留筛选及所选记录。打开[设备与资源](screenshots/issue-31-shared-shell/03-fleet.jpg)和[凭据绑定](screenshots/issue-31-shared-shell/04-secrets.jpg)均显示合成项目的空状态，返回同步仍能重新打开同一条冲突。CLI 验证操作前后的冲突 token、队列数量和远端 head 一致。
+
+[四张实机原图 SHA-256](screenshots/issue-31-shared-shell/sha256.txt)。变基后的桌面测试和竞态检测、核心测试、CLI 冲突与双目录同步回归、根模块和桌面静态检查均通过。前一轮写入证据仍对应上节；本轮实机覆盖公共侧栏和只读路径。独立复核结论记录于 [PR #61](https://github.com/whynpc9/CtxFerry/pull/61)。
