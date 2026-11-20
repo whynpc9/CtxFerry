@@ -21,6 +21,7 @@ type skillsState struct {
 	action                           string
 	candidate                        string
 	loading, loaded, busy            bool
+	readID                           uint64
 	err                              error
 	receipt                          string
 	scanned                          time.Time
@@ -37,6 +38,7 @@ func (d *desktop) setSkillProject(project string) {
 		return
 	}
 	s.project, s.name, s.ref, s.receipt = project, "", "", ""
+	d.route.ProjectID = project
 	s.candidate = "update"
 	d.loadSkills()
 }
@@ -44,11 +46,13 @@ func (d *desktop) setSkillProject(project string) {
 func (d *desktop) loadSkills() {
 	s := &d.skills
 	project := s.project
+	s.readID++
+	readID := s.readID
 	s.loading, s.err = true, nil
 	desktopJob(d, func(ctx context.Context) ([]app.DesktopSkill, error) {
 		return d.core.ListDesktopSkills(ctx, project)
 	}, func(entries []app.DesktopSkill, err error) {
-		if s.project != project {
+		if s.readID != readID {
 			return
 		}
 		s.entries, s.err, s.loading, s.loaded = entries, err, false, true
@@ -76,12 +80,14 @@ func (s *skillsState) clearPreview() {
 func (d *desktop) loadSkillTarget() {
 	s := &d.skills
 	s.clearPreview()
+	s.readID++
+	readID := s.readID
 	s.loading, s.err, s.targetState = true, nil, app.DesktopSkillTarget{}
 	name, target, link := s.name, s.target, s.mode == "受管软链"
 	desktopJob(d, func(ctx context.Context) (app.DesktopSkillTarget, error) {
 		return d.core.ReadDesktopSkillTarget(ctx, name, target, link)
 	}, func(state app.DesktopSkillTarget, err error) {
-		if s.name != name || s.target != target {
+		if s.readID != readID {
 			return
 		}
 		s.targetState, s.err, s.loading = state, err, false
@@ -119,6 +125,7 @@ func (d *desktop) previewSkill(action string) {
 		return d.core.PreviewDesktopSkillChange(ctx, input, selected)
 	}, func(preview app.DesktopSkillPreview, err error) {
 		s.preview, s.err, s.busy = preview, err, false
+		defer d.enterWorkPage(false)
 		if rescan && err == nil {
 			s.scanned = time.Now()
 		}
@@ -159,6 +166,7 @@ func (d *desktop) confirmSkill() {
 		return plan.Path, err
 	}, func(path string, err error) {
 		s.busy, s.err = false, err
+		defer d.enterWorkPage(false)
 		if err != nil {
 			return
 		}

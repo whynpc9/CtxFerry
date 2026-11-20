@@ -73,6 +73,7 @@ func (d *desktop) navigate(route desktopRoute) {
 	} else {
 		d.conflict = nil
 	}
+	d.enterWorkPage(false)
 }
 
 func (d *desktop) back() {

@@ -57,7 +57,7 @@ func TestNavigateSkillsAndArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := desktop{core: core, page: "设备总览", data: snapshot}
+	d := desktop{core: core, route: desktopRoute{Page: pageOverview}, data: snapshot}
 	window := ui.NewTester(d.view, 1180, 750)
 	click := func(label string) {
 		t.Helper()
@@ -73,7 +73,7 @@ func TestNavigateSkillsAndArtifacts(t *testing.T) {
 	}
 	click("Skills")
 	see("预览安装…")
-	d.openProjectSkills(projectID)
+	d.navigate(desktopRoute{Page: pageSkills, ProjectID: projectID})
 	window.Frame()
 	if d.skills.project != projectID || d.skills.name != "sample-skill" {
 		t.Fatalf("Skills route did not retain Project ID: %+v", d.skills.entries)
@@ -124,7 +124,7 @@ func TestNavigateSkillsAndArtifacts(t *testing.T) {
 	}
 
 	click("产物")
-	d.openProjectArtifacts(projectID)
+	d.navigate(desktopRoute{Page: pageArtifacts, ProjectID: projectID})
 	window.Frame()
 	see("运行产物 · 2 项")
 	see("synthetic complete")

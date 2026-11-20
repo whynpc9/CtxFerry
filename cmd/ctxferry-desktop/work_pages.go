@@ -8,10 +8,26 @@ import (
 	"github.com/whynpc9/CtxFerry/internal/app"
 )
 
-const (
-	skillsPageName    = "Skills"
-	artifactsPageName = "产物"
-)
+func init() {
+	desktopPages[pageSkills] = func(d *desktop, c *ui.Context) {
+		d.workHeading(c, "Skills", "核对共享意图和本机文件变更", d.skills.project)
+		d.skillsPage(c)
+	}
+	desktopPages[pageArtifacts] = func(d *desktop, c *ui.Context) {
+		d.workHeading(c, "产物", "追溯运行结果与内容位置", d.artifacts.project)
+		d.artifactsPage(c)
+	}
+}
+
+func (d *desktop) workHeading(c *ui.Context, title, subtitle, project string) {
+	ui.Row(c).FillWidth().Gap(8).Wrap().Children(func() {
+		pageHeading(c, title, subtitle)
+		if project != "" && desktopPages[pageProjects] != nil {
+			ui.Spacer(c)
+			ui.Button(c, "打开项目").OnClick(func() { d.navigate(desktopRoute{Page: pageProjects, ProjectID: project}) })
+		}
+	})
+}
 
 type workProjects struct {
 	items           []app.Project
@@ -25,42 +41,33 @@ func desktopJob[T any](d *desktop, read func(context.Context) (T, error), done f
 		done(value, err)
 		return
 	}
-	go func() {
-		value, err := read(d.ctx)
-		if d.ctx.Err() == nil {
-			d.window.Update(func() {
-				if d.ctx.Err() == nil {
-					done(value, err)
-				}
-			})
+	workspace, device := d.data.Workspace.ID, d.data.Device.ID
+	runDesktop(d, read, func(value T, err error) {
+		if d.data.Workspace.ID == workspace && d.data.Device.ID == device {
+			done(value, err)
 		}
-	}()
-}
-
-// Project details can enter either work surface with the stable Project ID.
-func (d *desktop) openProjectSkills(projectID string) {
-	d.page = skillsPageName
-	d.setSkillProject(projectID)
-	d.loadWorkProjects(false)
-}
-
-func (d *desktop) openProjectArtifacts(projectID string) {
-	d.page = artifactsPageName
-	d.setArtifactProject(projectID)
-	d.loadWorkProjects(false)
+	})
 }
 
 func (d *desktop) enterWorkPage(refresh bool) {
-	if d.page != skillsPageName && d.page != artifactsPageName || d.err != nil {
+	if d.route.Page != pageSkills && d.route.Page != pageArtifacts || d.data.ReadAt.IsZero() {
 		return
 	}
 	d.loadWorkProjects(refresh)
-	switch d.page {
-	case skillsPageName:
+	switch d.route.Page {
+	case pageSkills:
+		if d.route.ProjectID != "" && d.route.ProjectID != d.skills.project {
+			d.setSkillProject(d.route.ProjectID)
+			return
+		}
 		if !d.skills.loading && !d.skills.busy && (refresh || !d.skills.loaded) {
 			d.loadSkills()
 		}
-	case artifactsPageName:
+	case pageArtifacts:
+		if d.route.ProjectID != "" && d.route.ProjectID != d.artifacts.project {
+			d.setArtifactProject(d.route.ProjectID)
+			return
+		}
 		if !d.artifacts.loading && !d.artifacts.busy && (refresh || !d.artifacts.loaded) {
 			d.loadArtifacts()
 		}
@@ -79,7 +86,7 @@ func (d *desktop) loadWorkProjects(refresh bool) {
 			return
 		}
 		a := &d.artifacts
-		if d.page == artifactsPageName && a.project == "" && len(projects) > 0 {
+		if d.route.Page == pageArtifacts && a.project == "" && len(projects) > 0 {
 			d.setArtifactProject(projects[0].ID)
 		}
 	})

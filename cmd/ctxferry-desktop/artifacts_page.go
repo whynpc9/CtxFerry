@@ -26,6 +26,7 @@ type artifactsState struct {
 	row                   int
 	table                 ui.ListState
 	loading, loaded, busy bool
+	readID                uint64
 	err, actionErr        error
 	checked               map[string]string
 	exported              app.ArtifactFetch
@@ -38,6 +39,7 @@ func (d *desktop) setArtifactProject(project string) {
 		return
 	}
 	a.project, a.run, a.device, a.content = project, allRuns, allDevices, allContent
+	d.route.ProjectID = project
 	a.row, a.table, a.showRun = -1, ui.ListState{}, false
 	d.loadArtifacts()
 }
@@ -48,11 +50,13 @@ func (d *desktop) loadArtifacts() {
 	if project == "" {
 		return
 	}
+	a.readID++
+	readID := a.readID
 	a.loading, a.err, a.actionErr = true, nil, nil
 	desktopJob(d, func(ctx context.Context) ([]app.DesktopArtifact, error) {
 		return d.core.ListDesktopArtifacts(ctx, project)
 	}, func(items []app.DesktopArtifact, err error) {
-		if a.project != project {
+		if a.readID != readID {
 			return
 		}
 		a.loading, a.loaded, a.items, a.err, a.checked = false, true, items, err, nil
@@ -264,6 +268,7 @@ func (d *desktop) checkArtifact(item app.DesktopArtifact) {
 	}, func(_ struct{}, err error) {
 		a.busy, a.actionErr = false, err
 		a.recordArtifactCheck(item.ID, err)
+		d.enterWorkPage(false)
 	})
 }
 
@@ -290,6 +295,7 @@ func (d *desktop) exportArtifact(item app.DesktopArtifact) {
 		} else if err != nil {
 			a.recordArtifactCheck(item.ID, err)
 		}
+		d.enterWorkPage(false)
 	})
 }
 
