@@ -1,0 +1,156 @@
+{
+  "cli-after-alt-profile": {
+    "checkout": "/private/tmp/cf29-final.RkEnr5/dbark-alt",
+    "profile": "diagnostics",
+    "fields": [
+      {
+        "name": "parallelism",
+        "value": 2,
+        "layer": "global"
+      },
+      {
+        "name": "timeoutSeconds",
+        "value": 120,
+        "layer": "checkout"
+      },
+      {
+        "name": "workingDirectory",
+        "value": "/private/tmp/cf29-final.RkEnr5/dbark-alt/missing-tools",
+        "layer": "checkout"
+      }
+    ],
+    "sourceSHA256": "3fdf8480dc98746adeac3a4eac7371cacea54a8b39aea1d665d0e0ae1ce9fa1d"
+  },
+  "cli-after-cancel": {
+    "checkout": "/private/tmp/cf29-final.RkEnr5/dbark",
+    "profile": "development",
+    "fields": [
+      {
+        "name": "parallelism",
+        "value": 4,
+        "layer": "profile"
+      },
+      {
+        "name": "timeoutSeconds",
+        "value": 90,
+        "layer": "device"
+      },
+      {
+        "name": "workingDirectory",
+        "value": "/private/tmp/cf29-final.RkEnr5/dbark/tools",
+        "layer": "checkout"
+      }
+    ],
+    "sourceSHA256": "4327a77b90e334cac421e7184bd8eaed7729a7658aad7f38217f31dc5180eca4"
+  },
+  "cli-after-edit": {
+    "checkout": "/private/tmp/cf29-final.RkEnr5/dbark",
+    "profile": "development",
+    "fields": [
+      {
+        "name": "parallelism",
+        "value": 4,
+        "layer": "profile"
+      },
+      {
+        "name": "timeoutSeconds",
+        "value": 65,
+        "layer": "project"
+      },
+      {
+        "name": "workingDirectory",
+        "value": "/private/tmp/cf29-final.RkEnr5/dbark/tools",
+        "layer": "checkout"
+      }
+    ],
+    "sourceSHA256": "220b0097d1c5bfb76a90eff9164c304ff972571a4cdf00125967f8743a9c2b97"
+  },
+  "cli-after-escape": {
+    "checkout": "/private/tmp/cf29-final.RkEnr5/dbark",
+    "profile": "development",
+    "fields": [
+      {
+        "name": "parallelism",
+        "value": 4,
+        "layer": "profile"
+      },
+      {
+        "name": "timeoutSeconds",
+        "value": 90,
+        "layer": "device"
+      },
+      {
+        "name": "workingDirectory",
+        "value": "/private/tmp/cf29-final.RkEnr5/dbark/tools",
+        "layer": "checkout"
+      }
+    ],
+    "sourceSHA256": "4327a77b90e334cac421e7184bd8eaed7729a7658aad7f38217f31dc5180eca4"
+  },
+  "cli-after-reset": {
+    "checkout": "/private/tmp/cf29-final.RkEnr5/dbark",
+    "profile": "development",
+    "fields": [
+      {
+        "name": "parallelism",
+        "value": 4,
+        "layer": "profile"
+      },
+      {
+        "name": "timeoutSeconds",
+        "value": 60,
+        "layer": "project"
+      },
+      {
+        "name": "workingDirectory",
+        "value": "/private/tmp/cf29-final.RkEnr5/dbark/tools",
+        "layer": "checkout"
+      }
+    ],
+    "sourceSHA256": "77202e383c53bbb2dbf471eb00ebcf6d4efe1298bf448dcfc9880bff9a6f1d9d"
+  },
+  "cli-before": {
+    "checkout": "/private/tmp/cf29-final.RkEnr5/dbark",
+    "profile": "development",
+    "fields": [
+      {
+        "name": "parallelism",
+        "value": 4,
+        "layer": "profile"
+      },
+      {
+        "name": "timeoutSeconds",
+        "value": 90,
+        "layer": "device"
+      },
+      {
+        "name": "workingDirectory",
+        "value": "/private/tmp/cf29-final.RkEnr5/dbark/tools",
+        "layer": "checkout"
+      }
+    ],
+    "sourceSHA256": "4327a77b90e334cac421e7184bd8eaed7729a7658aad7f38217f31dc5180eca4"
+  },
+  "cli-primary-unchanged": {
+    "checkout": "/private/tmp/cf29-final.RkEnr5/dbark",
+    "profile": "development",
+    "fields": [
+      {
+        "name": "parallelism",
+        "value": 4,
+        "layer": "profile"
+      },
+      {
+        "name": "timeoutSeconds",
+        "value": 65,
+        "layer": "project"
+      },
+      {
+        "name": "workingDirectory",
+        "value": "/private/tmp/cf29-final.RkEnr5/dbark/tools",
+        "layer": "checkout"
+      }
+    ],
+    "sourceSHA256": "220b0097d1c5bfb76a90eff9164c304ff972571a4cdf00125967f8743a9c2b97"
+  }
+}

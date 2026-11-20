@@ -2,7 +2,7 @@
 title: Native desktop preview
 ---
 
-The desktop opens the same local Workspace as the CLI. At revision `86780e2`,
+The desktop opens the same local Workspace as the CLI.
 **设备总览** (Overview) shows this device's Projects and sync health. **同步**
 (Sync) lets you inspect queued records, check a configured remote and create
 a local backup. Publishing shared records runs through the CLI or sync service.
@@ -52,6 +52,23 @@ confirmed sync time, service state and locally available authentication evidence
 help you decide whether to run an active check. Use [Diagnostics](diagnostics.md)
 to check one credential mapping or diagnose a service.
 
+## Edit Project configuration
+
+Choose **打开项目** from Overview, or open **项目** and select the Project.
+Choose a local Checkout if the Project has several bindings. The Profile
+picker saves your choice for that Checkout on this device.
+
+Open **配置** and select a field. The source list shows the workspace default,
+Project, Profile, device and Checkout layers in inheritance order. Choose the
+write layer in the inspector. Preview an edit or **预览恢复继承…** before
+confirming. The preview identifies affected local Checkouts and the values
+they retain or adopt. Shared layers become eligible for publication through
+the normal sync workflow.
+
+After confirmation, the configuration table reloads. From the same Checkout,
+run `ctxferry context explain` to inspect the effective value and origin in the
+CLI. See the [ordinary configuration guide](context.md).
+
 ## Read Sync
 
 ![macOS Sync showing a configured private repository and the local queue](assets/desktop-sync-macos.png)
@@ -83,11 +100,6 @@ plaintext. The receipt identifies the destination and its `manifest.json`.
 
 ## Planned desktop scope
 
-The desktop roadmap includes a Projects configuration editor, Fleet and
-Resources, Secrets, conflict resolution, Skills, and Artifacts. Those screens and synthetic states in the design frames are
-not controls in this checkout. Follow issues
-[#29](https://github.com/whynpc9/CtxFerry/issues/29),
-[#30](https://github.com/whynpc9/CtxFerry/issues/30),
-[#31](https://github.com/whynpc9/CtxFerry/issues/31), and
-[#32](https://github.com/whynpc9/CtxFerry/issues/32) for that planned work.
-Until then, use the linked CLI guides for those operations.
+The roadmap includes Fleet and Resources, Secrets, conflict resolution, Skills
+management and Artifact management. Follow the corresponding issues for their
+desktop workflows. [Fleet and Secrets #30](https://github.com/whynpc9/CtxFerry/issues/30) · [Conflicts #31](https://github.com/whynpc9/CtxFerry/issues/31) · [Skills and Artifacts #32](https://github.com/whynpc9/CtxFerry/issues/32)
