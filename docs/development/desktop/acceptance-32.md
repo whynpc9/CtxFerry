@@ -78,3 +78,5 @@ Kimi K3.1 Pro 复核了两张集成原图的完整哈希和关键原像素区域
 从项目产物分段进入时保留 `dbark` 筛选，选择 `integration-018` 下的 `trace.json` 可查看仅元数据及超额原因，返回时保留项目、产物分段与 Checkout。[进入产物](screenshots/issue-32/projects-integrated/03-artifacts-destination.png) · [返回项目](screenshots/issue-32/projects-integrated/04-artifacts-return.png)
 
 新增的桌面测试通过相同入口断言项目 ID、目标页和返回状态。更新基线后，桌面全量测试、静态检查、核心桌面及项目配置专项测试、接收端产物专项测试均通过。[四张原图 SHA-256](screenshots/issue-32/projects-integrated/manifest.json) · [实机导航和关闭回执](screenshots/issue-32/projects-integrated/outcomes.json)
+
+Kimi K3.1 Pro 核对四张原图的哈希、完整画面及原像素区域，复查通过。两条往返均保留项目、分段与 Checkout，且共享与本机 pin、仅元数据状态的含义清楚。T3 使用 `kimi-code/k3.1-pro` 并传入 `thinking=max`。
