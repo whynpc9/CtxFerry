@@ -1,0 +1,34 @@
+{
+  "bindings": [
+    {
+      "alias": "test-db-reader",
+      "id": "47efa36f-4a28-4e84-b2b6-84c563383f7d",
+      "key": "TEST_DB_READER"
+    },
+    {
+      "alias": "test-db-auditor",
+      "id": "9d562931-e0fd-465b-b75d-0d1bcad56ab8",
+      "key": "TEST_DB_AUDITOR"
+    }
+  ],
+  "mapping": {
+    "mapping_count": 2,
+    "audit_binding": "9d562931-e0fd-465b-b75d-0d1bcad56ab8",
+    "original_binding": "47efa36f-4a28-4e84-b2b6-84c563383f7d"
+  },
+  "route": {
+    "status": "resolved",
+    "source": "device-local",
+    "endpoint": "127.0.0.1:63592"
+  },
+  "observations": [
+    {
+      "deviceId": "9879b5c1-157a-43dc-9401-85abf1ccaeae",
+      "status": "reachable",
+      "tool": "tcp-connect",
+      "target": "127.0.0.1:63592",
+      "serviceVerified": false
+    }
+  ],
+  "value_and_session_absent_from_cli_outputs_and_app_log": true
+}
