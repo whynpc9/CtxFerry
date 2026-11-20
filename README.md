@@ -44,10 +44,14 @@ cd cmd/ctxferry-desktop
 go run .
 ```
 
-Overview and Sync use the same local workspace as the CLI. Set
+Overview, Sync and Projects use the same local workspace as the CLI. Set
 `CTXFERRY_DATA_DIR` to select an isolated workspace. **刷新本地视图** reads the
 local catalog. **检查远端** checks Git access and repository privacy on demand.
 **创建备份…** shows the scope and destination before writing the plaintext backup.
+In Projects, select a Checkout to see its Profile and each setting's effective
+value and origin. Preview a write or reset before applying it to a layer. Run
+`ctxferry context explain` from the same Checkout to inspect the result in the CLI.
+
 Initialize workspaces with the CLI and run background sync as a separate user
 service. See the [desktop smoke procedure](docs/development/desktop/acceptance-28.md#复现)
 and [design](plans/desktop-design/README.md).
