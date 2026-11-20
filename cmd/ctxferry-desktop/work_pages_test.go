@@ -90,6 +90,7 @@ func TestNavigateSkillsAndArtifacts(t *testing.T) {
 	if d.skills.targetState.Installed == nil {
 		t.Fatal("view did not reload the installation receipt")
 	}
+	see("候选 pin")
 
 	click("产物")
 	d.openProjectArtifacts(projectID)

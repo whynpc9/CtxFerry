@@ -79,13 +79,17 @@ func TestDesktopSkillPreviewApplyUpdateAndRollback(t *testing.T) {
 	}
 	input := SkillChangeInput{Name: "example", Target: "codex"}
 	write(installed, versionTwo+"local edit\n")
-	blocked, err := a.PreviewDesktopSkillChange(ctx, input)
+	blocked, err := a.PreviewDesktopSkillChange(ctx, input, nil)
 	if err != nil || blocked.Status != "blocked" || blocked.Confirmation != "" || len(blocked.Files) != 1 ||
 		!blocked.Files[0].LocalChanged || !strings.Contains(blocked.Files[0].Local.Contents, "local edit") {
 		t.Fatalf("blocked local edit: %+v, %v", blocked, err)
 	}
 	write(installed, versionTwo)
-	update, err := a.PreviewDesktopSkillChange(ctx, input)
+	stale, err := a.PreviewDesktopSkillChange(ctx, input, fresh.After)
+	if err == nil || Classify(err).Code != "skill-candidate-changed" || stale.Confirmation != "" {
+		t.Fatalf("stale candidate preview: %+v, %v", stale, err)
+	}
+	update, err := a.PreviewDesktopSkillChange(ctx, input, nil)
 	if err != nil || update.Confirmation == "" || update.Files[0].Before.Contents != versionTwo || update.Files[0].After.Contents != versionOne {
 		t.Fatalf("update preview: %+v, %v", update, err)
 	}
@@ -94,7 +98,11 @@ func TestDesktopSkillPreviewApplyUpdateAndRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	input.Rollback = true
-	rollback, err := a.PreviewDesktopSkillChange(ctx, input)
+	installedState, err := a.ReadDesktopSkillTarget(ctx, "example", "codex", false)
+	if err != nil || installedState.Previous == nil || installedState.Previous.Digest != fresh.After.Digest {
+		t.Fatalf("previous candidate: %+v, %v", installedState, err)
+	}
+	rollback, err := a.PreviewDesktopSkillChange(ctx, input, installedState.Previous)
 	if err != nil || rollback.Confirmation == "" || rollback.Files[0].After.Contents != versionTwo {
 		t.Fatalf("rollback preview: %+v, %v", rollback, err)
 	}

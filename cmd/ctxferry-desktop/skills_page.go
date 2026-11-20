@@ -19,6 +19,7 @@ type skillsState struct {
 	targetState                      app.DesktopSkillTarget
 	preview                          app.DesktopSkillPreview
 	action                           string
+	candidate                        string
 	loading, loaded, busy            bool
 	err                              error
 	receipt                          string
@@ -36,6 +37,7 @@ func (d *desktop) setSkillProject(project string) {
 		return
 	}
 	s.project, s.name, s.ref, s.receipt = project, "", "", ""
+	s.candidate = "update"
 	d.loadSkills()
 }
 
@@ -57,6 +59,7 @@ func (d *desktop) loadSkills() {
 		name := s.name
 		if slices.IndexFunc(entries, func(entry app.DesktopSkill) bool { return entry.Name == name }) < 0 {
 			s.name = entries[0].Name
+			s.candidate = "update"
 		}
 		if s.target == "" {
 			s.target, s.mode = "codex", "受管复制"
@@ -82,14 +85,21 @@ func (d *desktop) loadSkillTarget() {
 			return
 		}
 		s.targetState, s.err, s.loading = state, err, false
+		if !state.CanRollback || s.candidate == "" {
+			s.candidate = "update"
+		}
 	})
 }
 
 func (d *desktop) previewSkill(action string) {
 	s := &d.skills
 	input := app.SkillChangeInput{Name: s.name, Target: s.target, Ref: strings.TrimSpace(s.ref), Rollback: action == "rollback"}
+	var selected *app.SkillPackage
 	if input.Rollback {
 		input.Ref = ""
+		selected = s.targetState.Previous
+	} else if s.targetState.Shared {
+		selected = s.sharedPin()
 	}
 	link := s.mode == "受管软链"
 	if s.targetState.Mode != "" {
@@ -106,7 +116,7 @@ func (d *desktop) previewSkill(action string) {
 		if action == "install" {
 			return d.core.PreviewDesktopSkillInstall(ctx, input.Name, input.Target, link)
 		}
-		return d.core.PreviewDesktopSkillChange(ctx, input)
+		return d.core.PreviewDesktopSkillChange(ctx, input, selected)
 	}, func(preview app.DesktopSkillPreview, err error) {
 		s.preview, s.err, s.busy = preview, err, false
 		if rescan && err == nil {
@@ -168,10 +178,12 @@ func (d *desktop) skillsPage(c *ui.Context) {
 			}
 			workPicker(c, "Skill", &s.name, names, s.busy || s.loading, func() {
 				s.ref, s.receipt = "", ""
+				s.candidate = "update"
 				d.loadSkillTarget()
 			})
 			workPicker(c, "安装目标", &s.target, []string{"codex", "claude-code"}, s.busy || s.loading, func() {
 				s.ref, s.receipt = "", ""
+				s.candidate = "update"
 				d.loadSkillTarget()
 			})
 			if s.targetState.Installed == nil && s.targetState.Status != "recovery-pending" {
@@ -182,6 +194,9 @@ func (d *desktop) skillsPage(c *ui.Context) {
 					ui.Text(c, "共享意图 pin").TextColor(muted)
 					ui.Text(c, skillShortPin(pin)).Bold().TextColor(ink)
 				})
+			}
+			if s.targetState.Status == "installed" && s.targetState.Installed != nil {
+				s.candidatePicker(c)
 			}
 		})
 	})
@@ -241,14 +256,13 @@ func (d *desktop) skillInstallView(c *ui.Context) {
 				label = "已登记安装 · 文件需要核对"
 			}
 			ui.Text(c, label+" · "+skillMode(state.Mode)).Bold().TextColor(ink)
-			if state.Installed != nil && !state.Shared && state.Installed.SourceKind == "git" {
+			if state.Installed != nil && !state.Shared && state.Installed.SourceKind == "git" && s.candidate != "rollback" {
 				ui.Text(c, "候选 Git pin").TextColor(muted)
 				ui.TextInput(c, &s.ref).FillWidth().Label("候选 Git pin").Placeholder("完整 commit 或 refs/tags/<release>").Disabled(s.busy).OnChange(s.clearPreview)
 			}
-			ui.Row(c).Gap(8).Wrap().Children(func() {
-				ui.Button(c, "预览更新…").Disabled(s.busy || state.Installed == nil).OnClick(func() { d.previewSkill("update") })
-				ui.Button(c, "预览回滚…").Disabled(s.busy || !state.CanRollback).OnClick(func() { d.previewSkill("rollback") })
-			})
+			actionLabel := "预览" + skillAction(s.candidate, "") + "…"
+			noApprovedPin := s.candidate != "rollback" && state.Shared && s.sharedPin() == nil
+			ui.Button(c, actionLabel).Disabled(s.busy || state.Installed == nil || noApprovedPin).OnClick(func() { d.previewSkill(s.candidate) })
 		case "recovery-pending":
 			ui.Text(c, "发现未完成的操作。先核对恢复计划。").TextColor(workWarning)
 			ui.Button(c, "预览恢复…").Disabled(s.busy).OnClick(func() { d.previewSkill("install") })
@@ -259,6 +273,40 @@ func (d *desktop) skillInstallView(c *ui.Context) {
 		if s.action == "" {
 			skillIssues(c, state.Issues)
 		}
+	})
+}
+
+func (s *skillsState) candidatePicker(c *ui.Context) {
+	state := s.targetState
+	update := "重新读取本机来源"
+	switch {
+	case state.Shared:
+		update = "已批准共享 pin"
+		if pin := s.sharedPin(); pin != nil {
+			update = "共享 · " + skillShortPin(pin)
+		} else {
+			update += "不可用"
+		}
+	case state.Installed.SourceKind == "git":
+		update = "指定 Git pin"
+	}
+	rollback := "上次安装版本"
+	if state.Previous != nil {
+		rollback = "上次本机 · " + skillShortPin(state.Previous)
+	}
+	choices, selected := []string{update}, update
+	if state.CanRollback {
+		choices = append(choices, rollback)
+		if s.candidate == "rollback" {
+			selected = rollback
+		}
+	}
+	workPicker(c, "候选 pin", &selected, choices, s.busy, func() {
+		s.candidate = "update"
+		if selected == rollback {
+			s.candidate = "rollback"
+		}
+		s.clearPreview()
 	})
 }
 

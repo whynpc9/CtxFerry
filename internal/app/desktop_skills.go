@@ -156,6 +156,7 @@ type DesktopSkillTarget struct {
 	Path, Mode, Status  string
 	Installed           *SkillPackage
 	Available           *SkillPackage
+	Previous            *SkillPackage
 	Shared, CanRollback bool
 	Issues              []SkillProblem
 }
@@ -196,6 +197,12 @@ func (a App) ReadDesktopSkillTarget(ctx context.Context, name, target string, sy
 	}
 	out.Issues = p.Issues
 	out.CanRollback = receipt.State == "installed" && receipt.Previous != nil
+	if out.CanRollback {
+		previous := p
+		if err := previous.loadPackage(name, *receipt.Previous, receipt.Mode == "symlink"); err == nil {
+			out.Previous = &previous.Package
+		}
+	}
 	return out, nil
 }
 
@@ -263,10 +270,13 @@ func (a App) ApplyDesktopSkill(ctx context.Context, name, target string, symlink
 	return a.applySkill(ctx, name, target, symlink, confirmation)
 }
 
-func (a App) PreviewDesktopSkillChange(ctx context.Context, input SkillChangeInput) (DesktopSkillPreview, error) {
+func (a App) PreviewDesktopSkillChange(ctx context.Context, input SkillChangeInput, selected *SkillPackage) (DesktopSkillPreview, error) {
 	input.Confirm = ""
 	var files []DesktopSkillDiff
 	plan, err := a.changeSkill(ctx, input, func(old, next skillProjection, payload skillPayload, plan SkillChangePlan) error {
+		if selected != nil && skillVersion(*selected) != skillVersion(next.Package) {
+			return Fail("skill-candidate-changed", "the Skill candidate no longer matches the selected pin")
+		}
 		before, err := a.skillDiffData(ctx, old)
 		if err != nil {
 			return err
@@ -326,6 +336,9 @@ func (a App) PreviewDesktopSkillChange(ctx context.Context, input SkillChangeInp
 		slices.SortFunc(files, func(a, b DesktopSkillDiff) int { return strings.Compare(a.Path, b.Path) })
 		return nil
 	})
+	if err != nil {
+		plan.Confirmation = ""
+	}
 	return DesktopSkillPreview{
 		Status: plan.Status, Path: plan.Path, Mode: plan.Mode, Link: plan.AfterLink, Confirmation: plan.Confirmation,
 		Before: &plan.Before, After: plan.After, Files: files, Issues: plan.Issues,

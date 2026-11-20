@@ -134,6 +134,8 @@ func workMessage(c *ui.Context, label string, err error) {
 		message = "此项目尚未在本机订阅。"
 	case "skill-plan-changed":
 		message = "计划已变化。请重新扫描并核对差异。"
+	case "skill-candidate-changed":
+		message = "候选 pin 已变化。请刷新本地视图并重新选择。"
 	case "skill-no-previous-version":
 		message = "这个目标没有可恢复的上一版本。"
 	case "artifact-hash-mismatch":
