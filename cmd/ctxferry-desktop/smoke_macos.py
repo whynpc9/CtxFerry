@@ -245,22 +245,23 @@ def smoke(root, server):
 
                     # Run a real user service alongside the window. Hold the Git
                     # round before it reads the remote so publication proves the
-                    # already-running job continued after File > Close Window.
+                    # already-running job continued after the native window closed.
                     with sqlite3.connect(db_path) as db:
                         db.execute("DELETE FROM records WHERE id=?", (secret["id"],))
                     run("/bin/launchctl", "bootstrap", job.rsplit("/", 1)[0], plist)
                     service_pid = wait_for(job_pid)
                     wait_for(lambda: gate.with_suffix(".entered").is_file())
                     assert cli_call("b", "sync", "status")["head"] == fixture["head"]
-                    try:
-                        window.call("menu", path=["File", "Close Window"])
-                    except ConnectionError:
-                        pass
+                    before_close = window.call("windows")["windows"]
+                    assert len(before_close) == 1 and before_close[0]["visible"], before_close
+                    script = (
+                        f'tell application "System Events" to tell first process whose unix id is {proc.pid} '
+                        'to perform action "AXPress" of (value of attribute "AXCloseButton" of window 1)'
+                    )
+                    run("/usr/bin/osascript", "-e", script)
 
                     def closed_window():
-                        if proc.poll() is not None:
-                            return True
-                        return not window.call("windows")["windows"]
+                        return proc.poll() is not None or not window.call("windows")["windows"]
 
                     wait_for(closed_window)
                 finally:
@@ -281,7 +282,8 @@ def smoke(root, server):
     receipt = {"revision": run("git", "rev-parse", "HEAD", cwd=REPO),
                "fixture": {"confirmedHead": fixture["head"], "pending": fixture["pending"],
                            "conflicts": len(fixture["conflicts"]), "historyBytes": fixture["history"]["rawBytes"]},
-               "backupManifest": manifest, "continuedUserServicePID": service_pid, "images": images}
+               "backupManifest": manifest, "nativeWindowClosed": True,
+               "continuedUserServicePID": service_pid, "images": images}
     (root / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
     print(json.dumps(receipt, indent=2))
 
