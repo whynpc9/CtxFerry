@@ -63,3 +63,25 @@ Kimi Code 的运行记录绑定 `kimi-code/k3.1-pro`，委派参数为 `thinking
 **通过。** Kimi K3.1 Pro 逐张打开了修订版的九张 CUA 原图及两张冻结稿，九项 SHA-256 均通过。复核确认卡片只高亮新增的文本片段，移除片段单独标出，且回执与队列的标题、记录 ID 和修订号均与 CLI 回读一致。评审也检查了过期时的草稿、明文发布边界、设备来源和删除状态。两处初审问题均已关闭。
 
 T3 为两轮均绑定 `kimi-code/k3.1-pro` 并提交 `thinking=max`，评审回复报告了相同模型 ID。提供方运行记录没有独立的 executedModel 或实际推理档位回执。复核建议给未解决的冲突行增加同名记录辨识信息，以及改善过期提示出现时的滚动体验。两项均被评为非阻塞。
+
+## 合并 #28 后的集成验收
+
+PR #60 的 squash 为 `86780e2289aa69cee501876043c544897c5a252b`。集成实现 `e6c6aca16ac1a90dbbe8b99c2f2b0c418f7b369d` 在该基线上构建并生成以下实机截图。随后移植到含文档整理的 `757b619733d985c9b7d3d1ec3827e31d7cef1997`。Git 比较确认 `cmd`、`internal`、Go 模块文件和 CI 的内容与实机版本一致。这轮使用生产桌面源码直接构建，MyGo 通过 `CTXFERRY_DATA_DIR` 识别隔离目录。
+
+| 原始截图 | 集成实测结果 |
+| --- | --- |
+| [01 同步表格](screenshots/issue-31-integrated/01-queue.jpg) | 总览入口定位冲突筛选。选中记录后由检查器打开三方比较。项目入口可携带项目筛选，返回可恢复筛选和选中记录。 |
+| [02 三方比较](screenshots/issue-31-integrated/02-compare.jpg) | 保留三侧设备、修订和具体增删。初始没有预选。 |
+| [03 选定远端](screenshots/issue-31-integrated/03-side.jpg) | 远端单选与预览对应。 |
+| [04 编辑](screenshots/issue-31-integrated/04-edit.jpg) | 录入精确的两行结果，向下滚动可到达操作按钮。 |
+| [05 确认](screenshots/issue-31-integrated/05-confirm.jpg) | 列出方案、本机写入目标、发布队列与明文边界。取消后原冲突保留。 |
+| [06 过期保护](screenshots/issue-31-integrated/06-stale.jpg) | 远端推进后旧 token 被拒绝。刷新保留草稿，重新选择披露范围后可再次确认。 |
+| [07 回执](screenshots/issue-31-integrated/07-saved.jpg) | 显示标题、记录 ID 和新修订，可打开待发布记录。 |
+| [08 待发布检查器](screenshots/issue-31-integrated/08-queue-after.jpg) | 回执动作选中并聚焦相同记录。检查器与回执的两类 ID 一致。 |
+| [09 删除冲突](screenshots/issue-31-integrated/09-deletion.jpg) | 另一条冲突仍可比较，披露受限正文隐藏，保留远端删除须显式选择。 |
+
+[集成版原始截图 SHA-256](screenshots/issue-31-integrated/sha256.txt)
+
+记录 `6ab68089-0008-40eb-adaf-ef8be4892c0f` 在本机生成修订 `f7a37da9-f9f2-4e38-8fa0-40b4dae82e6b`，父修订为 `f4060821-f1fb-480a-b372-96842a736d87`。CLI 读回同一修订和原样换行的正文。生成时裸 Git head 保持 `a7079260a491b2de6ce966e06fc62bd3c27cb683`。关闭窗口后显式同步，对端读取相同修订和正文，发布 head 为 `738d46ae35546ea97925bb4e4d2140466820a15c`。
+
+集成后的桌面烟测、带竞态检测的冲突烟测、核心测试、CLI 冲突与双目录同步回归、根模块和桌面静态检查均通过。集成版独立图像复核结论记录于 [PR #61](https://github.com/whynpc9/CtxFerry/pull/61)。
