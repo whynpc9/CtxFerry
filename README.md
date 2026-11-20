@@ -2,6 +2,8 @@
 
 Local-first development context. This first slice supports local workspaces and Project bindings without any login, network connection, GUI, DBus or WebKitGTK.
 
+[User guides](docs/content/index.md) · [Developer documentation](docs/README.md)
+
 ```sh
 go build -o ctxferry ./cmd/ctxferry
 ctxferry init
@@ -47,7 +49,7 @@ Overview and Sync use the same local workspace as the CLI. Set
 local catalog. **检查远端** checks Git access and repository privacy on demand.
 **创建备份…** shows the scope and destination before writing the plaintext backup.
 Initialize workspaces with the CLI and run background sync as a separate user
-service. See the [desktop smoke procedure](docs/desktop/acceptance-28.md#复现)
+service. See the [desktop smoke procedure](docs/development/desktop/acceptance-28.md#复现)
 and [design](plans/desktop-design/README.md).
 
 ## First-device onboarding
@@ -156,9 +158,9 @@ is reported as unavailable; explicit path bindings and non-Git directories still
 Raw remote URLs are not echoed or stored. Schema 2 migrates old bindings transactionally,
 keeping identities and paths; repeat bind explicitly to enrich old Git bindings.
 
-Context commands add offline ContextDocs with independent storage and disclosure policies, revision-checked `context put`, and SQLite FTS5 search. See [context commands and decisions](docs/context.md). Schema 3 adds documents after the schema 2 Project identification migration.
+Context commands add offline ContextDocs with independent storage and disclosure policies, revision-checked `context put`, and SQLite FTS5 search. See the [context command guide](docs/content/context.md). Schema 3 adds documents after the schema 2 Project identification migration.
 
-First private publication supports separate Git/privacy checks, an exact plaintext preview and explicit branch initialization. See [sync workflow and format](docs/sync.md).
+First private publication supports separate Git/privacy checks, an exact plaintext preview and explicit branch initialization. See the [private sync guide](docs/content/sync.md).
 
 Register a Project service with an explicit storage policy. Shared endpoints use
 non-secret host and port pairs. Configure localhost endpoints and proxy addresses
