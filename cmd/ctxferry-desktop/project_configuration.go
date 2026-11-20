@@ -211,6 +211,9 @@ func (p *projectPage) layerPicker(c *ui.Context) {
 
 func (p *projectPage) layerUnavailable(layer string) string {
 	if layer == "profile" && p.config.Profile == nil {
+		if p.target.CheckoutID == "" {
+			return "请先选择本机 Checkout"
+		}
 		return "此 Checkout 未选择配置方案"
 	}
 	if layer == "checkout" {

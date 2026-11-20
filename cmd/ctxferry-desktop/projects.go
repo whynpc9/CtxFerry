@@ -310,9 +310,10 @@ func (p *projectPage) selectProfile(name string) {
 				p.actionErr = err
 				return
 			}
-			label := "已清除此 Checkout 的本机配置方案"
+			checkout := "Checkout " + selection.Checkout.Path
+			label := "已清除 " + checkout + " 的本机配置方案"
 			if selection.Profile != nil {
-				label = "本机配置方案已切换为 " + selection.Profile.Name
+				label = "已将 " + checkout + " 的本机配置方案切换为 " + selection.Profile.Name
 			}
 			p.notice = label
 			p.readSelection()
