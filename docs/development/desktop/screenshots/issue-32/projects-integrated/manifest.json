@@ -1,0 +1,22 @@
+{
+  "01-skills-destination": {
+    "sha256": "a5e52aac05e5a8e92d1e866dbd4f3bbe0e7fe40cb02488c410ce7d2581374a04",
+    "width": 2360,
+    "height": 1436
+  },
+  "02-skills-return": {
+    "sha256": "8e989aa5a8dce914e8ea67d690bd7aeacf1563f555ab57c6252cbcc479d7387e",
+    "width": 2360,
+    "height": 1436
+  },
+  "03-artifacts-destination": {
+    "sha256": "743afd6d5ea0fe712bde634d461324bc4271f9909f3a847a8a375384d7ce2f2a",
+    "width": 2360,
+    "height": 1436
+  },
+  "04-artifacts-return": {
+    "sha256": "e6ceea7d11e7ae4c2f1d0cb620e83e017b33dc3d938f98b73b9501754fc345b9",
+    "width": 2360,
+    "height": 1436
+  }
+}

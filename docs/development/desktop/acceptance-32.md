@@ -70,3 +70,11 @@ T3 记录使用 `kimi-code/k3.1-pro`，传入 `thinking=max`。Provider 的独�
 合入 #30 后重新运行桌面全量测试、桌面与核心静态检查、Skills 与产物核心专项测试和真实 Git 接收端的产物专项测试，均通过。与 [#29 PR](https://github.com/whynpc9/CtxFerry/pull/63) 的 `e88ca11` 再次临时集成，两条项目往返路径均通过。
 
 Kimi K3.1 Pro 复核了两张集成原图的完整哈希和关键原像素区域，并与冻结稿及最终实机原图比对。复查通过。侧栏、两页控件、共享与本机 pin、产物可用性和可读性均无实质回归。
+
+## #29 合入后的项目往返
+
+实机构建 `9209208e4e6576b382d478372adf4fd89abb6646` 基于 `5204d9c08c74e4914f1c88db57442ca691726cc2`。在同一隔离工作区，从 `dbark` 的项目 Skills 分段进入管理页，核对本机安装和共享 pin，再返回原项目、分段与 Checkout。[进入 Skills](screenshots/issue-32/projects-integrated/01-skills-destination.png) · [返回项目](screenshots/issue-32/projects-integrated/02-skills-return.png)
+
+从项目产物分段进入时保留 `dbark` 筛选，选择 `integration-018` 下的 `trace.json` 可查看仅元数据及超额原因，返回时保留项目、产物分段与 Checkout。[进入产物](screenshots/issue-32/projects-integrated/03-artifacts-destination.png) · [返回项目](screenshots/issue-32/projects-integrated/04-artifacts-return.png)
+
+新增的桌面测试通过相同入口断言项目 ID、目标页和返回状态。更新基线后，桌面全量测试、静态检查、核心桌面及项目配置专项测试、接收端产物专项测试均通过。[四张原图 SHA-256](screenshots/issue-32/projects-integrated/manifest.json) · [实机导航和关闭回执](screenshots/issue-32/projects-integrated/outcomes.json)
