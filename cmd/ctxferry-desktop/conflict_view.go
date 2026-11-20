@@ -16,67 +16,57 @@ var conflictBorder = ui.Hex("#cedbd4")
 
 const conflictReceipt = "已生成本机修订"
 
-func (d *desktop) conflictQueueRow(c *ui.Context, id string) {
-	label := d.data.ConflictLabels[id]
-	if label == "" {
-		label = id
+func init() {
+	desktopPages[pageConflict] = (*desktop).conflictView
+}
+
+func identifier(c *ui.Context, label, value string) {
+	ui.Text(c, label+" "+value).Font("monospace").FontSize(12).FillWidth().TextColor(muted).Selectable()
+}
+
+func (d *desktop) conflictToolbar(c *ui.Context) {
+	p := d.conflict
+	if ui.Button(c, "返回同步队列").Disabled(p.writing).Clicked() {
+		d.back()
 	}
-	ui.Row(c).Key(id).FillWidth().Gap(12).Padding(8, 12).Radius(6).Background(panel).Children(func() {
-		ui.Text(c, "冲突").TextColor(muted)
-		ui.Text(c, label).Grow(1).MinWidth(0).Bold().TextColor(ink).Selectable()
-		button := ui.Button(c, "比较版本").Label("比较版本 · " + id)
-		if d.restoreQueueID == id {
-			button.Focus()
-		}
-		if button.Clicked() {
-			d.openConflict(id)
-		}
-	})
+	ui.Text(c, "本地工作区 / 同步 / 冲突").Grow(1).MinWidth(0).TextColor(muted)
+	if p.revision == "" && ui.Button(c, "刷新比较").Disabled(p.loading || p.writing).Clicked() {
+		d.loadConflict()
+	}
 }
 
 func (d *desktop) conflictView(c *ui.Context) {
 	p := d.conflict
-	ui.Row(c).FillWidth().Gap(12).Padding(10, 20).Children(func() {
-		if ui.Button(c, "返回同步队列").Disabled(p.writing).Clicked() {
-			d.conflict = nil
-			d.restoreQueueID = p.id
-			if p.review {
-				d.refresh()
+	if p == nil {
+		return
+	}
+	ui.Text(c, "冲突处理").FontSize(27).Bold().TextColor(ink)
+	if p.revision != "" {
+		ui.Column(c).Gap(6).Padding(16).Radius(6).Background(panel).Children(func() {
+			section(c, conflictReceipt)
+			ui.Text(c, p.resolvedTitle()).Bold()
+			identifier(c, "记录 ID", p.id)
+			identifier(c, "本机修订", p.revision)
+			secondary(c, "修订已加入本机发布队列，由后续同步发布。")
+			if ui.Button(c, "查看待发布修订").AlignSelf(ui.Start).Disabled(d.loading).Clicked() {
+				d.back()
+				d.syncState.setFilter(queuePending)
 			}
-		}
-		ui.Text(c, "本地工作区 / 同步 / 冲突").Grow(1).MinWidth(0).TextColor(muted)
-		if p.revision == "" && ui.Button(c, "刷新比较").Disabled(p.loading || p.writing).Clicked() {
-			d.loadConflict()
-		}
-	})
-	ui.Divider(c)
-	ui.Scroll(c).Key(p.id).TrackScroll(&p.scroll).Grow(1).FillWidth().Children(func() {
-		ui.Column(c).FillWidth().Gap(14).Padding(20, 24).Children(func() {
-			ui.Text(c, "冲突处理").FontSize(27).Bold().TextColor(ink)
-			if p.revision != "" {
-				ui.Column(c).Gap(6).Padding(16).Radius(6).Background(panel).Children(func() {
-					section(c, conflictReceipt)
-					ui.Text(c, p.resolvedTitle()).Bold()
-					ui.Text(c, "记录 ID "+p.id).Font("monospace").Selectable()
-					ui.Text(c, "本机修订 "+p.revision).Font("monospace").Selectable()
-					ui.Text(c, "修订已加入本机发布队列，由后续同步发布。").TextColor(muted)
-				})
-				return
-			}
-			if p.loading {
-				ui.Text(c, "正在读取三方版本…")
-			}
-			if p.err != "" {
-				ui.Text(c, p.err).Padding(10, 12).Radius(6).Background(ui.Hex("#fbf1df")).TextColor(ui.Hex("#614717"))
-			}
-			if p.detail.ConflictID == "" {
-				return
-			}
-			ui.Text(c, p.description()).TextColor(muted)
-			d.conflictComparison(c, p)
-			d.conflictResolution(c, p)
 		})
-	})
+		return
+	}
+	if p.loading {
+		ui.Text(c, "正在读取三方版本…")
+	}
+	if p.err != "" {
+		notice(c, p.err)
+	}
+	if p.detail.ConflictID == "" {
+		return
+	}
+	secondary(c, p.description())
+	d.conflictComparison(c, p)
+	d.conflictResolution(c, p)
 	d.conflictConfirmation(c, p)
 }
 

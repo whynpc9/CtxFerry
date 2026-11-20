@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 
@@ -33,6 +34,10 @@ type conflictDraft struct {
 	summaryHidden bool
 }
 
+func (d *desktop) writingConflict() bool {
+	return d.conflict != nil && d.conflict.writing
+}
+
 func (d *desktop) openConflict(id string) {
 	d.conflict = &conflictPage{id: id}
 	d.loadConflict()
@@ -40,37 +45,39 @@ func (d *desktop) openConflict(id string) {
 
 func (d *desktop) loadConflict() {
 	p := d.conflict
-	if p.loading || p.writing || p.revision != "" {
+	if p == nil || p.loading || p.writing || p.revision != "" {
 		return
 	}
 	p.loading, p.confirm = true, false
-	go func() {
-		detail, err := d.core.Conflict(d.ctx, p.id)
-		diffs := conflictTextDiffs(detail)
-		d.update(func() {
-			if d.ctx.Err() != nil || d.conflict != p {
-				return
+	type comparison struct {
+		detail app.ConflictDetail
+		diffs  [3]map[string]*conflictTextDiff
+	}
+	runDesktop(d, func(ctx context.Context) (comparison, error) {
+		detail, err := d.core.Conflict(ctx, p.id)
+		return comparison{detail, conflictTextDiffs(detail)}, err
+	}, func(result comparison, err error) {
+		if d.conflict != p {
+			return
+		}
+		p.loading = false
+		if err != nil {
+			p.err = conflictError(err)
+			p.review = true
+			return
+		}
+		if p.detail.ConflictID != "" && p.detail.ConflictID != result.detail.ConflictID {
+			p.err = "比较后记录已变化。已载入最新版本，请重新选择解决方式。"
+			p.choice = ""
+			if p.draft != nil {
+				p.draft.input.Policy.AgentDisclosure = ""
+				p.err += "正文草稿已保留，请重新核对草稿及披露范围。"
 			}
-			p.loading = false
-			if err != nil {
-				p.err = conflictError(err)
-				p.review = true
-				return
-			}
-			if p.detail.ConflictID != "" && p.detail.ConflictID != detail.ConflictID {
-				p.err = "比较后记录已变化。已载入最新版本，请重新选择解决方式。"
-				p.choice = ""
-				if p.draft != nil {
-					p.draft.input.Policy.AgentDisclosure = ""
-					p.err += "正文草稿已保留，请重新核对草稿及披露范围。"
-				}
-			} else {
-				p.err = ""
-			}
-			p.detail, p.review = detail, false
-			p.diffs = diffs
-		})
-	}()
+		} else {
+			p.err = ""
+		}
+		p.detail, p.diffs, p.review = result.detail, result.diffs, false
+	})
 }
 
 func (p *conflictPage) version(choice string) *app.ConflictVersion {
@@ -171,26 +178,25 @@ func (d *desktop) resolveConflict(p *conflictPage) {
 	}
 	token := p.detail.ConflictID
 	p.writing, p.err = true, ""
-	go func() {
-		result, err := d.core.Resolve(d.ctx, p.id, token, take, input)
-		d.update(func() {
-			if d.ctx.Err() != nil {
-				return
+	runDesktop(d, func(ctx context.Context) (app.SyncResult, error) {
+		return d.core.Resolve(ctx, p.id, token, take, input)
+	}, func(result app.SyncResult, err error) {
+		if d.conflict != p {
+			return
+		}
+		p.writing = false
+		if err != nil {
+			p.err = conflictError(err)
+			switch app.Classify(err).Code {
+			case "stale-conflict", "conflict-not-found":
+				p.review = true
 			}
-			p.writing = false
-			if err != nil {
-				p.err = conflictError(err)
-				switch app.Classify(err).Code {
-				case "stale-conflict", "conflict-not-found":
-					p.review = true
-				}
-				return
-			}
-			p.revision = result.ResolvedRevision
-			d.resolvedRevision = result.ResolvedRevision
-			d.refresh()
-		})
-	}()
+			return
+		}
+		p.revision = result.ResolvedRevision
+		d.resolvedRevision = result.ResolvedRevision
+		d.refresh()
+	})
 }
 
 func conflictError(err error) string {

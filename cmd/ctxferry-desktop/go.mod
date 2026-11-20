@@ -5,6 +5,7 @@ go 1.27.4
 require (
 	github.com/egoist/mygo v0.10.0
 	github.com/google/uuid v1.6.0
+	github.com/sergi/go-diff v1.4.5
 	github.com/whynpc9/CtxFerry v0.0.0
 )
 
@@ -17,7 +18,6 @@ require (
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/ncruces/go-strftime v1.1.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
-	github.com/sergi/go-diff v1.4.5
 	github.com/zalando/go-keyring v0.2.8 // indirect
 	golang.org/x/image v0.46.0 // indirect
 	golang.org/x/net v0.59.0 // indirect

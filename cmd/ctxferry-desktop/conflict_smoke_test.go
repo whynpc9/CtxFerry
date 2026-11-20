@@ -83,7 +83,7 @@ func TestConflictFromQueueToSharedRevision(t *testing.T) {
 	updates := make(chan func(), 4)
 	snapshot, err := local.ReadDesktopSnapshot(ctx)
 	require(err)
-	d := desktop{ctx: ctx, core: local, data: snapshot, page: "设备总览", update: func(f func()) { updates <- f }}
+	d := desktop{ctx: ctx, core: local, data: snapshot, route: desktopRoute{Page: pageOverview}, update: func(f func()) { updates <- f }}
 	window := ui.NewTester(d.view, 1280, 1100)
 	applyUpdate := func() {
 		t.Helper()
@@ -108,22 +108,22 @@ func TestConflictFromQueueToSharedRevision(t *testing.T) {
 		}
 	}
 
-	click("查看冲突队列")
+	click("查看冲突")
 	visible("测试环境说明")
-	click("比较版本 · " + base.ID)
+	click("比较冲突版本")
 	applyUpdate()
 	click("返回同步队列")
-	if !window.Focused("比较版本 · " + base.ID) {
-		t.Fatal("returning to the queue lost focus on the triggering record")
+	if d.route.Page != pageSync || d.syncState.filter != int(queueConflicts) || !window.Focused("同步记录队列") {
+		t.Fatal("returning to the queue lost the filter or focus")
 	}
-	click("比较版本 · " + base.ID)
+	click("比较冲突版本")
 	applyUpdate()
 	click("设备总览")
-	click("查看冲突队列")
+	click("查看冲突")
 	if d.conflict != nil {
 		t.Fatal("opening the queue from Overview reopened the prior comparison")
 	}
-	click("比较版本 · " + base.ID)
+	click("比较冲突版本")
 	applyUpdate()
 	visible("共同基线", "本机版本", "远端版本", "共同正文", "本机正文", "远端正文", peer.DeviceID, "+ 新增", "− 移除")
 	if d.conflict.canConfirm() || d.conflict.choice != "" {
@@ -183,7 +183,10 @@ func TestConflictFromQueueToSharedRevision(t *testing.T) {
 	if len(d.data.Sync.Conflicts) != 0 || len(d.data.PendingIDs) != 1 || d.data.PendingIDs[0] != base.ID || d.data.Sync.Head != d.conflict.detail.Head {
 		t.Fatalf("write should leave one pending resolution at the inspected head: %+v", d.data)
 	}
-	click("返回同步队列")
+	click("查看待发布修订")
+	if d.route.Page != pageSync || d.syncState.filter != int(queuePending) {
+		t.Fatal("receipt did not navigate to the pending row")
+	}
 	visible("已生成本机修订 · 待发布", "测试环境说明", "记录 ID "+base.ID, "本机修订 "+doc.Revision)
 	_, err = local.Sync(ctx)
 	require(err)
