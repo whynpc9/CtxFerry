@@ -27,10 +27,15 @@ type BlockedRecord struct {
 }
 type ConflictDetail struct {
 	ConflictInfo
-	Base   any `json:"base"`
-	Local  any `json:"local"`
-	Remote any `json:"remote"`
+	Base    *ConflictVersion `json:"base"`
+	Local   *ConflictVersion `json:"local"`
+	Remote  *ConflictVersion `json:"remote"`
+	Project string           `json:"-"`
 }
+
+// ConflictVersion is the disclosure-filtered form of a published revision.
+type ConflictVersion publishedEnvelope
+
 type ResolutionInput struct {
 	Title      string  `json:"title"`
 	Purpose    string  `json:"purpose"`
@@ -396,7 +401,7 @@ func evidenceFiles(ctx context.Context, c *sql.Conn) (map[string][]byte, error) 
 	}
 	return f, rows.Err()
 }
-func conflictView(b []byte, files map[string][]byte) (any, error) {
+func conflictView(b []byte, files map[string][]byte) (*ConflictVersion, error) {
 	if len(b) == 0 {
 		return nil, nil
 	}
@@ -418,7 +423,8 @@ func conflictView(b []byte, files map[string][]byte) (any, error) {
 		}
 	}
 	r.Payload = payload
-	return r.publishedEnvelope, nil
+	version := ConflictVersion(r.publishedEnvelope)
+	return &version, nil
 }
 func (a App) Conflict(ctx context.Context, id string) (ConflictDetail, error) {
 	var out ConflictDetail
@@ -430,8 +436,12 @@ func (a App) Conflict(ctx context.Context, id string) (ConflictDetail, error) {
 	e = store.Write(ctx, db, func(c *sql.Conn) error {
 		var base, local, remote []byte
 		out.ID = id
-		if e := c.QueryRowContext(ctx, "SELECT token,head,base,local,remote FROM sync_conflicts WHERE id=? AND active=1", id).Scan(&out.ConflictID, &out.Head, &base, &local, &remote); e != nil {
+		e := c.QueryRowContext(ctx, "SELECT token,head,base,local,remote FROM sync_conflicts WHERE id=? AND active=1", id).Scan(&out.ConflictID, &out.Head, &base, &local, &remote)
+		if e == sql.ErrNoRows {
 			return Fail("conflict-not-found", "no active conflict for record")
+		}
+		if e != nil {
+			return e
 		}
 		f, e := evidenceFiles(ctx, c)
 		if e != nil {
@@ -446,7 +456,16 @@ func (a App) Conflict(ctx context.Context, id string) (ConflictDetail, error) {
 			return e
 		}
 		out.Remote, e = conflictView(remote, f)
-		return e
+		if e != nil {
+			return e
+		}
+		if v := out.Local; v != nil && v.Scope.Kind == "project" {
+			e = c.QueryRowContext(ctx, "SELECT slug FROM projects WHERE id=?", v.Scope.ID).Scan(&out.Project)
+			if e != nil && e != sql.ErrNoRows {
+				return e
+			}
+		}
+		return nil
 	})
 	return out, e
 }
@@ -474,8 +493,12 @@ func (a App) Resolve(ctx context.Context, id, token, take string, input []byte) 
 		}
 		var actual string
 		var local, remote []byte
-		if e := c.QueryRowContext(ctx, "SELECT token,local,remote FROM sync_conflicts WHERE id=? AND active=1", id).Scan(&actual, &local, &remote); e != nil {
+		e := c.QueryRowContext(ctx, "SELECT token,local,remote FROM sync_conflicts WHERE id=? AND active=1", id).Scan(&actual, &local, &remote)
+		if e == sql.ErrNoRows {
 			return Fail("conflict-not-found", "no active conflict for record")
+		}
+		if e != nil {
+			return e
 		}
 		if token == "" || token != actual {
 			return Fail("stale-conflict", "inspect current conflict and supply --if-conflict")
