@@ -140,6 +140,11 @@ func TestNavigateSkillsAndArtifacts(t *testing.T) {
 	if d.artifacts.visible[0].Run.DeviceID != init.Device.ID {
 		t.Fatal("artifact used the wrong source device")
 	}
+	linked := desktop{core: core, route: desktopRoute{Page: pageOverview}, data: snapshot}
+	linked.navigate(desktopRoute{Page: pageArtifacts, ProjectID: projectID})
+	if linked.artifacts.project != projectID || len(linked.artifacts.items) != 2 {
+		t.Fatal("initial route lost its explicit Project ID to the default")
+	}
 	click("sample")
 	click("alternate")
 	see("这个项目还没有登记运行产物。")

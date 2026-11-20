@@ -53,25 +53,21 @@ func (d *desktop) enterWorkPage(refresh bool) {
 	if d.route.Page != pageSkills && d.route.Page != pageArtifacts || d.data.ReadAt.IsZero() {
 		return
 	}
-	d.loadWorkProjects(refresh)
 	switch d.route.Page {
 	case pageSkills:
 		if d.route.ProjectID != "" && d.route.ProjectID != d.skills.project {
 			d.setSkillProject(d.route.ProjectID)
-			return
-		}
-		if !d.skills.loading && !d.skills.busy && (refresh || !d.skills.loaded) {
+		} else if !d.skills.loading && !d.skills.busy && (refresh || !d.skills.loaded) {
 			d.loadSkills()
 		}
 	case pageArtifacts:
 		if d.route.ProjectID != "" && d.route.ProjectID != d.artifacts.project {
 			d.setArtifactProject(d.route.ProjectID)
-			return
-		}
-		if !d.artifacts.loading && !d.artifacts.busy && (refresh || !d.artifacts.loaded) {
+		} else if !d.artifacts.loading && !d.artifacts.busy && (refresh || !d.artifacts.loaded) {
 			d.loadArtifacts()
 		}
 	}
+	d.loadWorkProjects(refresh)
 }
 
 func (d *desktop) loadWorkProjects(refresh bool) {
