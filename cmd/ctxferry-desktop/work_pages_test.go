@@ -149,3 +149,60 @@ func TestNavigateSkillsAndArtifacts(t *testing.T) {
 	click("alternate")
 	see("这个项目还没有登记运行产物。")
 }
+
+func TestActualProjectLinksToSkillsAndArtifacts(t *testing.T) {
+	ctx := t.Context()
+	core := app.App{DataDir: t.TempDir()}
+	if _, err := core.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	bound, err := core.BindProject(ctx, t.TempDir(), "sample")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := core.BindProject(ctx, t.TempDir(), "alternate"); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := core.ReadDesktopSnapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, task := range []struct{ page, tab, link, empty string }{
+		{pageSkills, "Skills", "打开 Skills 管理", "此项目尚未选择共享 Skills。"},
+		{pageArtifacts, "产物", "打开产物管理", "这个项目还没有登记运行产物。"},
+	} {
+		t.Run(task.page, func(t *testing.T) {
+			d := desktop{
+				core: core, data: snapshot,
+				route:   desktopRoute{Page: pageProjects, ProjectID: bound.Project.ID},
+				project: projectPage{core: core, ctx: ctx, run: func(work func() func()) { work()() }},
+			}
+			window := ui.NewTester(d.view, 1180, 750)
+			for _, control := range window.AccessAll() {
+				if control.Segment && control.Name == task.tab {
+					box := control.Bounds
+					window.ClickAt(box.X+box.W/2, box.Y+box.H/2)
+					break
+				}
+			}
+			if err := window.Click(task.link); err != nil {
+				t.Fatal(err)
+			}
+			if d.route.ProjectID != bound.Project.ID || d.route.Page != task.page {
+				t.Fatalf("route=%+v", d.route)
+			}
+			if _, ok := window.Access(task.empty); !ok {
+				t.Fatalf("missing scoped state %q", task.empty)
+			}
+			if err := window.Click("打开项目"); err != nil {
+				t.Fatal(err)
+			}
+			if d.route.Page != pageProjects || d.route.ProjectID != bound.Project.ID || d.project.target.CheckoutID != bound.Binding.ID {
+				t.Fatalf("return route=%+v, checkout=%s", d.route, d.project.target.CheckoutID)
+			}
+			if _, ok := window.Access(task.link); !ok {
+				t.Fatal("return did not retain the Project tab")
+			}
+		})
+	}
+}

@@ -145,4 +145,3 @@ before connecting. The result records TCP reachability for that target.
 A proxy route checks the proxy port. Each remote environment displays its
 own available observations and reports its provider session as unknown.
 [Tasks and Resources](tasks-and-resources.md) covers local route setup.
-
