@@ -53,6 +53,7 @@ func main() {
 		ctx, cancel := context.WithCancel(context.Background())
 		d := &desktop{core: app.App{DataDir: dir, Providers: platform.ProviderServices()}, ctx: ctx, route: desktopRoute{Page: pageOverview}}
 		options := mygo.WindowOptions{Title: "CtxFerry", Width: 1280, Height: 800, MinWidth: 1024, MinHeight: 680, Content: ui.View(d.view)}
+		applyDesktopSmokeWindowOptions(&options)
 		if _, isolated := os.LookupEnv("CTXFERRY_DATA_DIR"); !isolated {
 			options.StateKey = "workspace"
 		}
