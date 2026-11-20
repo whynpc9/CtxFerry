@@ -161,12 +161,18 @@ func (p *projectPage) view(c *ui.Context) {
 		}
 		return
 	}
-	if ui.Button(c, "返回项目列表").Disabled(p.busy).Clicked() {
-		p.selectProject("")
+	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(12).Children(func() {
+		ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
+			ui.Text(c, "项目 · "+project.Slug).FontSize(27).Bold().TextColor(ink)
+			ui.Text(c, projectBindingStatus(*project)).TextColor(muted)
+		})
+		if ui.Button(c, "返回项目列表").Disabled(p.busy).Clicked() {
+			p.selectProject("")
+		}
+	})
+	if p.target.ProjectID == "" {
 		return
 	}
-	ui.Text(c, "项目 · "+project.Slug).FontSize(27).Bold().TextColor(ink)
-	ui.Text(c, projectBindingStatus(*project)).TextColor(muted)
 	if !project.Subscribed {
 		ui.Text(c, "先通过 ctxferry project subscribe 订阅此项目，再查看配置和关联记录。").Multiline(true)
 		return
@@ -182,7 +188,7 @@ func (p *projectPage) view(c *ui.Context) {
 	if !p.editor.open && p.actionErr != nil {
 		projectError(c, p.actionErr)
 	}
-	ui.Segmented(c, &p.tab, "Context", "资源", "Tasks", "配置", "Skills", "产物").FillWidth().Disabled(p.busy)
+	ui.Segmented(c, &p.tab, "Context", "资源", "Tasks", "配置", "Skills", "产物").FillEqually().Label("项目内容").Disabled(p.busy)
 	if p.tab != projectConfig {
 		p.loadRelated()
 		p.relatedView(c)

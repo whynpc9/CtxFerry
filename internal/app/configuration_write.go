@@ -81,7 +81,7 @@ func (a App) changeConfiguration(ctx context.Context, selector, cwd string, chan
 	var loc configurationLocation
 	switch {
 	case preview != nil:
-		loc, err = projectConfigurationLocation(ctx, db, preview.Target)
+		// Resolve the exact desktop binding while holding the write transaction.
 	case change.Layer == layerGlobal:
 		err = db.QueryRowContext(ctx, "SELECT id FROM workspace").Scan(&loc.workspace)
 	default:
@@ -90,17 +90,22 @@ func (a App) changeConfiguration(ctx context.Context, selector, cwd string, chan
 	if err != nil {
 		return out, err
 	}
-	if local {
-		checkout := ""
-		if change.Layer == layerCheckout {
-			checkout, err = requireCheckout(loc)
-			if err != nil {
-				return out, err
-			}
+	locationForWrite := func(c *sql.Conn) (configurationLocation, error) {
+		if preview != nil {
+			return preview.verify(ctx, c)
 		}
+		return loc, nil
+	}
+	if local {
 		err = store.Write(ctx, db, func(c *sql.Conn) error {
-			if preview != nil {
-				if err := preview.verify(ctx, c); err != nil {
+			loc, err := locationForWrite(c)
+			if err != nil {
+				return err
+			}
+			checkout := ""
+			if change.Layer == layerCheckout {
+				checkout, err = requireCheckout(loc)
+				if err != nil {
 					return err
 				}
 			}
@@ -126,17 +131,16 @@ func (a App) changeConfiguration(ctx context.Context, selector, cwd string, chan
 	if err := a.prepareBaseline(ctx, db); err != nil {
 		return out, err
 	}
-	scope := Scope{"workspace", loc.workspace}
-	if change.Layer != layerGlobal {
-		scope = Scope{"project", loc.project.ID}
-	}
-	out.ID = configID(loc.workspace, scope, change.Profile)
 	err = store.Write(ctx, db, func(c *sql.Conn) error {
-		if preview != nil {
-			if err := preview.verify(ctx, c); err != nil {
-				return err
-			}
+		loc, err := locationForWrite(c)
+		if err != nil {
+			return err
 		}
+		scope := Scope{"workspace", loc.workspace}
+		if change.Layer != layerGlobal {
+			scope = Scope{"project", loc.project.ID}
+		}
+		out.ID = configID(loc.workspace, scope, change.Profile)
 		if err := requireNoConflict(ctx, c, out.ID); err != nil {
 			return err
 		}

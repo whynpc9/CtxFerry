@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"slices"
 
 	"github.com/whynpc9/CtxFerry/internal/store"
@@ -26,9 +27,10 @@ type ProjectConfiguration struct {
 }
 
 type ProjectConfigurationField struct {
-	Name   string
-	Layers []EffectiveValue // directly stored values, from lowest precedence to highest
-	Result ProjectConfigurationValue
+	Name         string
+	Layers       []EffectiveValue // directly stored values, from lowest precedence to highest
+	Result       ProjectConfigurationValue
+	WithoutLayer map[string]ProjectConfigurationValue
 }
 
 type ProjectConfigurationValue struct {
@@ -118,7 +120,15 @@ func (a App) ReadProjectConfiguration(ctx context.Context, target ProjectConfigu
 	}
 	layers, err := projectConfigurationValues(ctx, tx, loc, out.Profile)
 	for _, field := range []string{"timeoutSeconds", "parallelism", "workingDirectory"} {
-		out.Fields = append(out.Fields, ProjectConfigurationField{field, layers[field], effectiveProjectValue(loc, layers[field])})
+		values := layers[field]
+		fallbacks := make(map[string]ProjectConfigurationValue, len(values))
+		for _, value := range values {
+			without := withoutConfigurationLayer(values, value.Origin.Layer)
+			fallbacks[value.Origin.Layer] = effectiveProjectValue(loc, without)
+		}
+		out.Fields = append(out.Fields, ProjectConfigurationField{
+			Name: field, Layers: values, Result: effectiveProjectValue(loc, values), WithoutLayer: fallbacks,
+		})
 	}
 	return out, err
 }
@@ -157,6 +167,12 @@ func projectConfigurationValues(ctx context.Context, q rowQuerier, loc configura
 	return values, err
 }
 
+func withoutConfigurationLayer(values []EffectiveValue, layer string) []EffectiveValue {
+	return slices.DeleteFunc(slices.Clone(values), func(value EffectiveValue) bool {
+		return value.Origin.Layer == layer
+	})
+}
+
 func effectiveProjectValue(loc configurationLocation, layers []EffectiveValue) ProjectConfigurationValue {
 	if len(layers) == 0 {
 		return ProjectConfigurationValue{}
@@ -164,6 +180,12 @@ func effectiveProjectValue(loc configurationLocation, layers []EffectiveValue) P
 	value := layers[len(layers)-1]
 	out := ProjectConfigurationValue{Effective: &value}
 	if value.Field == "workingDirectory" {
+		if !filepath.IsAbs(value.Value.(string)) && loc.checkout != nil {
+			if err := requireAvailableProjectCheckout(loc); err != nil {
+				out.Problem = Classify(err).Message
+				return out
+			}
+		}
 		path, err := configuredDirectory(loc, value)
 		if err != nil {
 			out.Problem = Classify(err).Message
@@ -185,15 +207,15 @@ func (a App) PreviewProjectConfiguration(ctx context.Context, target ProjectConf
 		return ProjectConfigurationPreview{}, err
 	}
 	defer tx.Rollback()
-	return previewProjectConfiguration(ctx, tx, target, change)
+	loc, err := projectConfigurationLocation(ctx, tx, target)
+	if err != nil {
+		return ProjectConfigurationPreview{}, err
+	}
+	return previewProjectConfiguration(ctx, tx, loc, target, change)
 }
 
-func previewProjectConfiguration(ctx context.Context, q rowQuerier, target ProjectConfigurationTarget, change ConfigurationChange) (ProjectConfigurationPreview, error) {
+func previewProjectConfiguration(ctx context.Context, q rowQuerier, loc configurationLocation, target ProjectConfigurationTarget, change ConfigurationChange) (ProjectConfigurationPreview, error) {
 	out := ProjectConfigurationPreview{Target: target, Change: change}
-	loc, err := projectConfigurationLocation(ctx, q, target)
-	if err != nil {
-		return out, err
-	}
 	if change.Create {
 		return out, Fail("usage", "use the Profile creation operation")
 	}
@@ -210,8 +232,7 @@ func previewProjectConfiguration(ctx context.Context, q rowQuerier, target Proje
 		}
 	}
 	order := []string{layerGlobal, layerProject, layerProfile, layerDevice, layerCheckout}
-	position := slices.Index(order, change.Layer)
-	if position < 0 {
+	if !slices.Contains(order, change.Layer) {
 		return out, Fail("usage", "choose a configuration layer")
 	}
 	values, err := projectConfigurationValues(ctx, q, loc, profile)
@@ -220,9 +241,7 @@ func previewProjectConfiguration(ctx context.Context, q rowQuerier, target Proje
 	}
 	current := values[change.Field]
 	out.Before = effectiveProjectValue(loc, current)
-	next := slices.DeleteFunc(slices.Clone(current), func(value EffectiveValue) bool {
-		return value.Origin.Layer == change.Layer
-	})
+	next := withoutConfigurationLayer(current, change.Layer)
 	if change.Value == nil && len(next) == len(current) {
 		return out, Fail("override-not-found", "this field has no value at the selected layer")
 	}
@@ -248,15 +267,19 @@ func previewProjectConfiguration(ctx context.Context, q rowQuerier, target Proje
 	return out, err
 }
 
-func (preview ProjectConfigurationPreview) verify(ctx context.Context, q rowQuerier) error {
-	fresh, err := previewProjectConfiguration(ctx, q, preview.Target, preview.Change)
+func (preview ProjectConfigurationPreview) verify(ctx context.Context, q rowQuerier) (configurationLocation, error) {
+	loc, err := projectConfigurationLocation(ctx, q, preview.Target)
 	if err != nil {
-		return err
+		return loc, err
+	}
+	fresh, err := previewProjectConfiguration(ctx, q, loc, preview.Target, preview.Change)
+	if err != nil {
+		return loc, err
 	}
 	if fresh.token != preview.token {
-		return Fail("configuration-changed", "the configuration or selected checkout changed; reopen the preview")
+		return loc, Fail("configuration-changed", "the configuration or selected checkout changed; reopen the preview")
 	}
-	return nil
+	return loc, nil
 }
 
 func (a App) ApplyProjectConfiguration(ctx context.Context, preview ProjectConfigurationPreview) (ConfigurationReceipt, error) {
@@ -268,6 +291,9 @@ func (a App) ApplyProjectConfiguration(ctx context.Context, preview ProjectConfi
 
 func (a App) CreateProjectProfile(ctx context.Context, projectID, name string) (ConfigurationReceipt, error) {
 	// Profile creation is Project-scoped, independent of any checkout selection.
+	if projectID == "" {
+		return ConfigurationReceipt{}, Fail("project-not-found", "choose a Project")
+	}
 	return a.ChangeConfiguration(ctx, projectID, a.DataDir, ConfigurationChange{
 		Layer: layerProfile, Profile: name, Create: true,
 	})

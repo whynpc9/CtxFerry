@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/whynpc9/CtxFerry/internal/app"
@@ -145,8 +146,12 @@ func (p *projectPage) layerTable(c *ui.Context, field app.ProjectConfigurationFi
 func (p *projectPage) configurationInspector(c *ui.Context, field app.ProjectConfigurationField) {
 	ui.Column(c).FillWidth().Gap(10).Padding(14).Background(panel).Radius(7).Children(func() {
 		section(c, field.Name)
-		if field.Result.Effective != nil && field.Result.Effective.Origin.UpdatedAt != "" {
-			ui.Text(c, "来源更新于 "+field.Result.Effective.Origin.UpdatedAt).Multiline(true).TextColor(muted).FontSize(12)
+		if field.Result.Effective != nil {
+			origin := field.Result.Effective.Origin
+			ui.Text(c, "来源 · "+layerLabel(origin.Layer)).TextColor(muted)
+			if updated, err := time.Parse(time.RFC3339Nano, origin.UpdatedAt); err == nil {
+				ui.Text(c, "更新于 "+updated.Local().Format("2006-01-02 15:04")).TextColor(muted).FontSize(12)
+			}
 		}
 		if field.Result.Problem != "" {
 			ui.Text(c, configurationProblem(field.Result.Problem)).Multiline(true).TextColor(ui.Hex("#99412d"))
@@ -171,9 +176,17 @@ func (p *projectPage) configurationInspector(c *ui.Context, field app.ProjectCon
 				p.editor.input = fmt.Sprint(direct.Value)
 			}
 		}
-		if direct != nil && ui.Button(c, "预览恢复继承…").FillWidth().Disabled(p.busy).Clicked() {
-			p.editor = projectEditor{open: true, reset: true}
-			p.previewChange(field.Name)
+		if direct != nil {
+			ui.Divider(c)
+			fallback := field.WithoutLayer[p.layer]
+			ui.Text(c, "恢复后 · "+configurationValue(fallback)).Bold().Multiline(true)
+			if fallback.Effective != nil {
+				ui.Text(c, "来源 · "+layerLabel(fallback.Effective.Origin.Layer)).TextColor(muted)
+			}
+			if ui.Button(c, "预览恢复继承…").FillWidth().Disabled(p.busy).Clicked() {
+				p.editor = projectEditor{open: true, reset: true}
+				p.previewChange(field.Name)
+			}
 		}
 	})
 }
@@ -238,6 +251,8 @@ func configurationValue(v app.ProjectConfigurationValue) string {
 
 func configurationProblem(problem string) string {
 	switch problem {
+	case "the bound checkout directory is missing or now points to another directory":
+		return "绑定目录已丢失或已指向其他位置。"
 	case "run from a local checkout of this Project":
 		return "相对工作目录需要已选择的本机 Checkout。"
 	case "workingDirectory is not valid on this device":
