@@ -34,7 +34,7 @@ MyGo Native UI 使用与 CLI 相同的 Go 核心和本机 provider 适配器。�
 | 远端环境分别显示 | [Windows](screenshots/issue-30/witness-windows.png) · [WSL](screenshots/issue-30/witness-wsl.png) |
 | 最终导航集成 | [设备总览](screenshots/issue-30/overview-navigation.png) · [同步](screenshots/issue-30/sync-navigation.png) |
 
-实机由 GPT-6.1 Terra（High）操作隔离窗口取得。应用正常退出并释放共同 Git 目录下的 OS 排他文件锁。最终图为 MyGo Automation 从运行窗口采集的 1180 × 718 原 PNG。附 [原图 SHA-256](screenshots/issue-30/SHA256SUMS)、[CLI / SQLite 回读](screenshots/issue-30/verify.json) 及对应冻结稿 [05 凭据](../../../plans/desktop-design/05-secrets.png)、[06 Fleet](../../../plans/desktop-design/06-fleet.png)。
+实机由 GPT-6.1 Terra（High）操作隔离窗口取得。应用正常退出并释放共同 Git 目录下的 OS 排他文件锁。最终图为 MyGo Automation 从运行窗口采集的 1180 × 718 原 PNG。附 [原图 SHA-256](screenshots/issue-30/SHA256SUMS)、[CLI / SQLite 回读](screenshots/issue-30/verify.json) 及对应冻结稿 05 凭据、06 Fleet。
 
 集成后，桌面模块的 vet、测试和独立生产构建通过。核心凭据与资源、探测作用域和首次私有发布的定向 CLI 测试通过。此前全量 Go 测试首轮达到 15 分钟上限；延长测试超时后，完整用例通过。验收在 macOS 实机使用合成 provider，与 Windows 和 WSL 的独立历史观察夹具配合。
 

@@ -20,7 +20,7 @@
 | [08 更新后的队列](screenshots/issue-31/08-queue-after.jpg) | 已解决的冲突作为待发布修订显示，另一条冲突仍活动。 |
 | [09 删除冲突](screenshots/issue-31/09-deletion.jpg) | 三侧正文按披露范围隐藏，远端侧标明删除，提供显式「保留远端删除」选择。 |
 
-冻结稿为 [同步](../../../plans/desktop-design/02-sync.png) 与 [三方冲突](../../../plans/desktop-design/03-conflict.png)，SHA-256 分别为 `2f63f07d95641115848f63ac6e1356f83c39f1518bbc05292c9b8d91d396ab6c` 和 `9ae6daf4d845341ab49e6684d0ae2be398c999e713b6bdde54671a4e81a0a5e9`。
+冻结稿为 同步 与 三方冲突，SHA-256 分别为 `2f63f07d95641115848f63ac6e1356f83c39f1518bbc05292c9b8d91d396ab6c` 和 `9ae6daf4d845341ab49e6684d0ae2be398c999e713b6bdde54671a4e81a0a5e9`。
 
 ## 写入和读回
 

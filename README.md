@@ -54,7 +54,7 @@ value and origin. Preview a write or reset before applying it to a layer. Run
 
 Initialize workspaces with the CLI and run background sync as a separate user
 service. See the [desktop smoke procedure](docs/development/desktop/acceptance-28.md#复现)
-and [design](plans/desktop-design/README.md).
+and [desktop redesign specification](plans/desktop-information-architecture.md).
 
 ## First-device onboarding
 

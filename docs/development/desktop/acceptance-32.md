@@ -35,13 +35,13 @@
 
 | 验收场景 | 原图 | 对应设计 |
 | --- | --- | --- |
-| 首装的手动确认与文件差异 | [安装预览](screenshots/issue-32/04-install-preview.png) | [Skills](../../../plans/desktop-design/07-skills.png) |
-| 本地修改阻塞、候选文件差异 | [已阻塞](screenshots/issue-32/05-update-blocked.png)、[候选差异](screenshots/issue-32/06-candidate-diff.png) | [Skills](../../../plans/desktop-design/07-skills.png) |
-| 重扫后保留所选文件，确认更新同屏 | [重新扫描](screenshots/issue-32/07-rescanned.png) | [重扫状态](../../../plans/desktop-design/states/07-skills-rescanned.png) |
-| 明确选择上一版本、回滚和来源 | [候选选择](screenshots/issue-32/08-candidate-picker.png)、[回滚预览](screenshots/issue-32/09-rollback-preview.png)、[回滚回执](screenshots/issue-32/10-rollback-receipt.png) | [Skills](../../../plans/desktop-design/07-skills.png) |
-| 平台条件 | [Windows-only Skill](screenshots/issue-32/11-windows-only.png) | [Skills](../../../plans/desktop-design/07-skills.png) |
-| 本机范围、接收端仅元数据、项目无产物 | [本机产物](screenshots/issue-32/01-local-artifact.png)、[仅元数据](screenshots/issue-32/02-trace-metadata.png)、[切换项目](screenshots/issue-32/12-project-filter.png) | [产物](../../../plans/desktop-design/08-artifacts.png) |
-| 原生保存及实际导出路径 | [导出回执](screenshots/issue-32/03-export-receipt.png) | [产物](../../../plans/desktop-design/08-artifacts.png) |
+| 首装的手动确认与文件差异 | [安装预览](screenshots/issue-32/04-install-preview.png) | Skills |
+| 本地修改阻塞、候选文件差异 | [已阻塞](screenshots/issue-32/05-update-blocked.png)、[候选差异](screenshots/issue-32/06-candidate-diff.png) | Skills |
+| 重扫后保留所选文件，确认更新同屏 | [重新扫描](screenshots/issue-32/07-rescanned.png) | 重扫状态 |
+| 明确选择上一版本、回滚和来源 | [候选选择](screenshots/issue-32/08-candidate-picker.png)、[回滚预览](screenshots/issue-32/09-rollback-preview.png)、[回滚回执](screenshots/issue-32/10-rollback-receipt.png) | Skills |
+| 平台条件 | [Windows-only Skill](screenshots/issue-32/11-windows-only.png) | Skills |
+| 本机范围、接收端仅元数据、项目无产物 | [本机产物](screenshots/issue-32/01-local-artifact.png)、[仅元数据](screenshots/issue-32/02-trace-metadata.png)、[切换项目](screenshots/issue-32/12-project-filter.png) | 产物 |
+| 原生保存及实际导出路径 | [导出回执](screenshots/issue-32/03-export-receipt.png) | 产物 |
 
 [原图尺寸与 SHA-256](screenshots/issue-32/manifest.json) · [场景数据](screenshots/issue-32/fixture.json) · [磁盘验证与回执](screenshots/issue-32/outcomes.json)
 

@@ -28,7 +28,7 @@ def overall(ballot):
     return mean(page_scores)
 
 
-def summarize(rounds):
+def summarize(rounds, threshold):
     ranked = []
     first_pass = None
     print("| Round | Astra | Gemini | Kimi |")
@@ -41,12 +41,13 @@ def summarize(rounds):
             continue
         minimum = min(results)
         ranked.append((minimum, mean(results), number))
-        if minimum > 9 and first_pass is None:
+        if minimum >= threshold and first_pass is None:
             first_pass = number
     return first_pass, max(ranked)[2] if ranked else None
 
 
 if __name__ == "__main__":
     data = json.loads(Path(sys.argv[1]).read_text(), parse_float=str)
-    passed, best = summarize(data["rounds"])
+    threshold = Fraction(sys.argv[2])
+    passed, best = summarize(data["rounds"], threshold)
     print(f"First passing round: {passed}. Best fully scored candidate: {best}.")

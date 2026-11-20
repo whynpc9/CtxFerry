@@ -35,11 +35,11 @@ python3 cmd/ctxferry-desktop/smoke_macos.py /tmp/ctxferry-desktop-smoke-28
 
 | 截图 | 对照冻结帧 | SHA-256 |
 | --- | --- | --- |
-| [已配置总览](screenshots/issue-28/01-overview-configured.png) | [01 总览](../../../plans/desktop-design/01-overview.png) | `fb1ed9e6bed64aaaf32ec70ead290e018d550d219819813c93228c567d518311` |
-| [同步与队列](screenshots/issue-28/02-sync-configured.png) | [02 同步](../../../plans/desktop-design/02-sync.png) | `a67bb570db55828de601b343fa54bf7c48e40ca3a3678e27fca75b234659930f` |
-| [备份确认](screenshots/issue-28/03-backup-confirm.png) | [02 同步](../../../plans/desktop-design/02-sync.png)，参照[明文操作确认](../../../plans/desktop-design/states/02-sync-preview.png) | `aac5c89537f94bf3bd2bc95b033494256b2e573af75161ede9735e1361082498` |
-| [备份回执](screenshots/issue-28/04-backup-receipt.png) | [02 同步](../../../plans/desktop-design/02-sync.png) | `17d5261fbd344d009da336dfff1d90f9563a62e70ad3b36411f469b154815835` |
-| [离线后保留的本机视图](screenshots/issue-28/05-sync-offline.png) | [02 同步](../../../plans/desktop-design/02-sync.png) | `408be7c65f9ab4be2dc5f78b8bbb386cd2466b6672a5ba7faefb907c3a14e7ae` |
+| [已配置总览](screenshots/issue-28/01-overview-configured.png) | 01 总览 | `fb1ed9e6bed64aaaf32ec70ead290e018d550d219819813c93228c567d518311` |
+| [同步与队列](screenshots/issue-28/02-sync-configured.png) | 02 同步 | `a67bb570db55828de601b343fa54bf7c48e40ca3a3678e27fca75b234659930f` |
+| [备份确认](screenshots/issue-28/03-backup-confirm.png) | 02 同步，参照明文操作确认 | `aac5c89537f94bf3bd2bc95b033494256b2e573af75161ede9735e1361082498` |
+| [备份回执](screenshots/issue-28/04-backup-receipt.png) | 02 同步 | `17d5261fbd344d009da336dfff1d90f9563a62e70ad3b36411f469b154815835` |
+| [离线后保留的本机视图](screenshots/issue-28/05-sync-offline.png) | 02 同步 | `408be7c65f9ab4be2dc5f78b8bbb386cd2466b6672a5ba7faefb907c3a14e7ae` |
 
 备份输出的 manifest 表明目标未包含仅本机数据，head 与窗口一致。独立核对 `catalog.sqlite` 的 SHA-256 为 `b24349daeee55e782a71584afb74ce9830006b149298728266224192c5be6f09`，`published.bundle` 为 `f29b1b5e3fd0a86cdfc9647ad3f000a1534b90e4fc0ef239b20bd5fa43cea241`，两项与 manifest 一致。
 
