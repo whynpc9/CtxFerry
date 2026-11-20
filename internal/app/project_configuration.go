@@ -41,12 +41,13 @@ type ProjectConfigurationValue struct {
 // ProjectConfigurationPreview is produced by the core and checked inside the
 // write transaction. The selected context and the proposed change are pinned.
 type ProjectConfigurationPreview struct {
-	Target ProjectConfigurationTarget
-	Change ConfigurationChange
-	Before ProjectConfigurationValue
-	After  ProjectConfigurationValue
-	Stored any
-	token  [sha256.Size]byte
+	Target    ProjectConfigurationTarget
+	Change    ConfigurationChange
+	Before    ProjectConfigurationValue
+	After     ProjectConfigurationValue
+	Stored    any
+	Checkouts []CheckoutConfigurationImpact
+	token     [sha256.Size]byte
 }
 
 func projectConfigurationLocation(ctx context.Context, q rowQuerier, target ProjectConfigurationTarget) (configurationLocation, error) {
@@ -217,7 +218,7 @@ func (a App) PreviewProjectConfiguration(ctx context.Context, target ProjectConf
 	return previewProjectConfiguration(ctx, tx, loc, target, change)
 }
 
-func previewProjectConfiguration(ctx context.Context, q rowQuerier, loc configurationLocation, target ProjectConfigurationTarget, change ConfigurationChange) (ProjectConfigurationPreview, error) {
+func previewProjectConfiguration(ctx context.Context, q projectReader, loc configurationLocation, target ProjectConfigurationTarget, change ConfigurationChange) (ProjectConfigurationPreview, error) {
 	out := ProjectConfigurationPreview{Target: target, Change: change}
 	if change.Create {
 		return out, Fail("usage", "use the Profile creation operation")
@@ -234,8 +235,7 @@ func previewProjectConfiguration(ctx context.Context, q rowQuerier, loc configur
 			return out, err
 		}
 	}
-	order := []string{layerGlobal, layerProject, layerProfile, layerDevice, layerCheckout}
-	if !slices.Contains(order, change.Layer) {
+	if !slices.Contains(configurationOrder[:], change.Layer) {
 		return out, Fail("usage", "choose a configuration layer")
 	}
 	values, err := projectConfigurationValues(ctx, q, loc, profile)
@@ -244,33 +244,28 @@ func previewProjectConfiguration(ctx context.Context, q rowQuerier, loc configur
 	}
 	current := values[change.Field]
 	out.Before = effectiveProjectValue(loc, current)
-	next := withoutConfigurationLayer(current, change.Layer)
-	if change.Value == nil && len(next) == len(current) {
+	if change.Value == nil && len(withoutConfigurationLayer(current, change.Layer)) == len(current) {
 		return out, Fail("override-not-found", "this field has no value at the selected layer")
 	}
 	if change.Value != nil {
-		storage := "shared"
-		if change.Layer == layerDevice || change.Layer == layerCheckout {
-			storage = "local-only"
-		}
-		out.Stored, err = configValue(change.Field, change.Value, storage == "local-only")
+		out.Stored, err = configValue(change.Field, change.Value, localConfigurationLayer(change.Layer))
 		if err != nil {
 			return out, err
 		}
-		next = append(next, EffectiveValue{change.Field, out.Stored, ConfigOrigin{Layer: change.Layer, Storage: storage}})
-		slices.SortFunc(next, func(left, right EffectiveValue) int {
-			return slices.Index(order, left.Origin.Layer) - slices.Index(order, right.Origin.Layer)
-		})
 	}
-	out.After = effectiveProjectValue(loc, next)
-	raw, err := json.Marshal([]any{loc.workspace, loc.device, loc.project.ID, loc.checkout, profile, current, change, out.Before, out.After})
+	out.After = projectConfigurationAfter(loc, current, change, out.Stored)
+	out.Checkouts, err = configurationImpact(ctx, q, loc, out)
+	if err != nil {
+		return out, err
+	}
+	raw, err := json.Marshal([]any{loc.workspace, loc.device, loc.project.ID, loc.checkout, profile, current, change, out.Before, out.After, out.Checkouts})
 	if err == nil {
 		out.token = sha256.Sum256(raw)
 	}
 	return out, err
 }
 
-func (preview ProjectConfigurationPreview) verify(ctx context.Context, q rowQuerier) (configurationLocation, error) {
+func (preview ProjectConfigurationPreview) verify(ctx context.Context, q projectReader) (configurationLocation, error) {
 	loc, err := projectConfigurationLocation(ctx, q, preview.Target)
 	if err != nil {
 		return loc, err
@@ -296,7 +291,7 @@ func (a App) CreateProjectProfile(ctx context.Context, projectID, name string) (
 	// Profile creation is Project-scoped, independent of any checkout selection.
 	return a.changeConfiguration(ctx, "", "", ConfigurationChange{
 		Layer: layerProfile, Profile: name, Create: true,
-	}, func(ctx context.Context, q rowQuerier) (configurationLocation, error) {
+	}, func(ctx context.Context, q projectReader) (configurationLocation, error) {
 		return projectConfigurationLocation(ctx, q, ProjectConfigurationTarget{ProjectID: projectID})
 	})
 }

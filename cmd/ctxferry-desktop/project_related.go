@@ -21,6 +21,7 @@ type projectRelated struct {
 	task      *app.Task
 	review    *app.ExecutionReview
 	detailErr error
+	trustErr  error
 }
 
 func (p *projectPage) loadRelated() {
@@ -181,7 +182,7 @@ func (p *projectPage) tasksView(c *ui.Context) {
 	r := &p.related
 	if task := r.task; task != nil {
 		if ui.Button(c, "返回 Tasks 列表").Disabled(p.busy).Clicked() {
-			r.task, r.review, r.detailErr = nil, nil, nil
+			r.task, r.review, r.trustErr = nil, nil, nil
 			return
 		}
 		section(c, task.Name)
@@ -195,17 +196,7 @@ func (p *projectPage) tasksView(c *ui.Context) {
 		for _, requirement := range task.CredentialRequirements {
 			detail(c, "凭据槽位", requirement.Name+" · "+requirement.Type)
 		}
-		if p.target.CheckoutID == "" || p.config.CheckoutProblem != "" {
-			ui.Text(c, "选择可用的本机 Checkout 后可核对执行定义。").Multiline(true)
-		} else if ui.Button(c, "核对本机执行定义").Disabled(p.busy).Clicked() {
-			p.reviewTask(task.ID)
-		}
-		if r.review != nil {
-			detail(c, "本机执行状态", executionState(r.review.State))
-			for _, change := range r.review.Changes {
-				detail(c, "已变更字段", change.Field)
-			}
-		}
+		p.taskTrustView(c, *task)
 		return
 	}
 	section(c, "Tasks")
@@ -215,9 +206,39 @@ func (p *projectPage) tasksView(c *ui.Context) {
 		ui.Row(c).FillWidth().Gap(10).Children(func() {
 			if ui.Button(c, task.Name).Clicked() {
 				r.task = task
+				if p.target.CheckoutID != "" && p.config.CheckoutProblem == "" {
+					p.reviewTask(task.ID)
+				}
 			}
 			ui.Text(c, task.Purpose).TextColor(muted).Grow(1).Multiline(true)
 		})
+	}
+}
+
+func (p *projectPage) taskTrustView(c *ui.Context, task app.Task) {
+	r := &p.related
+	label := "本机执行信任"
+	if p.device != "" {
+		label += " · " + p.device
+	}
+	section(c, label)
+	switch {
+	case p.target.CheckoutID == "" || p.config.CheckoutProblem != "":
+		ui.Text(c, "状态未知。请先选择可用的本机 Checkout。").Multiline(true)
+		return
+	case r.trustErr != nil:
+		ui.Text(c, "状态未知，当前执行定义无法核对。").Multiline(true)
+		projectError(c, r.trustErr)
+	case p.busy:
+		ui.Text(c, "正在核对本机执行定义…").TextColor(muted)
+	case r.review != nil:
+		ui.Text(c, executionState(r.review.State)).Bold().TextColor(ink)
+		for _, change := range r.review.Changes {
+			detail(c, "已变更字段", change.Field)
+		}
+	}
+	if ui.Button(c, "重新核对本机执行定义").AlignSelf(ui.Start).Disabled(p.busy).Clicked() {
+		p.reviewTask(task.ID)
 	}
 }
 
@@ -241,7 +262,7 @@ func (p *projectPage) reviewTask(id string) {
 	p.work(func() func() {
 		review, err := p.core.PreviewExecution(p.ctx, project, path, id, path, "")
 		return func() {
-			p.related.detailErr = err
+			p.related.trustErr = err
 			p.related.review = nil
 			if err == nil {
 				p.related.review = &review

@@ -30,9 +30,9 @@ func (a App) ChangeConfiguration(ctx context.Context, selector, cwd string, chan
 	return a.changeConfiguration(ctx, selector, cwd, change, nil)
 }
 
-func (a App) changeConfiguration(ctx context.Context, selector, cwd string, change ConfigurationChange, resolve func(context.Context, rowQuerier) (configurationLocation, error)) (ConfigurationReceipt, error) {
+func (a App) changeConfiguration(ctx context.Context, selector, cwd string, change ConfigurationChange, resolve func(context.Context, projectReader) (configurationLocation, error)) (ConfigurationReceipt, error) {
 	out := ConfigurationReceipt{Layer: change.Layer, Profile: change.Profile, Field: change.Field, Storage: "shared"}
-	local := change.Layer == layerDevice || change.Layer == layerCheckout
+	local := localConfigurationLayer(change.Layer)
 	if local {
 		out.Storage = "local-only"
 	}
@@ -174,7 +174,7 @@ func (change ConfigurationChange) apply(v *configuration) bool {
 		}
 		delete(v.Values, change.Field)
 	} else {
-		value, _ := configValue(change.Field, change.Value, change.Layer == layerDevice || change.Layer == layerCheckout)
+		value, _ := configValue(change.Field, change.Value, localConfigurationLayer(change.Layer))
 		raw, _ := json.Marshal(value)
 		if string(raw) == string(v.Values[change.Field]) {
 			return false

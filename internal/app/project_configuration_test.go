@@ -82,6 +82,17 @@ func TestProjectConfigurationPreviewProtectsScopeAndInheritance(t *testing.T) {
 	if err != nil || preview.Stored != 55 || preview.After.Effective.Value != 120 || preview.After.Effective.Origin.Layer != layerCheckout {
 		t.Fatalf("preview failed to retain higher override: %#v, %v", preview, err)
 	}
+	impacts := map[string]CheckoutConfigurationImpact{}
+	for _, impact := range preview.Checkouts {
+		impacts[impact.Checkout.Origin.ID] = impact
+	}
+	inheriting, overriding := impacts[one.Binding.ID], impacts[two.Binding.ID]
+	if len(impacts) != 2 || !inheriting.Changed || inheriting.Unknown != "" ||
+		inheriting.Before.Effective.Value != 70 || inheriting.After.Effective.Value != 55 ||
+		overriding.Changed || overriding.Unknown != "" ||
+		overriding.After.Effective.Value != 120 || overriding.After.Effective.Origin.Layer != layerCheckout {
+		t.Fatalf("incorrect checkout impacts: %#v", impacts)
+	}
 	if err := os.Rename(two.Binding.Path, filepath.Join(filepath.Dir(two.Binding.Path), "moved")); err != nil {
 		t.Fatal(err)
 	}

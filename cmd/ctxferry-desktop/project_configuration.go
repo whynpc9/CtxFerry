@@ -297,67 +297,109 @@ func (p *projectPage) editorView(c *ui.Context, project app.DesktopProject) {
 		return
 	}
 	ui.Modal(c, &e.open, func() {
-		ui.Column(c).Width(470).Gap(10).Children(func() {
-			if e.create {
-				section(c, "新建配置方案")
-				ui.Text(c, "项目 · "+project.Slug+"　共享配置").Multiline(true)
-				ui.TextInput(c, &e.input).FillWidth().Label("新方案名称").Disabled(p.busy)
-				p.editorActions(c, "创建共享配置方案", e.input == "", p.createProfile)
-				return
-			}
-			field := p.selectedField()
-			if field == nil {
-				return
-			}
-			title := "编辑配置"
-			if e.reset {
-				title = "恢复继承"
-			}
-			section(c, title+" · "+field.Name)
-			ui.Text(c, "项目 · "+project.Slug+"　写入层 · "+layerLabel(p.layer)).Multiline(true)
-			ui.Text(c, scopeText(p.layer)).TextColor(muted).Multiline(true)
-			if p.device != "" {
-				ui.Text(c, "查看设备 · "+p.device).TextColor(muted).Multiline(true)
-			}
-			if p.config.Profile != nil {
-				ui.Text(c, "配置方案 · "+p.config.Profile.Name).Multiline(true)
-			}
-			if p.target.CheckoutID != "" {
-				ui.Text(c, "Checkout · "+p.checkoutChoice).TruncateMiddle()
-			}
-			if e.preview == nil && !e.reset {
-				ui.TextInput(c, &e.input).Label("新配置值").FillWidth().Disabled(p.busy)
-				if field.Name == "workingDirectory" {
-					ui.Text(c, "相对路径使用正斜线。设备层和 Checkout 层也接受本机绝对路径。").TextColor(muted).Multiline(true)
+		_, height := c.Size()
+		ui.Scroll(c).Width(490).MaxHeight(height - 80).Children(func() {
+			ui.Column(c).FillWidth().Gap(8).Children(func() {
+				if e.create {
+					section(c, "新建配置方案")
+					ui.Text(c, "项目 · "+project.Slug+"　共享配置").Multiline(true)
+					ui.TextInput(c, &e.input).FillWidth().Label("新方案名称").Disabled(p.busy)
+					p.editorActions(c, "创建共享配置方案", e.input == "", p.createProfile)
+					return
 				}
-				p.editorActions(c, "预览变更", e.input == "", func() { p.previewChange(field.Name) })
-				return
-			}
-			if e.preview != nil {
-				preview := e.preview
+				field := p.selectedField()
+				if field == nil {
+					return
+				}
+				title := "编辑配置"
 				if e.reset {
-					ui.Text(c, "将移除此字段在所选层的直接设置。").Multiline(true)
+					title = "恢复继承"
+				}
+				section(c, title+" · "+field.Name)
+				ui.Text(c, "项目 · "+project.Slug+"　写入层 · "+layerLabel(p.layer)).Multiline(true)
+				ui.Text(c, scopeText(p.layer)).TextColor(muted).Multiline(true)
+				if p.device != "" {
+					ui.Text(c, "查看设备 · "+p.device).TextColor(muted).Multiline(true)
+				}
+				if p.config.Profile != nil {
+					ui.Text(c, "配置方案 · "+p.config.Profile.Name).Multiline(true)
+				}
+				if p.target.CheckoutID != "" {
+					ui.Text(c, "Checkout · "+p.checkoutChoice).TruncateMiddle()
+				}
+				if e.preview == nil && !e.reset {
+					ui.TextInput(c, &e.input).Label("新配置值").FillWidth().Disabled(p.busy)
+					if field.Name == "workingDirectory" {
+						ui.Text(c, "相对路径使用正斜线。设备层和 Checkout 层也接受本机绝对路径。").TextColor(muted).Multiline(true)
+					}
+					p.editorActions(c, "预览变更", e.input == "", func() { p.previewChange(field.Name) })
+					return
+				}
+				if e.preview != nil {
+					preview := e.preview
+					if e.reset {
+						ui.Text(c, "将移除此字段在所选层的直接设置。").Multiline(true)
+					} else {
+						ui.Text(c, "保存到该层 · "+formatField(field.Name, preview.Stored)).Multiline(true)
+					}
+					ui.Text(c, configurationValue(preview.Before)+" → "+configurationValue(preview.After)).
+						FontSize(18).Bold().TextColor(ink).Multiline(true)
+					if value := preview.After.Effective; value != nil {
+						ui.Text(c, "生效来源 · "+layerLabel(value.Origin.Layer)).TextColor(muted)
+					}
+					if preview.After.Problem != "" {
+						ui.Text(c, configurationProblem(preview.After.Problem)).Multiline(true).TextColor(ui.Hex("#99412d"))
+					}
+					p.checkoutImpact(c, *preview)
+					confirm := "确认保存"
+					if e.reset {
+						confirm = "确认恢复继承"
+					}
+					p.editorActions(c, confirm, false, p.applyChange)
 				} else {
-					ui.Text(c, "保存到该层 · "+formatField(field.Name, preview.Stored)).Multiline(true)
+					p.editorActions(c, "重新预览", false, func() { p.previewChange(field.Name) })
 				}
-				ui.Text(c, configurationValue(preview.Before)+" → "+configurationValue(preview.After)).
-					FontSize(18).Bold().TextColor(ink).Multiline(true)
-				if value := preview.After.Effective; value != nil {
-					ui.Text(c, "生效来源 · "+layerLabel(value.Origin.Layer)).TextColor(muted)
-				}
-				if preview.After.Problem != "" {
-					ui.Text(c, configurationProblem(preview.After.Problem)).Multiline(true).TextColor(ui.Hex("#99412d"))
-				}
-				confirm := "确认保存"
-				if e.reset {
-					confirm = "确认恢复继承"
-				}
-				p.editorActions(c, confirm, false, p.applyChange)
-			} else {
-				p.editorActions(c, "重新预览", false, func() { p.previewChange(field.Name) })
-			}
+			})
 		})
 	})
+}
+
+func (p *projectPage) checkoutImpact(c *ui.Context, preview app.ProjectConfigurationPreview) {
+	ui.Divider(c)
+	ui.Text(c, "本机 Checkout 的预览结果").Bold().TextColor(ink)
+	if len(preview.Checkouts) == 0 {
+		ui.Text(c, "当前范围内没有已订阅项目的本机绑定。").TextColor(muted).Multiline(true)
+	} else {
+		ui.Scroll(c).FillWidth().Height(min(140, float32(len(preview.Checkouts))*43)).Children(func() {
+			ui.Column(c).FillWidth().Gap(4).Children(func() {
+				for _, item := range preview.Checkouts {
+					ui.Column(c).FillWidth().Padding(3, 7).Gap(2).Background(panel).Radius(4).Children(func() {
+						label := item.Checkout.Path
+						if preview.Change.Layer == "global" {
+							label = item.Project.Slug + " · " + label
+						}
+						ui.Text(c, label).TruncateMiddle().FontSize(12)
+						result := "保留 " + configurationValue(item.After)
+						if item.Changed {
+							result = configurationValue(item.Before) + " → " + configurationValue(item.After)
+						}
+						if value := item.After.Effective; value != nil {
+							result += " · " + layerLabel(value.Origin.Layer)
+						}
+						if item.Unknown != "" {
+							result = "当前无法判定 · " + item.Unknown
+						}
+						ui.Text(c, result).TextColor(ink).FontSize(13).Multiline(true)
+					})
+				}
+			})
+		})
+	}
+	switch preview.Change.Layer {
+	case "global", "project", "profile":
+		ui.Text(c, "发布后影响采用该共享值的 Checkout。其他设备的本机覆盖需在各自设备核对。").
+			TextColor(muted).Multiline(true).FontSize(12)
+	}
 }
 
 func (p *projectPage) editorActions(c *ui.Context, label string, disabled bool, action func()) {
