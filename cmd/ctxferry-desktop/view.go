@@ -55,6 +55,12 @@ func (d *desktop) view(c *ui.Context) {
 			ui.Divider(c)
 			body := ui.Scroll(c.Key(d.route.Page)).Grow(1).FillWidth()
 			switch d.route.Page {
+			case pageSync:
+				body.TrackScroll(&d.syncState.scroll)
+			case pageConflict:
+				if d.conflict != nil {
+					body.TrackScroll(&d.conflict.scroll)
+				}
 			case pageSecrets:
 				body.TrackScroll(&d.secrets.scroll)
 			case pageFleet:
@@ -80,6 +86,10 @@ func (d *desktop) view(c *ui.Context) {
 
 func (d *desktop) toolbar(c *ui.Context) {
 	ui.Row(c).FillWidth().Padding(8, 20).Gap(10).Background(ui.Hex("#f8faf8")).Children(func() {
+		if d.route.Page == pageConflict && d.conflict != nil {
+			d.conflictToolbar(c)
+			return
+		}
 		secondary(c, d.workspaceBreadcrumb())
 		ui.Spacer(c)
 		if !d.data.ReadAt.IsZero() {

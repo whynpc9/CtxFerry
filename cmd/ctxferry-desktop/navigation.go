@@ -61,18 +61,31 @@ func init() {
 }
 
 func (d *desktop) navigate(route desktopRoute) {
-	if desktopPages[route.Page] == nil || d.route == route {
+	if desktopPages[route.Page] == nil || d.route == route || d.writingConflict() {
 		return
 	}
 	if route.Page == pageConflict {
 		d.syncState.returnRoute = d.route
 	}
 	d.route = route
+	if route.Page == pageConflict {
+		d.openConflict(route.RecordID)
+	} else {
+		d.conflict = nil
+	}
 }
 
 func (d *desktop) back() {
-	if d.route.Page == pageConflict {
+	if d.route.Page == pageConflict && !d.writingConflict() {
+		p := d.conflict
+		d.conflict = nil
 		d.route = d.syncState.returnRoute
+		if p != nil {
+			d.syncState.restoreRecord = p.id
+			if p.review {
+				d.refresh()
+			}
+		}
 	}
 }
 

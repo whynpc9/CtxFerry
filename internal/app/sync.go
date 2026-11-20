@@ -53,6 +53,9 @@ type SyncResult struct {
 	Epoch      string          `json:"epoch,omitempty"`
 	LastSyncAt *string         `json:"lastSyncAt"`
 	Pending    int             `json:"pending"`
+
+	// ResolvedRevision is set after Resolve commits the new local revision.
+	ResolvedRevision string `json:"-"`
 }
 
 const plaintextBoundary = "Shared records and their bodies are uploaded in plaintext. Local-only records, checkout bindings, route facts, TCP observations, credential stores and authentication are excluded. Shared prose can contain pasted secrets; inspect it before publishing."
