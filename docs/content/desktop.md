@@ -2,7 +2,7 @@
 title: Native desktop preview
 ---
 
-The desktop opens the same local Workspace as the CLI. At revision `86780e2`,
+The desktop opens the same local Workspace as the CLI.
 **设备总览** (Overview) shows this device's Projects and sync health. **同步**
 (Sync) lets you inspect queued records, check a configured remote and create
 a local backup. Publishing shared records runs through the CLI or sync service.
@@ -81,13 +81,38 @@ plaintext. The receipt identifies the destination and its `manifest.json`.
 | **本机目录需要升级** | Use a matching CLI to open and migrate the catalog, then refresh; the viewer does not migrate it. |
 | **本机快照不可用** | Run `ctxferry doctor --format json` and inspect the catalog evidence. |
 
+## Map and check credential references
+
+In **凭据绑定**, select the Project, Profile, Task and requirement slot.
+Select **映射共享绑定…** or **更换共享绑定…** to reuse a compatible reference
+or enter a new provider locator. Review the affected slot and alias before
+saving. Publish the shared mapping through your usual sync workflow.
+
+The inspector identifies the current execution environment and provider
+profile. Use **检查本机认证** to check that session, then **检查条目可读性** to
+check the referenced entry. **更新本机会话** adopts the provider session
+configured in that environment. Entry values stay within the provider
+adapter. Use the provider link and displayed locator to manage the entry.
+[Credentials and Tasks](credentials.md) covers provider setup.
+
+## Inspect environments and probe a resource
+
+In **设备与资源**, select a Project, Resource and execution environment.
+The page shows the Resource's purpose, stage, configured endpoint,
+applicability and recent observations. The local route includes any
+device-specific endpoint, proxy or network recorded through the CLI.
+
+Choose **在本机探测 TCP…** to review the exact host, port and environment
+before connecting. The result records TCP reachability for that target.
+A proxy route checks the proxy port. Each remote environment displays its
+own available observations and reports its provider session as unknown.
+[Tasks and Resources](tasks-and-resources.md) covers local route setup.
+
 ## Planned desktop scope
 
-The desktop roadmap includes a Projects configuration editor, Fleet and
-Resources, Secrets, conflict resolution, Skills, and Artifacts. Those screens and synthetic states in the design frames are
-not controls in this checkout. Follow issues
+The desktop roadmap includes a Projects configuration editor, conflict
+resolution, Skills, and Artifacts. Follow issues
 [#29](https://github.com/whynpc9/CtxFerry/issues/29),
-[#30](https://github.com/whynpc9/CtxFerry/issues/30),
 [#31](https://github.com/whynpc9/CtxFerry/issues/31), and
 [#32](https://github.com/whynpc9/CtxFerry/issues/32) for that planned work.
 Until then, use the linked CLI guides for those operations.

@@ -22,6 +22,11 @@ type desktop struct {
 
 	overviewState overviewState
 	syncState     syncPageState
+
+	managementGeneration uint64
+	projects             desktopProjects
+	secrets              secretsView
+	fleet                fleetView
 }
 
 func main() {
@@ -72,6 +77,10 @@ func (d *desktop) refresh() {
 				d.overviewState = overviewState{}
 				d.syncState = syncPageState{}
 				d.route = desktopRoute{Page: d.route.Page}
+				d.managementGeneration++
+				d.projects = desktopProjects{}
+				d.secrets = secretsView{}
+				d.fleet = fleetView{}
 			}
 			d.data = snapshot
 		}

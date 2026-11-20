@@ -54,9 +54,10 @@ type SecretBindingChange struct {
 }
 
 type SecretBindResult struct {
-	Profile string         `json:"profile"`
-	Binding *SecretBinding `json:"binding,omitempty"`
-	Mapping SecretMapping  `json:"mapping"`
+	Profile      string         `json:"profile"`
+	Binding      *SecretBinding `json:"binding,omitempty"`
+	Mapping      SecretMapping  `json:"mapping"`
+	desktopWrite string
 }
 
 func validProviderProfile(p provider.Profile) bool {
@@ -179,14 +180,14 @@ func secretResource(ctx context.Context, q rowQuerier, cfg configuration, task T
 }
 
 func (a App) BindSecret(ctx context.Context, selector, cwd string, change SecretBindingChange) (SecretBindResult, error) {
-	return a.changeSecretMapping(ctx, selector, cwd, change, false)
+	return a.changeSecretMapping(ctx, selector, cwd, change, false, nil)
 }
 
 func (a App) UnmapSecret(ctx context.Context, selector, cwd string, target SecretTarget) (SecretBindResult, error) {
-	return a.changeSecretMapping(ctx, selector, cwd, SecretBindingChange{SecretTarget: target}, true)
+	return a.changeSecretMapping(ctx, selector, cwd, SecretBindingChange{SecretTarget: target}, true, nil)
 }
 
-func (a App) changeSecretMapping(ctx context.Context, selector, cwd string, change SecretBindingChange, unmap bool) (SecretBindResult, error) {
+func (a App) changeSecretMapping(ctx context.Context, selector, cwd string, change SecretBindingChange, unmap bool, expected *DesktopCredentialSlot) (SecretBindResult, error) {
 	var out SecretBindResult
 	reuse := change.BindingID != ""
 	if reuse && (!validUUID(change.BindingID) || change.Alias != "" || change.ProviderProfile != (provider.Profile{}) || change.Locator != (provider.Locator{})) {
@@ -240,6 +241,27 @@ func (a App) changeSecretMapping(ctx context.Context, selector, cwd string, chan
 		if err != nil {
 			return err
 		}
+		if expected != nil && (expected.workspace != loc.workspace || expected.Status.DeviceID != loc.device ||
+			expected.profileRevision != cfg.Revision || expected.taskRevision != task.Revision ||
+			expected.Resource.ID != resource.ID || expected.Resource.Revision != resource.Revision) {
+			return Fail("selection-changed", "the shared mapping scope changed; refresh and confirm again")
+		}
+		if expected != nil && expected.Status.Binding != nil {
+			previous := expected.Status.Binding
+			if i < 0 || cfg.SecretMappings[i].BindingID != previous.ID {
+				return Fail("selection-changed", "the previous binding changed; refresh and confirm again")
+			}
+			if err := requireNoBindingConflict(ctx, c, previous.ID, previous.Scope.ID); err != nil {
+				return err
+			}
+			current, err := loadSecretBinding(ctx, c, previous.ID)
+			if err != nil {
+				return err
+			}
+			if current.Revision != previous.Revision {
+				return Fail("selection-changed", "the previous binding changed; refresh and confirm again")
+			}
+		}
 		var binding SecretBinding
 		if reuse {
 			if err := requireNoBindingConflict(ctx, c, change.BindingID); err != nil {
@@ -251,6 +273,11 @@ func (a App) changeSecretMapping(ctx context.Context, selector, cwd string, chan
 			}
 			if err := requireNoBindingConflict(ctx, c, binding.Scope.ID); err != nil {
 				return err
+			}
+			if expected != nil && !slices.ContainsFunc(expected.Reusable, func(b SecretBinding) bool {
+				return b.ID == binding.ID && b.Revision == binding.Revision
+			}) {
+				return Fail("selection-changed", "the reusable binding changed; refresh and confirm again")
 			}
 			if !compatibleSecret(req, resource.ID, binding.SecretBindingSpec) {
 				return Fail("incompatible", "SecretBinding does not match the requirement purpose, type and selected Resource")
@@ -272,7 +299,7 @@ func (a App) changeSecretMapping(ctx context.Context, selector, cwd string, chan
 					if err := requireNoBindingConflict(ctx, c, current.ID); err != nil {
 						return err
 					}
-					out = SecretBindResult{p.Name, &current, cfg.SecretMappings[i]}
+					out = SecretBindResult{Profile: p.Name, Binding: &current, Mapping: cfg.SecretMappings[i]}
 					return nil
 				}
 			}
@@ -283,7 +310,7 @@ func (a App) changeSecretMapping(ctx context.Context, selector, cwd string, chan
 		}
 
 		mapping := SecretMapping{task.ID, req.Name, binding.ID}
-		out = SecretBindResult{p.Name, &binding, mapping}
+		out = SecretBindResult{Profile: p.Name, Binding: &binding, Mapping: mapping}
 		if i < 0 {
 			cfg.SecretMappings = append(cfg.SecretMappings, mapping)
 		} else if cfg.SecretMappings[i] == mapping {
@@ -294,7 +321,20 @@ func (a App) changeSecretMapping(ctx context.Context, selector, cwd string, chan
 		if len(cfg.SecretMappings) > 512 {
 			return Fail("size-limit", "a Profile supports at most 512 credential mappings")
 		}
-		return saveSecretMappings(ctx, c, p.ID, scope, cfg)
+		if err := saveSecretMappings(ctx, c, p.ID, scope, cfg); err != nil {
+			return err
+		}
+		if expected != nil {
+			var queued bool
+			if err := c.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM sync_outbox WHERE id IN (?,?))", p.ID, binding.ID).Scan(&queued); err != nil {
+				return err
+			}
+			out.desktopWrite = "local"
+			if queued {
+				out.desktopWrite = "queued"
+			}
+		}
+		return nil
 	})
 	return out, err
 }

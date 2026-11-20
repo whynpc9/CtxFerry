@@ -142,6 +142,10 @@ func readSecretStatus(ctx context.Context, tx *sql.Tx, loc configurationLocation
 	if err := readSecretReachability(ctx, tx, cwd, resource, out); err != nil {
 		return err
 	}
+	return readSecretMapping(ctx, tx, cfg, req, resource, i, out)
+}
+
+func readSecretMapping(ctx context.Context, tx *sql.Tx, cfg configuration, req CredentialRequirement, resource Resource, i int, out *SecretStatus) error {
 	if i < 0 {
 		return Fail("binding-missing", "Profile has no SecretBinding mapping")
 	}
@@ -208,26 +212,35 @@ func latestServiceObservation(ctx context.Context, q taskReader, detail Resource
 	return nil, rows.Err()
 }
 
-func (a App) checkSecretAvailability(ctx context.Context, key provider.SessionKey, out *SecretStatus) error {
+func (a App) checkSecretAuthentication(ctx context.Context, key provider.SessionKey, out *SecretStatus) (provider.Adapter, []byte, error) {
 	adapter, capabilities, err := a.providerAdapter(key.Profile)
 	if capabilities != nil {
 		out.Capabilities = capabilities
 	}
 	if err != nil {
-		return Fail("secret-unavailable", Classify(err).Message)
+		return nil, nil, Fail("secret-unavailable", Classify(err).Message)
 	}
 	session, loadErr := a.loadProviderSession(ctx, key)
-	defer clear(session)
 	auth, err := sessionAuthentication(ctx, adapter, key.Profile, session, loadErr)
 	if err != nil {
-		return err
+		clear(session)
+		return nil, nil, err
 	}
 	authenticated := auth.State == provider.Authenticated
 	out.Authentication, out.Authenticated = &auth, &authenticated
 	if !authenticated {
-		return authenticationFailure(auth)
+		clear(session)
+		return nil, nil, authenticationFailure(auth)
 	}
+	return adapter, session, nil
+}
 
+func (a App) checkSecretAvailability(ctx context.Context, key provider.SessionKey, out *SecretStatus) error {
+	adapter, session, err := a.checkSecretAuthentication(ctx, key, out)
+	if err != nil {
+		return err
+	}
+	defer clear(session)
 	value, err := adapter.Resolve(ctx, key.Profile, session, out.Binding.Locator)
 	clear(value)
 	if errors.Is(err, provider.ErrAuthenticationRequired) {
