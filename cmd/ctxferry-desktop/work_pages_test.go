@@ -25,6 +25,9 @@ func TestNavigateSkillsAndArtifacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := core.BindProject(ctx, t.TempDir(), "alternate"); err != nil {
+		t.Fatal(err)
+	}
 	source := t.TempDir()
 	skillFile := filepath.Join(source, "SKILL.md")
 	const first = "---\nname: sample-skill\n---\nSynthetic instructions\n"
@@ -137,4 +140,7 @@ func TestNavigateSkillsAndArtifacts(t *testing.T) {
 	if d.artifacts.visible[0].Run.DeviceID != init.Device.ID {
 		t.Fatal("artifact used the wrong source device")
 	}
+	click("sample")
+	click("alternate")
+	see("这个项目还没有登记运行产物。")
 }
