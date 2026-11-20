@@ -39,8 +39,8 @@ type DesktopBinding struct {
 // DesktopQueueRecord is a display projection. It carries stable navigation IDs
 // and local labels, without record bodies, provider locators or conflict tokens.
 type DesktopQueueRecord struct {
-	ID, ProjectID, Project, Kind, Title string
-	Pending, Conflict, Blocked          bool
+	ID, ProjectID, Project, Kind, Title, Revision string
+	Pending, Conflict, Blocked                    bool
 }
 
 // Waiting reports a queued record that has no known local blocker. An
@@ -176,8 +176,13 @@ SELECT q.id,q.pending,q.conflict,q.blocked,coalesce(p.id,''),coalesce(p.slug,'')
        coalesce(r.kind,CASE WHEN q.id=p.id THEN 'project'
                             WHEN cfg.id IS NOT NULL THEN 'configuration'
                             WHEN m.id IS NOT NULL THEN 'membership' END,''),
-       coalesce(CASE WHEN json_valid(r.metadata) THEN json_extract(r.metadata,'$.title') END,'')
+	       coalesce(nullif(CASE WHEN json_valid(r.metadata) THEN json_extract(r.metadata,'$.title') END,''),
+	                CASE WHEN json_valid(CAST(o.proposed AS TEXT)) THEN
+	                  coalesce(json_extract(CAST(o.proposed AS TEXT),'$.payload.title'),
+	                           json_extract(CAST(o.proposed AS TEXT),'$.payload.name')) END,''),
+	       coalesce(CASE WHEN json_valid(CAST(o.proposed AS TEXT)) THEN json_extract(CAST(o.proposed AS TEXT),'$.revision') END,'')
 FROM queue q LEFT JOIN records r ON r.id=q.id
+LEFT JOIN sync_outbox o ON o.id=q.id
 LEFT JOIN configurations cfg ON cfg.id=q.id
 LEFT JOIN memberships m ON m.id=q.id
 LEFT JOIN projects p ON p.id=coalesce(r.project_id,cfg.project_id,m.project_id,q.id)
@@ -188,7 +193,7 @@ ORDER BY q.conflict DESC,q.blocked DESC,p.slug,q.id`)
 	defer rows.Close()
 	for rows.Next() {
 		var r DesktopQueueRecord
-		if err := rows.Scan(&r.ID, &r.Pending, &r.Conflict, &r.Blocked, &r.ProjectID, &r.Project, &r.Kind, &r.Title); err != nil {
+		if err := rows.Scan(&r.ID, &r.Pending, &r.Conflict, &r.Blocked, &r.ProjectID, &r.Project, &r.Kind, &r.Title, &r.Revision); err != nil {
 			return err
 		}
 		if r.Title == "" && r.Kind == "project" {

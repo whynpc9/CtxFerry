@@ -127,6 +127,5 @@ own available observations and reports its provider session as unknown.
 
 ## Planned desktop scope
 
-The roadmap includes conflict resolution, Skills management and Artifact
-management. Follow the corresponding issues for their desktop workflows.
-[Conflicts #31](https://github.com/whynpc9/CtxFerry/issues/31) · [Skills and Artifacts #32](https://github.com/whynpc9/CtxFerry/issues/32)
+The desktop roadmap includes Skills and Artifact management.
+[Skills and Artifacts #32](https://github.com/whynpc9/CtxFerry/issues/32)

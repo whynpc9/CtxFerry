@@ -21,11 +21,13 @@ const (
 )
 
 type syncPageState struct {
-	filter       int
-	list         ui.ListState
-	selected     int
-	returnRoute  desktopRoute
-	copiedRecord string
+	filter        int
+	list          ui.ListState
+	selected      int
+	returnRoute   desktopRoute
+	copiedRecord  string
+	restoreRecord string
+	scroll        ui.ScrollState
 
 	checking   bool
 	remote     remoteObservation
@@ -129,6 +131,8 @@ func (d *desktop) queue(c *ui.Context) {
 		}
 		rows = append(rows, r)
 	}
+	restore := state.restoreRecord
+	state.restoreRecord = ""
 	if len(rows) == 0 {
 		switch {
 		case len(d.data.Queue) == 0:
@@ -141,6 +145,14 @@ func (d *desktop) queue(c *ui.Context) {
 		return
 	}
 	state.list.Selected = &state.selected
+	if restore != "" {
+		for i, row := range rows {
+			if row.ID == restore {
+				state.selected = i
+				break
+			}
+		}
+	}
 	state.list.RowHeight = 32
 	state.list.Key = func(row int) any { return rows[row].ID }
 	state.list.Label = func(row int) string { return recordName(rows[row]) }
@@ -149,7 +161,10 @@ func (d *desktop) queue(c *ui.Context) {
 		ui.Table(c.Key("sync-queue"), &state.list, cols, len(rows), func(row, col int) {
 			r := rows[row]
 			ui.Text(c, []string{recordName(r), valueOr(r.Project, "—"), recordState(r)}[col]).NoWrap()
-		}).Grow(1).Height(tableHeight(len(rows)))
+		}).Label("同步记录队列").Grow(1).Height(tableHeight(len(rows)))
+		if restore != "" {
+			state.list.Focus(c)
+		}
 		ui.Column(c).Width(235).Padding(10, 12).Gap(5).Radius(6).Background(panel).Children(func() {
 			secondary(c, "所选记录")
 			if state.selected < 0 || state.selected >= len(rows) {
@@ -159,7 +174,13 @@ func (d *desktop) queue(c *ui.Context) {
 			r := rows[state.selected]
 			section(c, recordName(r))
 			secondary(c, recordState(r)+" · "+valueOr(r.Project, "项目未知"))
-			ui.Text(c, r.ID).Font("monospace").FontSize(12).FillWidth()
+			identifier(c, "记录 ID", r.ID)
+			if r.Waiting() && r.Revision != "" {
+				if r.Revision == d.resolvedRevision {
+					secondary(c, "已生成本机修订 · 待发布")
+				}
+				identifier(c, "本机修订", r.Revision)
+			}
 			if r.Conflict {
 				if desktopPages[pageConflict] != nil {
 					if ui.PrimaryButton(c, "比较冲突版本").Clicked() {

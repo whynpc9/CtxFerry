@@ -14,15 +14,19 @@ import (
 type desktop struct {
 	core    app.App
 	window  *mygo.Window
+	update  func(func())
 	ctx     context.Context
 	route   desktopRoute
 	loading bool
+	reload  bool
 	data    app.DesktopSnapshot
 	err     error
 
-	overviewState overviewState
-	project       projectPage
-	syncState     syncPageState
+	overviewState    overviewState
+	project          projectPage
+	syncState        syncPageState
+	conflict         *conflictPage
+	resolvedRevision string
 
 	managementGeneration uint64
 	projects             desktopProjects
@@ -55,10 +59,14 @@ func main() {
 // Work leaves the render thread. Each call site owns its in-flight state and
 // decides whether the result still belongs to the current view.
 func runDesktop[T any](d *desktop, work func(context.Context) (T, error), apply func(T, error)) {
+	update := d.update
+	if update == nil {
+		update = d.window.Update
+	}
 	go func() {
 		result, err := work(d.ctx)
 		if d.ctx.Err() == nil {
-			d.window.Update(func() {
+			update(func() {
 				if d.ctx.Err() == nil {
 					apply(result, err)
 				}
@@ -69,6 +77,7 @@ func runDesktop[T any](d *desktop, work func(context.Context) (T, error), apply 
 
 func (d *desktop) refresh() {
 	if d.loading {
+		d.reload = true
 		return
 	}
 	d.loading = true
@@ -77,6 +86,10 @@ func (d *desktop) refresh() {
 			if snapshot.Workspace.ID != d.data.Workspace.ID || snapshot.Device.ID != d.data.Device.ID {
 				d.overviewState = overviewState{}
 				d.syncState = syncPageState{}
+				d.conflict, d.resolvedRevision = nil, ""
+				if d.route.Page == pageConflict {
+					d.route.Page = pageOverview
+				}
 				d.route = desktopRoute{Page: d.route.Page}
 				d.managementGeneration++
 				d.projects = desktopProjects{}
@@ -86,5 +99,9 @@ func (d *desktop) refresh() {
 			d.data = snapshot
 		}
 		d.err, d.loading = err, false
+		if d.reload {
+			d.reload = false
+			d.refresh()
+		}
 	})
 }

@@ -5,6 +5,7 @@ go 1.27.4
 require (
 	github.com/egoist/mygo v0.10.0
 	github.com/google/uuid v1.6.0
+	github.com/sergi/go-diff v1.4.5
 	github.com/whynpc9/CtxFerry v0.0.0
 )
 
