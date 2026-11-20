@@ -1,0 +1,614 @@
+{
+  "cleanupCommit": "fb3d659",
+  "spec": "/home/air/Projects/CtxFerry/plans/desktop-information-architecture.md",
+  "designerThread": "thread:delegated-task:command%3Amcp%3A455c6621-64c8-41e7-8547-7498cd6aa241%3Adelegate-task%3Ab277ac8f-f4ef-474b-85d4-86bd2c3d85eb",
+  "designerLink": "[CtxFerry desktop designer \u00b7 Round 1](t3-thread://v2/6acf9478-bcdc-4e3b-8d59-12404af1f8e1/thread:delegated-task:command%3Amcp%3A455c6621-64c8-41e7-8547-7498cd6aa241%3Adelegate-task%3Ab277ac8f-f4ef-474b-85d4-86bd2c3d85eb)",
+  "roundLimit": 10,
+  "initialThreshold": 9.0,
+  "earlyPassLastRound": 5,
+  "raisedThreshold": 9.5,
+  "rounds": [
+    {
+      "number": 1,
+      "snapshot": "/tmp/ctxferry-desktop-council.OIIH4Aca/round-01-frozen",
+      "sha256": "7ab682bac45e6fd93ce3addfd1591ba8d17a05c7c5e4af73f28306f96532e927",
+      "reviewers": {
+        "Astra": {
+          "model": "gpt-6.2-astra",
+          "options": {
+            "reasoningEffort": "high"
+          },
+          "taskId": "node:delegated-task:command%3Amcp%3Ad920716b-01a4-43da-8df8-6a6fa71d1302%3Adelegate-task%3A93b51bcd-6e7f-46f2-8c1f-d9093a2b17ab",
+          "threadId": "thread:delegated-task:command%3Amcp%3Ad920716b-01a4-43da-8df8-6a6fa71d1302%3Adelegate-task%3A93b51bcd-6e7f-46f2-8c1f-d9093a2b17ab",
+          "scores": [
+            8.8,
+            9.0,
+            8.6,
+            8.8,
+            9.0,
+            8.3,
+            8.2
+          ],
+          "inspected": 27,
+          "findings": [
+            "Frames 11/14: Task omits the unmapped cache-auth requirement; add it and its mapping action consistently.",
+            "Frames 04/20/22/23: Home opens Conflicts but Queue frame 20 has All selected and the return says it restored Conflicts; preserve the origin filter.",
+            "Frames 24\u201326: Backup becomes writable without refreshed catalog evidence, cleared journal or reread confirmed commit; show the recovery evidence near the write."
+          ]
+        },
+        "Gemini": {
+          "model": "gemini-4-neon",
+          "options": {
+            "reasoning_effort": "high"
+          },
+          "taskId": "node:delegated-task:command%3Amcp%3Ad920716b-01a4-43da-8df8-6a6fa71d1302%3Adelegate-task%3Ae88372d0-ee87-464b-b27d-cde82f89e419",
+          "threadId": "thread:delegated-task:command%3Amcp%3Ad920716b-01a4-43da-8df8-6a6fa71d1302%3Adelegate-task%3Ae88372d0-ee87-464b-b27d-cde82f89e419",
+          "scores": null,
+          "attempts": [
+            {
+              "taskId": "node:delegated-task:command%3Amcp%3Ad920716b-01a4-43da-8df8-6a6fa71d1302%3Adelegate-task%3A1318a422-2c6c-4d9c-b552-ecb375dbc7df",
+              "threadId": "thread:delegated-task:command%3Amcp%3Ad920716b-01a4-43da-8df8-6a6fa71d1302%3Adelegate-task%3A1318a422-2c6c-4d9c-b552-ecb375dbc7df",
+              "failure": "Agent turn stopped after repeated resume attempts made no progress."
+            },
+            {
+              "taskId": "node:delegated-task:command%3Amcp%3Ad920716b-01a4-43da-8df8-6a6fa71d1302%3Adelegate-task%3A1e46ca32-6a2b-4069-be9b-eeb3e143105e",
+              "threadId": "thread:delegated-task:command%3Amcp%3Ad920716b-01a4-43da-8df8-6a6fa71d1302%3Adelegate-task%3A1e46ca32-6a2b-4069-be9b-eeb3e143105e",
+              "failure": "Reads of manifest.json and three JPEG sheets failed before the turn stopped after repeated resume attempts."
+            },
+            {
+              "taskId": "node:delegated-task:command%3Amcp%3Ad920716b-01a4-43da-8df8-6a6fa71d1302%3Adelegate-task%3Aecb21274-f66f-4a51-b49b-8ab5450aab33",
+              "threadId": "thread:delegated-task:command%3Amcp%3Ad920716b-01a4-43da-8df8-6a6fa71d1302%3Adelegate-task%3Aecb21274-f66f-4a51-b49b-8ab5450aab33",
+              "failure": "Project copy made text and first JPEG readable. Second JPEG failed; run stopped after repeated resume attempts."
+            },
+            {
+              "taskId": "node:delegated-task:command%3Amcp%3Ad920716b-01a4-43da-8df8-6a6fa71d1302%3Adelegate-task%3Ae88372d0-ee87-464b-b27d-cde82f89e419",
+              "threadId": "thread:delegated-task:command%3Amcp%3Ad920716b-01a4-43da-8df8-6a6fa71d1302%3Adelegate-task%3Ae88372d0-ee87-464b-b27d-cde82f89e419",
+              "failure": "All three PNG sheet reads and both document reads eventually completed. The run then stopped after repeated resume attempts without a verdict."
+            }
+          ],
+          "retryWorkspaceCopy": "/home/air/Projects/CtxFerry/plans/.council-round-01",
+          "status": "no ballot"
+        },
+        "Kimi": {
+          "model": "kimi-code/k3.1-pro",
+          "options": {
+            "thinking": "max"
+          },
+          "taskId": "node:delegated-task:command%3Amcp%3Ad920716b-01a4-43da-8df8-6a6fa71d1302%3Adelegate-task%3A1a276823-d636-4bcc-a116-c97e79caa1e4",
+          "threadId": "thread:delegated-task:command%3Amcp%3Ad920716b-01a4-43da-8df8-6a6fa71d1302%3Adelegate-task%3A1a276823-d636-4bcc-a116-c97e79caa1e4",
+          "scores": [
+            8.7,
+            8.9,
+            8.5,
+            8.1,
+            8.6,
+            8.1,
+            8.3
+          ],
+          "inspected": 27,
+          "findings": [
+            "Frame 02: Join selected but Create Workspace here stays primary and enabled, risking initialization on the intended join root.",
+            "Frame 17: Repository says service not installed while the sidebar says service stopped. Derive both from one state.",
+            "Frames 07/11/20/27: Scope and evidence text is too faint. The #7D8794 subtle token yields roughly 3.15\u20133.64:1; meet 4.5:1 for operational small text."
+          ]
+        }
+      },
+      "decision": "Below 9.0 on two completed ballots; incomplete round. Do not rank or select this snapshot as fully scored."
+    },
+    {
+      "number": 2,
+      "snapshot": "/tmp/ctxferry-desktop-council.OIIH4Aca/round-02-frozen",
+      "sha256": "c1a942e8909910295b3bd60b9cfae0d3270112dea83c86875f5fee72d755c65c",
+      "reviewers": {
+        "Astra": {
+          "model": "gpt-6.2-astra",
+          "options": {
+            "reasoningEffort": "high"
+          },
+          "taskId": "node:delegated-task:command%3Amcp%3Ad920716b-01a4-43da-8df8-6a6fa71d1302%3Adelegate-task%3A581fc6d7-2163-407b-b563-3410a967ce1b",
+          "threadId": "thread:delegated-task:command%3Amcp%3Ad920716b-01a4-43da-8df8-6a6fa71d1302%3Adelegate-task%3A581fc6d7-2163-407b-b563-3410a967ce1b",
+          "scores": [
+            9.2,
+            9.1,
+            9.0,
+            9.4,
+            9.2,
+            9.0,
+            8.8
+          ],
+          "inspected": 30,
+          "findings": [
+            "Frame 02: Show repository, subscription and checkout path as editable fields before copying Join commands.",
+            "Frame 16: Show the selected filename above the diff, consistent with the selected row and drift warning.",
+            "Frame 21: Provide an explicit Show 3 more action or show all six waiting records."
+          ]
+        },
+        "Gemini": {
+          "model": "gemini-4-neon",
+          "options": {
+            "reasoning_effort": "high",
+            "contextWindow": "300k"
+          },
+          "taskId": "node:delegated-task:command%3Amcp%3Ad920716b-01a4-43da-8df8-6a6fa71d1302%3Adelegate-task%3A1346ccd7-b45a-4e28-a087-3a748f3c00ed",
+          "threadId": "thread:delegated-task:command%3Amcp%3Ad920716b-01a4-43da-8df8-6a6fa71d1302%3Adelegate-task%3A1346ccd7-b45a-4e28-a087-3a748f3c00ed",
+          "scores": null,
+          "attempts": [
+            {
+              "taskId": "node:delegated-task:command%3Amcp%3Ad920716b-01a4-43da-8df8-6a6fa71d1302%3Adelegate-task%3A5c85031a-28a2-493b-88f8-002fedda66d9",
+              "threadId": "thread:delegated-task:command%3Amcp%3Ad920716b-01a4-43da-8df8-6a6fa71d1302%3Adelegate-task%3A5c85031a-28a2-493b-88f8-002fedda66d9",
+              "failure": "Connection failed repeatedly after contact sheets and six full-resolution frame reads. No ballot."
+            }
+          ],
+          "status": "no ballot",
+          "failure": "Connection stalled repeatedly while reading the four frozen PNG sheets."
+        },
+        "Kimi": {
+          "model": "kimi-code/k3.1-pro",
+          "options": {
+            "thinking": "max"
+          },
+          "taskId": "node:delegated-task:command%3Amcp%3Ad920716b-01a4-43da-8df8-6a6fa71d1302%3Adelegate-task%3Af34d9df6-eaef-4ed7-b4f5-caade193448f",
+          "threadId": "thread:delegated-task:command%3Amcp%3Ad920716b-01a4-43da-8df8-6a6fa71d1302%3Adelegate-task%3Af34d9df6-eaef-4ed7-b4f5-caade193448f",
+          "scores": [
+            9.2,
+            9.2,
+            8.9,
+            9.4,
+            9.1,
+            9.3,
+            8.8
+          ],
+          "inspected": 30,
+          "findings": [
+            "Frame 21: All 9 shows six records and displays a plain-text 3 more waiting records line. Add expansion or pagination to expose all nine."
+          ]
+        }
+      },
+      "decision": "Both continuing reviewers passed 9.0. The user removed Gemini after round 2. The early-pass rule raises the gate to 9.5 for both seats starting in round 3."
+    },
+    {
+      "number": 3,
+      "snapshot": "/tmp/ctxferry-desktop-council.OIIH4Aca/round-03-frozen",
+      "sha256": "3c7c66babf1f3497ab1a7bcab323ee223e388dacb0a6c0dfa1760617358354aa",
+      "reviewers": {
+        "Astra": {
+          "model": "gpt-6.2-astra",
+          "options": {
+            "reasoningEffort": "high"
+          },
+          "taskId": "node:delegated-task:command%3Amcp%3Ab9ec903c-e88c-40f2-aa50-308d4a300ced%3Adelegate-task%3A12dbfc3f-5dd4-4a11-8b0f-0f6b44dd85a2",
+          "threadId": "thread:delegated-task:command%3Amcp%3Ab9ec903c-e88c-40f2-aa50-308d4a300ced%3Adelegate-task%3A12dbfc3f-5dd4-4a11-8b0f-0f6b44dd85a2",
+          "scores": [
+            9.3,
+            9.4,
+            9.2,
+            9.5,
+            9.2,
+            8.7,
+            8.9
+          ],
+          "inspected": 34,
+          "findings": [
+            "Frames 24 and 33: Keep conflict text verbatim for the same token and revision across window widths. Wrap or scroll.",
+            "Frames 29 and 34: Put the Workspace name beside the destination at backup confirmation in both layouts.",
+            "Frame 17: Expose the seven remaining artifacts with a Load more action and displayed range."
+          ]
+        },
+        "Kimi": {
+          "model": "kimi-code/k3.1-pro",
+          "options": {
+            "thinking": "max"
+          },
+          "taskId": "node:delegated-task:command%3Amcp%3Ab9ec903c-e88c-40f2-aa50-308d4a300ced%3Adelegate-task%3A069e7391-e08c-4fe3-869d-4f381ae08db1",
+          "threadId": "thread:delegated-task:command%3Amcp%3Ab9ec903c-e88c-40f2-aa50-308d4a300ced%3Adelegate-task%3A069e7391-e08c-4fe3-869d-4f381ae08db1",
+          "scores": [
+            9.2,
+            9.3,
+            9.1,
+            9.5,
+            9.2,
+            9.0,
+            8.9
+          ],
+          "inspected": 34,
+          "findings": [
+            "Frame 34: Keep visible Workspace identity and data root in compact plaintext backup review.",
+            "Frame 08: Show the full Confirms against label.",
+            "Frames 07/08/32: Keep populated-only scope and count of all fields consistent."
+          ]
+        }
+      },
+      "decision": "Both overall scores 9.171428571428571, below 9.5."
+    },
+    {
+      "number": 4,
+      "snapshot": "/tmp/ctxferry-desktop-council.OIIH4Aca/round-04-frozen",
+      "sha256": "c275fec4855b1f7249df5a36ae5807551537647d9c8fc5ca0c9660929f021c51",
+      "reviewers": {
+        "Astra": {
+          "model": "gpt-6.2-astra",
+          "options": {
+            "reasoningEffort": "high"
+          },
+          "taskId": "node:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Adelegate-task%3A59fad712-f6ad-4f78-a2a2-74c774afa615",
+          "threadId": "thread:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Adelegate-task%3A59fad712-f6ad-4f78-a2a2-74c774afa615",
+          "scores": [
+            9.4,
+            9.3,
+            9.2,
+            9.4,
+            9.3,
+            9.4,
+            9.1
+          ],
+          "inspected": 34,
+          "findings": [
+            "Frame 13: show the Checkout path that supplied the tunnel override.",
+            "Frame 23: attach the blocking conflict link to the runbooks/ record it actually concerns.",
+            "Frames 21 and 25: label the Sync badge as count needing attention, distinct from queue total."
+          ]
+        },
+        "Kimi": {
+          "model": "kimi-code/k3.1-pro",
+          "options": {
+            "thinking": "max"
+          },
+          "taskId": "node:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Adelegate-task%3A56df9e57-df15-4958-b921-63fe21b27192",
+          "threadId": "thread:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Adelegate-task%3A56df9e57-df15-4958-b921-63fe21b27192",
+          "scores": [
+            9.1,
+            8.9,
+            8.6,
+            9.2,
+            8.8,
+            9.1,
+            8.7
+          ],
+          "inspected": 34,
+          "findings": [
+            "Frame 23: identify both colliding records and offer a verified correction handoff.",
+            "Frame 32: label effective value and origin distinctly from editable layer."
+          ]
+        }
+      },
+      "decision": "Both overall scores below 9.5."
+    },
+    {
+      "number": 5,
+      "snapshot": "/tmp/ctxferry-desktop-council.OIIH4Aca/round-05-frozen",
+      "sha256": "43052d211c1f182e8c11bbb69d17df3e42720e8f16239bf029aa9483b048a7e0",
+      "reviewers": {
+        "Astra": {
+          "model": "gpt-6.2-astra",
+          "options": {
+            "reasoningEffort": "high"
+          },
+          "taskId": "node:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Adelegate-task%3A2ebe0463-4e9f-4e6d-b114-34411462bec7",
+          "threadId": "thread:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Adelegate-task%3A2ebe0463-4e9f-4e6d-b114-34411462bec7",
+          "scores": [
+            9.4,
+            9.3,
+            9.2,
+            9.5,
+            9.4,
+            9.1,
+            8.9
+          ],
+          "inspected": 34,
+          "findings": [
+            "Frames 26\u201327: qualify waiting publication for offline and reconciliation states.",
+            "Frames 06 and 11: distinguish trusted, changed since trusted, and not trusted counts.",
+            "Frame 23: show the full blocking document path beside its link."
+          ]
+        },
+        "Kimi": {
+          "model": "kimi-code/k3.1-pro",
+          "options": {
+            "thinking": "max"
+          },
+          "taskId": "node:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Adelegate-task%3A3773adbe-93cd-495e-988f-f765d9bed417",
+          "threadId": "thread:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Adelegate-task%3A3773adbe-93cd-495e-988f-f765d9bed417",
+          "scores": [
+            8.9,
+            9.1,
+            8.8,
+            9.2,
+            8.9,
+            8.7,
+            8.8
+          ],
+          "inspected": 34,
+          "findings": [
+            "Frame 23: show the full blocking path runbooks/rollback.md.",
+            "Frames 28\u201330 and 34: omit zero waiting clauses as for zero conflicts."
+          ]
+        }
+      },
+      "decision": "Both overall scores below 9.5."
+    },
+    {
+      "number": 6,
+      "snapshot": "/tmp/ctxferry-desktop-council.OIIH4Aca/round-06-frozen",
+      "sha256": "41ad95fdea059eaf524aa69a7ca98089acb46b97407e36940b9ca637859358cb",
+      "reviewers": {
+        "Astra": {
+          "model": "gpt-6.2-astra",
+          "options": {
+            "reasoningEffort": "high"
+          },
+          "taskId": "node:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Adelegate-task%3A453f9177-4f20-4a93-b7ac-2ec5b4dc470e",
+          "threadId": "thread:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Adelegate-task%3A453f9177-4f20-4a93-b7ac-2ec5b4dc470e",
+          "scores": [
+            9.2,
+            9.3,
+            9.1,
+            9.4,
+            9.2,
+            9.1,
+            8.7
+          ],
+          "inspected": 34,
+          "findings": [
+            "Frames 07, 08 and 32: qualify cross-device Profile inheritance with precedence of device or Checkout overrides.",
+            "Frame 02: show the slug and resolve the Project ID after joining before binding.",
+            "Frames 21 and 25: say queued for the service until a confirmed commit establishes publication."
+          ]
+        },
+        "Kimi": {
+          "model": "kimi-code/k3.1-pro",
+          "options": {
+            "thinking": "max"
+          },
+          "taskId": "node:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Adelegate-task%3Af8562ccc-2dec-4e46-b049-9932a6d5b0f3",
+          "threadId": "thread:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Adelegate-task%3Af8562ccc-2dec-4e46-b049-9932a6d5b0f3",
+          "scores": [
+            9.1,
+            9.0,
+            8.9,
+            9.2,
+            9.0,
+            9.0,
+            8.8
+          ],
+          "inspected": 34,
+          "findings": [
+            "Frames 21\u201323 and 25: waiting copy can imply completed publication.",
+            "Frames 15, 18\u201320 and 27: label Copy command and subordinate Refresh until handoff is complete."
+          ]
+        }
+      },
+      "decision": "Both overall scores below 9.5."
+    },
+    {
+      "number": 7,
+      "snapshot": "/tmp/ctxferry-desktop-council.OIIH4Aca/round-07-frozen",
+      "sha256": "ed6535275fb6645e1903344ab5aa171160778788c6c74851616e172e3fbdc5d5",
+      "reviewers": {
+        "Astra": {
+          "model": "gpt-6.2-astra",
+          "options": {
+            "reasoningEffort": "high"
+          },
+          "taskId": "node:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Adelegate-task%3A7102b832-784a-4721-a7fb-0f3965c1bd03",
+          "threadId": "thread:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Adelegate-task%3A7102b832-784a-4721-a7fb-0f3965c1bd03",
+          "scores": [
+            9.4,
+            9.3,
+            9.2,
+            9.5,
+            9.2,
+            9.2,
+            9.0
+          ],
+          "inspected": 35,
+          "findings": [
+            "Frame 30: label the pre-write read as Source snapshot and reserve Read back for verification of the destination.",
+            "Frames 24/33: label the remote deletion consequence directly on the option.",
+            "Frame 05: sort by name as labeled or make subscription grouping explicit."
+          ]
+        },
+        "Kimi": {
+          "model": "kimi-code/k3.1-pro",
+          "options": {
+            "thinking": "max"
+          },
+          "taskId": "node:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Adelegate-task%3A1e8e79b4-6a7a-4964-b782-0328d9f00c9b",
+          "threadId": "thread:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Adelegate-task%3A1e8e79b4-6a7a-4964-b782-0328d9f00c9b",
+          "scores": [
+            8.9,
+            8.7,
+            8.5,
+            9.2,
+            8.5,
+            8.8,
+            8.7
+          ],
+          "inspected": 35,
+          "findings": [
+            "Frames 01/12: reserve checkmarks for verified evidence instead of available capabilities and unmet prerequisites.",
+            "Frames 21\u201323 and 25\u201327: provide a readable hierarchy for attention and publication status rather than a single quiet legend.",
+            "Frame 30: keep recovery command flags visually intact."
+          ]
+        }
+      },
+      "decision": "Both overall scores below 9.5."
+    },
+    {
+      "number": 8,
+      "snapshot": "/tmp/ctxferry-desktop-council.OIIH4Aca/round-08-frozen",
+      "sha256": "42a23407f21b3d25133880f8e5459958ba155221bc1932102d4f057a1a16f03e",
+      "reviewers": {
+        "Astra": {
+          "model": "gpt-6.2-astra",
+          "options": {
+            "reasoningEffort": "high"
+          },
+          "taskId": "node:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Adelegate-task%3A9527a5f4-bac4-4801-829c-d01eb5832ee2",
+          "threadId": "thread:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Adelegate-task%3A9527a5f4-bac4-4801-829c-d01eb5832ee2",
+          "scores": [
+            9.3,
+            9.0,
+            8.9,
+            9.4,
+            9.2,
+            9.1,
+            9.0
+          ],
+          "inspected": 35,
+          "findings": [
+            "Frame 34: pinned backup action bar partly obscures the blocked-revision scope explanation.",
+            "Frames 28/29/34: distinguish unrelated queue repair from the next action to resume backup.",
+            "Frame 14: link the mapped postgres-primary Resource so Back can restore the credential selection."
+          ]
+        },
+        "Kimi": {
+          "model": "kimi-code/k3.1-pro",
+          "options": {
+            "thinking": "max"
+          },
+          "taskId": "node:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Adelegate-task%3A31f2efee-c33e-4b21-9ccc-d90879bd15c8",
+          "threadId": "thread:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Adelegate-task%3A31f2efee-c33e-4b21-9ccc-d90879bd15c8",
+          "scores": [
+            9.0,
+            8.5,
+            8.4,
+            9.1,
+            9.0,
+            8.5,
+            8.6
+          ],
+          "inspected": 35,
+          "findings": [
+            "Frame 34: compact backup scope text is clipped under the pinned bar.",
+            "Frames 28\u201330 and 34: queue repair competes with the active backup journey."
+          ]
+        }
+      },
+      "decision": "Both overall scores below 9.5."
+    },
+    {
+      "number": 9,
+      "snapshot": "/tmp/ctxferry-desktop-council.OIIH4Aca/round-09-frozen",
+      "sha256": "2ea185b556b0ef8678e29c7fd0081ff1f946d44e02eeb2beed2d5f9f3c2c323b",
+      "reviewers": {
+        "Astra": {
+          "model": "gpt-6.2-astra",
+          "options": {
+            "reasoningEffort": "high"
+          },
+          "taskId": "node:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Adelegate-task%3A8d9cb950-e110-44b6-a2a0-4b8c7e638587",
+          "threadId": "thread:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Adelegate-task%3A8d9cb950-e110-44b6-a2a0-4b8c7e638587",
+          "scores": [
+            9.4,
+            9.3,
+            9.2,
+            9.5,
+            9.4,
+            9.2,
+            9.1
+          ],
+          "inspected": 36,
+          "findings": [
+            "Frames 29/34: qualify the blocked Task with Project and revision.",
+            "Frames 29/34: plaintext warning should mirror selected trust data and Skill receipts.",
+            "Frames 24/33: instructions should cover document replacement as well as either side."
+          ]
+        },
+        "Kimi": {
+          "model": "kimi-code/k3.1-pro",
+          "options": {
+            "thinking": "max"
+          },
+          "taskId": "node:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Adelegate-task%3A598e6e46-48a0-4b9a-876f-035a11bb3be6",
+          "threadId": "thread:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Adelegate-task%3A598e6e46-48a0-4b9a-876f-035a11bb3be6",
+          "scores": [
+            9.1,
+            8.8,
+            9.0,
+            9.4,
+            9.1,
+            9.2,
+            8.9
+          ],
+          "inspected": 36,
+          "findings": [
+            "Frame 29: place confirmation after every scope option, including artifact bytes, as in the compact flow."
+          ]
+        }
+      },
+      "decision": "Both overall scores below 9.5."
+    },
+    {
+      "number": 10,
+      "snapshot": "/tmp/ctxferry-desktop-council.OIIH4Aca/round-10-frozen",
+      "sha256": "bca6f50b8c963bd1ef39f03c7edcf3ed0e63a91148f6d5e3b66cc6d6137d2142",
+      "reviewers": {
+        "Astra": {
+          "model": "gpt-6.2-astra",
+          "options": {
+            "reasoningEffort": "high"
+          },
+          "taskId": "node:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Adelegate-task%3A861d4e1a-fcd4-45f8-bf7c-69f588dc4f18",
+          "threadId": "thread:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Adelegate-task%3A861d4e1a-fcd4-45f8-bf7c-69f588dc4f18",
+          "scores": [
+            9.5,
+            9.4,
+            9.2,
+            9.6,
+            9.4,
+            9.3,
+            9.0
+          ],
+          "inspected": 36,
+          "findings": [
+            "Frames 29/30/34: name provider-held credentials as the exclusion, and list Git history among plaintext contents. Plaintext can contain embedded secrets.",
+            "Frame 11: identify the database as the specific probe target and retain its timestamp.",
+            "Frame 16: show installed-to-candidate diff as well as installed-to-local drift."
+          ]
+        },
+        "Kimi": {
+          "model": "kimi-code/k3.1-pro",
+          "options": {
+            "thinking": "max"
+          },
+          "taskId": "node:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Adelegate-task%3Ab545bd0c-9a6b-44e3-8014-d9927db2daa8",
+          "threadId": "thread:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Adelegate-task%3Ab545bd0c-9a6b-44e3-8014-d9927db2daa8",
+          "scores": [
+            9.4,
+            9.3,
+            9.1,
+            9.5,
+            9.1,
+            9.3,
+            9.1
+          ],
+          "inspected": 36,
+          "findings": [
+            "Frames 29/34: separate blocked status from the included Task icon.",
+            "Frame 30: include Skill receipts in the reviewed and recorded exclusions.",
+            "Frame 29: keep optional exposure in one clearly labelled group."
+          ]
+        }
+      },
+      "decision": "Round limit reached. Select round 10 by highest minimum active reviewer score. The approval gate was not met."
+    }
+  ],
+  "designerRoundTwoTask": "node:delegated-task:command%3Amcp%3Ad920716b-01a4-43da-8df8-6a6fa71d1302%3Athread-send%3Ae741f386-0380-4a49-8b7d-ebe18c54bc86",
+  "status": "completed at round limit",
+  "activeThreshold": 9.5,
+  "activeReviewers": [
+    "Astra",
+    "Kimi"
+  ],
+  "thresholdRaisedAfterRound": 2,
+  "designerRoundThreeTask": "node:delegated-task:command%3Amcp%3Ad920716b-01a4-43da-8df8-6a6fa71d1302%3Athread-send%3Aef51b06a-1004-4cbe-9f22-8dce7fcc7973",
+  "designerRoundFourTask": "node:delegated-task:command%3Amcp%3Ab9ec903c-e88c-40f2-aa50-308d4a300ced%3Athread-send%3Af4f10033-6dd7-4692-bf2a-e0f5e332a6ce",
+  "designerRoundFiveTask": "node:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Athread-send%3Aa9c75465-5122-4e4a-a8ab-ce34e0d84f47",
+  "designerRoundSixTask": "node:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Athread-send%3A952309e4-085b-4190-a4af-7a343a66e1ad",
+  "designerRoundSevenTask": "node:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Athread-send%3Afce97016-0469-403e-aa18-19cae642672f",
+  "designerRoundEightTask": "node:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Athread-send%3A4889e95f-7a9f-4549-8da1-5d1010535226",
+  "designerRoundNineTask": "node:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Athread-send%3A0555afc1-a8b3-461c-9c9f-5c69ab9f7ca5",
+  "designerRoundTenTask": "node:delegated-task:command%3Amcp%3A2615d72f-4782-422c-8c8f-0d7fce165f33%3Athread-send%3Af1f431a7-fbae-4845-9aed-3b86b698c099",
+  "selectedRound": 10,
+  "gatePassed": false
+}

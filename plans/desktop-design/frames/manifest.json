@@ -1,0 +1,362 @@
+[
+  {
+    "ID": "01",
+    "File": "01-readiness-create-or-join.png",
+    "Title": "Workspace readiness: create or join",
+    "Destination": "Shell gate",
+    "State": "Welcome; fresh empty data root; no catalog; --data-dir hint inside the Data root card; Create selected; capability icons, no check marks; Join requires Git access, not checked yet",
+    "SHA256": "c0fe0ab0f2c18ebd9bf136a1ba48b1266df2092e1c8c54a3255869b991467102",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "02",
+    "File": "02-readiness-join-handoff.png",
+    "Title": "Workspace readiness: join handoff",
+    "Destination": "Shell gate",
+    "State": "Join chosen; stage 1 of 2: join and subscribe by slug, Copy command primary, Refresh quiet; Bind waits for the Project ID",
+    "SHA256": "85d65e706000f8c06ca48fd8bd654f99f80d763d0270a81e2dcc69571cffb1b1",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "02b",
+    "File": "02b-readiness-join-bind.png",
+    "Title": "Workspace readiness: bind after join",
+    "Destination": "Shell gate",
+    "State": "snapJoined 10:43:31; join written 10:43:20; Refresh resolved atlas-api and billing-worker to Project IDs; bind names atlas-api by ID",
+    "SHA256": "a2202cbb5152d1f10f4c35b79a56959d2c038baf6575837412895d4cf127393d",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "03",
+    "File": "03-home-stale-snapshot.png",
+    "Title": "Home: refresh failed after a successful read",
+    "Destination": "Home",
+    "State": "snapStale: 10:49:12 refresh failed; 10:46:20 snapshot kept; writes, Backup and remote checks off",
+    "SHA256": "35d8560e087d3882fc704b7308eb432a3f9011369bf6a0547c405f3252ae9d3a",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "04",
+    "File": "04-home.png",
+    "Title": "Home",
+    "Destination": "Home",
+    "State": "snapNow 10:46:20: 6 waiting, 1 conflict, 2 blocked; tiles open Queue with that filter; Conflicts tile says keep a side or replace",
+    "SHA256": "efd534cd1587afa37b951db21136b7135796b502fa6e1300861d30c46a020e2c",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "05",
+    "File": "05-projects-unsubscribed.png",
+    "Title": "Projects: list with an unsubscribed Project",
+    "Destination": "Projects",
+    "State": "snapNow; 4 Projects; grouped by subscription, then by name; ml-notebooks selected, not subscribed on this device; labelled Copy command, quiet Refresh",
+    "SHA256": "de51ada9a99007b3aca4fb3958024c582167192e55918d02a10ce66a679a10c0",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "06",
+    "File": "06-project-overview.png",
+    "Title": "Project overview",
+    "Destination": "Projects",
+    "State": "snapNow; atlas-api; 2 Checkouts with different Profiles; ~/code/atlas-api selected; Task trust 1 trusted, 1 to recheck, 1 not trusted, read from the same data as 11",
+    "SHA256": "ad78a1809e73088a85de5ccd9b850377bdb1d1afb5f6bd0a223acf6b529156b5",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "07",
+    "File": "07-configuration.png",
+    "Title": "Configuration: layer inspection",
+    "Destination": "Projects",
+    "State": "snapEdit 10:42:08; db.pool_size wins from Profile staging; showing 8 of 14 fields (with a value), Show all 14; Device and Checkout layers named as local to each device",
+    "SHA256": "b7e12b3b47b81c996548daa5e00dbf5495b6cdf0854abea8ea3aa79a83008ea5",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "08",
+    "File": "08-configuration-preview.png",
+    "Title": "Configuration: scope-aware preview",
+    "Destination": "Projects",
+    "State": "snapEdit; remove override from shared Profile staging; other devices inherit 10 only after a confirmed commit and unless their own Device or Checkout layer sets it; 8 of 14 fields",
+    "SHA256": "701d404c82c0e9f9cae029d65fadfd676f818e4ec921f39935f58057a25697f1",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "09",
+    "File": "09-configuration-receipt.png",
+    "Title": "Configuration: local receipt, awaiting publication",
+    "Destination": "Projects",
+    "State": "snapSaved 10:44:53; saved 10:44:52; record 2f9a6c14 waiting (5 → 6); evidence Written 10:44:52 / Read back 10:44:53 / Published not yet, queued for the running service",
+    "SHA256": "1c5031fdef04a8ecda6d967cb64bb6de1115fdf5c03ddb51cc3168bcd2c53cdb",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "10",
+    "File": "10-context.png",
+    "Title": "Context",
+    "Destination": "Projects",
+    "State": "snapNow; 23 documents under ~/code/atlas-api · staging; deploy.md open; conflict and missing-content rows",
+    "SHA256": "7cad08aff915eea18c8bc704257d6d6ea8181cde39d1c84af4614b380f25460c",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "11",
+    "File": "11-tasks.png",
+    "Title": "Tasks",
+    "Destination": "Projects",
+    "State": "snapNow; same trust data as 06: deploy-preview Recheck, db-migrate Trusted, load-test Not trusted; slot cache unmapped; 3 credential requirements, cache-auth unmapped",
+    "SHA256": "632a70db847f1a3d39ec35f19b65789829d746dcf59411fdf883152db7a3add5",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "12",
+    "File": "12-catalog.png",
+    "Title": "Catalog directory",
+    "Destination": "Catalog",
+    "State": "snapNow; Project scope atlas-api (subscribed only); four tools with plain bullets",
+    "SHA256": "b3315f9c1eec8205f4d929f15f2a7c31cddcf8682f86da661433ac9bc6e463ce",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "13",
+    "File": "13-resources-environments.png",
+    "Title": "Resources \u0026 environments, opened from a Task",
+    "Destination": "Catalog",
+    "State": "snapNow; from deploy-preview slot database; tunnel override set by Checkout ~/code/atlas-api, named at the probe; probe reachable",
+    "SHA256": "9f663266d12cd6a75d2a96fb11696e14cd2caf26393c7a64dbdedd6f64b3328c",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "14",
+    "File": "14-credential-bindings.png",
+    "Title": "Credential bindings, opened from a Task",
+    "Destination": "Catalog",
+    "State": "snapNow; 3 requirements as on frame 11; db-password mapped; Resource match links postgres-primary (opens 14b); provider not signed in",
+    "SHA256": "024da7fbf14f73a67823972a380390811510a564a7d8e5f5fce7788b02ea3eb4",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "14b",
+    "File": "14b-resources-from-credential.png",
+    "Title": "Resources \u0026 environments, opened from a credential requirement",
+    "Destination": "Catalog",
+    "State": "snapNow; opened from the postgres-primary link in db-password's Resource match on 14; Back returns to Credential bindings with db-password selected; same route and probe as 13",
+    "SHA256": "ebd8283c728c84d58a5816b0f2fd7312cf0b2b897d29ed80434d7567f847e518",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "15",
+    "File": "15-credential-cache-auth-slot.png",
+    "Title": "Credential bindings: resolve cache-auth through its slot",
+    "Destination": "Catalog",
+    "State": "snapNow; cache-auth unmapped because slot cache has no Resource; map-resource handoff with labelled Copy command and quiet Refresh, then reference",
+    "SHA256": "87124654cbb5147b31e3fdf787a23160d3755a5a132a655dd0a6a586498ddc44",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "16",
+    "File": "16-skills-update-drift.png",
+    "Title": "Skills: update blocked by local drift",
+    "Destination": "Catalog",
+    "State": "snapNow; release-notes v1.3.2 → approved v1.4.0; templates/changelog.md drifted; confirm disabled",
+    "SHA256": "aa6e9e29c64d5d9bcf4588404cb59fbf58dfebb20f68ce4302134963025711dc",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "17",
+    "File": "17-run-artifacts.png",
+    "Title": "Run artifacts: verified export and metadata-only item",
+    "Destination": "Catalog",
+    "State": "snapNow; showing 1–5 of 12 (newest first, stated once above the table), Load 7 older; latency-report.json exported and verified; trace.zst metadata only",
+    "SHA256": "edd984f96362104468bf1790ba6878dff9c40cf284610fcb22ac3dccc450bf8d",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "18",
+    "File": "18-repository-first-publication.png",
+    "Title": "Repository: first publication",
+    "Destination": "Sync",
+    "State": "snapSetup 3 Nov; sync service not installed (sidebar and card); no confirmed commit; preview reviewed; step 4 states that sync init creates ctxferry-v1 only if absent and pushed history cannot be recalled; Copy command primary, Refresh quiet",
+    "SHA256": "4c8112b2d5bd139e3c2a4586f62ab4720da403f7dadc262ed9a2df51f03b327e",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "19",
+    "File": "19-repository-resume-first-publication.png",
+    "Title": "Repository: resume first publication",
+    "Destination": "Sync",
+    "State": "snapSetupLost; first push lost its acknowledgement; init journal pending; original preview ID reused; Copy command primary, Refresh quiet (was primary)",
+    "SHA256": "ddc0e840fe38daea0c811e7fd2ae6f7d67a2c99f86ed17de740db0bb8d053c61",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "20",
+    "File": "20-repository-routine-sync.png",
+    "Title": "Repository: routine sync via CLI",
+    "Destination": "Sync",
+    "State": "snapMorning 09:02; service stopped; confirmed 5d07b3a; summary line: 3 waiting · Held until Sync runs; one-shot sync handoff with Copy command primary",
+    "SHA256": "aacd003f88f2461fe4cec2ffe954b7741a42e4334ff27721633f9133b9bda2f5",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "21",
+    "File": "21-queue-all.png",
+    "Title": "Queue: all records, from the Sync tab",
+    "Destination": "Sync",
+    "State": "snapNow; All filter; 9 records; summary line: 1 conflict, 2 blocked, 6 waiting, no hold message (the running service publishes); 2f9a6c14 selected with Written / Read back / Published rows; no Back",
+    "SHA256": "7542a0e597d1ec5e4a54b7da483c9e2bfecf5b6aafd54d86f5d0dbeeddd79080",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "22",
+    "File": "22-queue-conflicts-from-home.png",
+    "Title": "Queue: Conflicts filter, from Home",
+    "Destination": "Sync",
+    "State": "snapNow; started from Home's Conflicts tile; Back to Home; conflict selected; summary line carries the counts; filter segments carry none",
+    "SHA256": "dcd7046705b054357afe7a402297cd2331c965fb268bb26fd7c8b7c4192eadd0",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "23",
+    "File": "23-queue-blocked-from-home.png",
+    "Title": "Queue: Blocked filter, from Home",
+    "Destination": "Sync",
+    "State": "snapNow; Back to Home; billing-worker Task e40d9a17 blocked by deleted membership a2c7e910; repair via task update; runbooks/ row shows the whole runbooks/rollback.md link; labelled Copy command, quiet Refresh, Open Task in billing-worker",
+    "SHA256": "0f0ce03b7dc30ff60c1bd0fb53bf6cca5b288a286569d0313676c254e7d25b7c",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "24",
+    "File": "24-conflict-resolution.png",
+    "Title": "Conflict resolution",
+    "Destination": "Sync",
+    "State": "snapNow; Back to Queue · Conflicts; description covers keeping a side or replacing the document; Keep local version chosen; remote option named Apply remote deletion; preview against conflict token; keyboard focus on choice",
+    "SHA256": "2d43235892e3347a4e07e413b970b97a6cafaadfb2c88265f6ea7d38eecb69ea",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "25",
+    "File": "25-conflict-receipt-queue.png",
+    "Title": "Conflict receipt in the restored Conflicts filter",
+    "Destination": "Sync",
+    "State": "snapResolved 10:51:07; Conflicts filter restored and empty; badge 1 needs attention (1 blocked); Back to Home; receipt evidence Saved 10:51:06 / Reread 10:51:07 / Published not yet, queued for the running service",
+    "SHA256": "1955559596fe3c23cb8a1a5e66070b20eca8ace799b6aea2fbe49746cb0b947a",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "26",
+    "File": "26-backup-blocked-offline.png",
+    "Title": "Backup: blocked by an uncertain publication, offline",
+    "Destination": "Sync",
+    "State": "snapOffline 11:06; routine journal 3d8f1a62 outcome unknown; Backup blocked; 8 waiting held until the uncertain journal is reconciled; recovery in Repository",
+    "SHA256": "e957449c9a526af6e927fac94943ceed82ca2ad67b91583d2d5379182c92d652",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "27",
+    "File": "27-repository-reconcile-publication.png",
+    "Title": "Repository: reconcile an uncertain routine push",
+    "Destination": "Sync",
+    "State": "snapOnline 11:12:05; Back to Backup; journal pending; waiting held until reconciled; one-shot sync handoff with Copy command primary",
+    "SHA256": "5ee6b2dd86270580307441eff8ba57a970c99f5ba774502d9275c2bba5985cb8",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "28",
+    "File": "28-repository-journal-cleared.png",
+    "Title": "Repository: journal cleared after refresh",
+    "Destination": "Sync",
+    "State": "snapCleared 11:12:41; journal cleared 11:12:40; commit 9a2e7f1 reread; summary line shows 1 blocked; Return to Backup is the primary action in the cleared banner; Back to Backup",
+    "SHA256": "4eb08c6b7cdb202891bc21a322c319f7e28ffc9e762c03f3f8cb7943335adac6",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "29",
+    "File": "29-backup-review.png",
+    "Title": "Backup: preflight evidence, scope and plaintext review",
+    "Destination": "Sync",
+    "State": "snapCleared; reading order 1 source with preflight evidence, 2 destination, 3 data scope (always included with billing-worker / deploy-preview, revision 3; the one option, local-only data, selected; never included), 4 exposure for that selection, then acknowledgement and write after every option; summary line shows 1 blocked",
+    "SHA256": "9f55a07de5fab61568dca8692fedeca04628d56e381e425134874fef8a289eb2",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "30",
+    "File": "30-backup-receipt.png",
+    "Title": "Backup: receipt with destination and manifest",
+    "Destination": "Sync",
+    "State": "snapCleared; written 11:14:02 with local-only data; manifest path and catalog digest; never-included list as in 29; evidence Source snapshot read 11:12:41 / Written 11:14:02 / Published nothing; recovery guide carries the commands and flags",
+    "SHA256": "d500b9eab170dc0176325f0c3ed5f0088539e03fc69ef589f16229d6b7686446",
+    "Width": 2560,
+    "Height": 1600
+  },
+  {
+    "ID": "31",
+    "File": "31-compact-home.png",
+    "Title": "Compact: Home",
+    "Destination": "Home",
+    "State": "snapNow at 1024x680; icon rail with Sync badge 3; evidence strip in the top bar; tiles keep separate counts",
+    "SHA256": "ae1dc39c6e5706209347ae1831c9fc1dab287f590c0a06631ce44af45f97929d",
+    "Width": 2048,
+    "Height": 1360
+  },
+  {
+    "ID": "32",
+    "File": "32-compact-configuration-preview.png",
+    "Title": "Compact: Configuration preview with pinned confirm",
+    "Destination": "Projects",
+    "State": "snapEdit at 1024x680; same preview as 08; field strip labels effective value, origin (wins) and editing layer; 8 of 14; cross-device effect qualified by Device and Checkout layers; confirm pinned",
+    "SHA256": "66cad440c6db76d0d8f53dff30527a7ed2f2bad646987296bb6aee39ae0b44b9",
+    "Width": 2048,
+    "Height": 1360
+  },
+  {
+    "ID": "33",
+    "File": "33-compact-conflict-resolution.png",
+    "Title": "Compact: Conflict resolution with pinned confirm",
+    "Destination": "Sync",
+    "State": "snapNow at 1024x680; same description, revisions, lines, choices and effects as 24; sides behind a switch; token and confirm pinned",
+    "SHA256": "b1112bb22133ea8fd835c13dde541cf80f7380ebfbc479f7d83736b1de4db84c",
+    "Width": 2048,
+    "Height": 1360
+  },
+  {
+    "ID": "34",
+    "File": "34-compact-backup-review.png",
+    "Title": "Compact: Backup review with pinned write",
+    "Destination": "Sync",
+    "State": "snapCleared at 1024x680; same components and reading order as 29; exposure in two groups; acknowledgement and write pinned after every option; the whole review fits above the pinned bar",
+    "SHA256": "86b7741c38bc807edfeaa79da3a4803bbe87b0962215d3b5e024dbaf1cd2080d",
+    "Width": 2048,
+    "Height": 1360
+  }
+]
