@@ -147,7 +147,11 @@ func (a *artifactsState) artifactTable(c *ui.Context) {
 	a.table.Label = func(row int) string { return a.visible[row].Payload.Name }
 	ui.Table(c, &a.table, columns, len(a.visible), func(row, col int) {
 		item := a.visible[row]
-		values := [3]string{item.Payload.Name, artifactSize(item.Payload.Size), artifactContentLabel(item.Content)}
+		content := artifactContentLabel(item.Content)
+		if mark := a.checked[item.ID]; mark != "" && mark != "本机内容已校验" {
+			content = mark
+		}
+		values := [3]string{item.Payload.Name, artifactSize(item.Payload.Size), content}
 		ui.Text(c, values[col]).NoWrap().Ellipsis("…")
 	}).FillWidth().Height(float32(min(9, len(a.visible))+1)*31 + 10).Disabled(a.busy).OnChange(func() {
 		a.actionErr, a.showRun = nil, false
@@ -212,7 +216,11 @@ func (d *desktop) artifactInspector(c *ui.Context, item app.DesktopArtifact) {
 		}
 	}
 	workDetail(c, "完成范围", completed)
-	workDetail(c, "原始大小", artifactSize(item.Payload.Size))
+	size := artifactSize(item.Payload.Size)
+	if item.Payload.Size >= 1024 {
+		size += fmt.Sprintf(" · %d B", item.Payload.Size)
+	}
+	workDetail(c, "原始大小", size)
 	if s := item.Sync; s != nil {
 		workDetail(c, "同步内容", artifactSyncLabel(s))
 	}
@@ -223,6 +231,8 @@ func (d *desktop) artifactInspector(c *ui.Context, item app.DesktopArtifact) {
 			kind = "同步快照对象"
 		}
 		workDetail(c, kind, item.Location)
+	} else if item.Content == "metadata-only" {
+		workDetail(c, "本机内容位置", "仅保留元数据")
 	}
 	for _, obs := range item.Observations {
 		if obs.DeviceID == d.data.Device.ID {

@@ -19,7 +19,6 @@ import (
 type DesktopSkill struct {
 	Name   string
 	Shared *SkillPackage
-	Local  bool
 }
 
 // ListDesktopSkills reads the workspace catalog or a Project's shared selection.
@@ -122,7 +121,7 @@ func (a App) readDesktopLocalSkills(device string, entries map[string]DesktopSki
 	for _, dir := range packages {
 		if dir.IsDir() && validSkillName(dir.Name()) {
 			entry := entries[dir.Name()]
-			entry.Name, entry.Local = dir.Name(), true
+			entry.Name = dir.Name()
 			entries[entry.Name] = entry
 		}
 	}

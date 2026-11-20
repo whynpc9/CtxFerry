@@ -27,6 +27,7 @@ type skillsState struct {
 	table                            ui.ListState
 	diff                             *editor.DiffState
 	showLocal                        bool
+	showPackages                     bool
 }
 
 func (d *desktop) setSkillProject(project string) {
@@ -66,7 +67,7 @@ func (d *desktop) loadSkills() {
 
 func (s *skillsState) clearPreview() {
 	s.preview, s.action, s.scanned = app.DesktopSkillPreview{}, "", time.Time{}
-	s.row, s.table, s.diff, s.showLocal = -1, ui.ListState{}, nil, false
+	s.row, s.table, s.diff, s.showLocal, s.showPackages = -1, ui.ListState{}, nil, false, false
 }
 
 func (d *desktop) loadSkillTarget() {
@@ -95,8 +96,12 @@ func (d *desktop) previewSkill(action string) {
 		link = s.targetState.Mode == "symlink"
 	}
 	rescan := s.action == action
+	var selectedPath string
+	if rescan && s.row >= 0 && s.row < len(s.preview.Files) {
+		selectedPath = s.preview.Files[s.row].Path
+	}
 	s.clearPreview()
-	s.busy, s.err, s.action = true, nil, action
+	s.busy, s.err, s.action, s.receipt = true, nil, action, ""
 	desktopJob(d, func(ctx context.Context) (app.DesktopSkillPreview, error) {
 		if action == "install" {
 			return d.core.PreviewDesktopSkillInstall(ctx, input.Name, input.Target, link)
@@ -109,7 +114,9 @@ func (d *desktop) previewSkill(action string) {
 		}
 		if len(preview.Files) > 0 {
 			s.row = 0
-			if index := slices.IndexFunc(preview.Files, func(f app.DesktopSkillDiff) bool { return f.LocalChanged }); index >= 0 {
+			if index := slices.IndexFunc(preview.Files, func(f app.DesktopSkillDiff) bool { return f.Path == selectedPath }); index >= 0 {
+				s.row = index
+			} else if index := slices.IndexFunc(preview.Files, func(f app.DesktopSkillDiff) bool { return f.LocalChanged }); index >= 0 {
 				s.row = index
 			}
 			s.showLocal = preview.Files[s.row].LocalChanged
@@ -171,13 +178,9 @@ func (d *desktop) skillsPage(c *ui.Context) {
 				workPicker(c, "安装方式", &s.mode, []string{"受管复制", "受管软链"}, s.busy || s.loading, d.loadSkillTarget)
 			}
 			if pin := s.sharedPin(); pin != nil {
-				sum := pin.Digest
-				if pin.Commit != "" {
-					sum = pin.Commit
-				}
 				ui.Column(c).MinWidth(112).Gap(4).Children(func() {
 					ui.Text(c, "共享意图 pin").TextColor(muted)
-					ui.Text(c, sum[:min(12, len(sum))]).Bold().TextColor(ink)
+					ui.Text(c, skillShortPin(pin)).Bold().TextColor(ink)
 				})
 			}
 		})
@@ -211,10 +214,15 @@ func (d *desktop) skillsPage(c *ui.Context) {
 			d.skillInstallView(c)
 		})
 		workInspector(c, func() {
-			if s.row >= 0 && s.row < len(s.preview.Files) {
+			selected := s.row >= 0 && s.row < len(s.preview.Files)
+			if selected && !s.showPackages {
 				s.skillFileInspector(c)
+				ui.Button(c, "查看版本与来源").OnClick(func() { s.showPackages = true })
 			} else {
 				d.skillSourceInspector(c)
+				if selected {
+					ui.Button(c, "返回所选文件").OnClick(func() { s.showPackages = false })
+				}
 			}
 		})
 	})
@@ -225,7 +233,7 @@ func (d *desktop) skillInstallView(c *ui.Context) {
 	state := s.targetState
 	ui.Column(c).FillWidth().Gap(8).Children(func() {
 		section(c, "本机安装")
-		workDetail(c, "目标设备 · "+d.data.Device.Name, state.Path)
+		workDetail(c, "本机用户级目标 · "+d.data.Device.Name, state.Path)
 		switch state.Status {
 		case "installed":
 			label := "已安装"
@@ -258,7 +266,24 @@ func (d *desktop) skillPlanView(c *ui.Context) {
 	s := &d.skills
 	p := &s.preview
 	title := skillAction(s.action, p.Status)
-	section(c, title+"计划")
+	ui.Row(c).FillWidth().Gap(10).AlignItems(ui.Center).Wrap().Children(func() {
+		section(c, title+"计划")
+		if len(p.Issues) > 0 {
+			message := fmt.Sprintf("%d 项阻塞 · %s已暂停", len(p.Issues), title)
+			localChanges := 0
+			for _, file := range p.Files {
+				if file.LocalChanged {
+					localChanges++
+				}
+			}
+			if localChanges > 0 {
+				message = fmt.Sprintf("%d 个文件有本地修改 · %s已暂停", localChanges, title)
+			}
+			ui.Text(c, message).Bold().Padding(4, 7).Radius(4).Background(workWarningBG).TextColor(workWarning)
+		} else if !s.scanned.IsZero() {
+			ui.Text(c, "已重新扫描 · 0 项阻塞 · "+s.scanned.Local().Format("15:04:05")).TextColor(ink)
+		}
+	})
 	if s.busy {
 		ui.Text(c, "正在处理 "+s.name+" · "+s.target+"…").TextColor(muted)
 		return
@@ -267,11 +292,7 @@ func (d *desktop) skillPlanView(c *ui.Context) {
 		ui.Button(c, "重新扫描并生成计划").OnClick(func() { d.previewSkill(s.action) })
 		return
 	}
-	if len(p.Issues) > 0 {
-		ui.Textf(c, "%d 项阻塞 · %s已暂停", len(p.Issues), title).Bold().TextColor(workWarning)
-	} else if !s.scanned.IsZero() {
-		ui.Text(c, "已重新扫描 · 0 项阻塞 · "+s.scanned.Local().Format("15:04:05")).TextColor(ink)
-	} else {
+	if len(p.Issues) == 0 && s.scanned.IsZero() {
 		switch p.Status {
 		case "unchanged":
 			ui.Text(c, "候选 pin 与本机安装一致。").TextColor(muted)
@@ -310,28 +331,27 @@ func (d *desktop) skillPlanView(c *ui.Context) {
 			s.updateDiff()
 		})
 	}
-	if p.Before != nil && p.Before.Digest != "" {
-		workDetail(c, "本机已装包", skillPin(p.Before))
-	}
-	if p.After != nil {
-		workDetail(c, "候选包", skillPin(p.After))
-	}
-	if p.Link != "" {
-		workDetail(c, "软链来源", p.Link)
-	}
+	ui.Row(c).FillWidth().Gap(16).Wrap().Children(func() {
+		if p.Before != nil && p.Before.Digest != "" {
+			ui.Text(c, "本机已装 · "+skillShortPin(p.Before)).TextColor(muted)
+		}
+		if p.After != nil {
+			ui.Text(c, "候选包 · "+skillShortPin(p.After)).TextColor(ink)
+		}
+	})
 	if s.diff != nil {
 		s.skillDiffView(c)
 	}
-	scope := "写入本机目标和安装回执。"
+	scope := "写入本机用户级目标和安装回执。"
 	if s.sharedPin() != nil {
 		scope += "共享安装意图保留原值。"
 	}
 	ui.Text(c, scope).FillWidth().TextColor(muted)
-	skillIssues(c, p.Issues)
 	ui.Row(c).Gap(8).Wrap().Children(func() {
 		ui.Button(c, "重新扫描并生成计划").OnClick(func() { d.previewSkill(s.action) })
 		ui.PrimaryButton(c, "确认"+title).Disabled(p.Confirmation == "" || s.err != nil).OnClick(d.confirmSkill)
 	})
+	skillIssues(c, p.Issues)
 }
 
 func (s *skillsState) sharedPin() *app.SkillPackage {
@@ -353,7 +373,7 @@ func (s *skillsState) skillDiffView(c *ui.Context) {
 		label = "目标文件 → 将写入的版本"
 	}
 	ui.Text(c, label+" · "+file.Path).Bold().TextColor(ink)
-	editor.DiffView(c, s.diff).FillWidth().Height(158)
+	editor.DiffView(c, s.diff).FillWidth().Height(132)
 }
 
 func (d *desktop) skillSourceInspector(c *ui.Context) {
@@ -374,6 +394,18 @@ func (d *desktop) skillSourceInspector(c *ui.Context) {
 	} else if pkg := s.targetState.Available; pkg != nil {
 		workDetail(c, "可安装 pin", skillPin(pkg))
 		workDetail(c, "包来源", skillSource(pkg))
+	}
+	if pkg := s.preview.After; pkg != nil {
+		ui.Divider(c)
+		workDetail(c, "候选 pin", skillPin(pkg))
+		workDetail(c, "候选来源", skillSource(pkg))
+		workDetail(c, "许可证", pkg.License)
+		if pkg.Commit != "" {
+			workDetail(c, "候选包 SHA-256", pkg.Digest)
+		}
+		if s.preview.Link != "" {
+			workDetail(c, "软链来源", s.preview.Link)
+		}
 	}
 }
 
@@ -508,7 +540,18 @@ func skillPin(p *app.SkillPackage) string {
 	return pin
 }
 
+func skillShortPin(p *app.SkillPackage) string {
+	pin := p.Digest
+	if p.Commit != "" {
+		pin = p.Commit
+	}
+	return pin[:min(12, len(pin))]
+}
+
 func skillSource(p *app.SkillPackage) string {
+	if p.SourceKind == "private" {
+		return "工作区私有快照"
+	}
 	if p.Subdir != "" && p.Subdir != "." {
 		return p.SourceURL + " · " + p.Subdir
 	}
