@@ -156,6 +156,7 @@ func (a App) readDesktopLocalSkills(device string, entries map[string]DesktopSki
 type DesktopSkillTarget struct {
 	Path, Mode, Status  string
 	Installed           *SkillPackage
+	Available           *SkillPackage
 	Shared, CanRollback bool
 	Issues              []SkillProblem
 }
@@ -172,6 +173,9 @@ func (a App) ReadDesktopSkillTarget(ctx context.Context, name, target string, sy
 	if receipt.State == "" {
 		err = a.planSelectedSkill(ctx, &p, name, symlink)
 		out.Mode, out.Issues = p.Mode, p.Issues
+		if p.Package.Name != "" {
+			out.Available = &p.Package
+		}
 		return out, err
 	}
 	device, err := a.skillDevice(ctx)
