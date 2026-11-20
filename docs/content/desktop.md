@@ -90,6 +90,27 @@ review whether to include local-only data, and confirm the write. Backups are
 plaintext. The receipt identifies the destination and its `manifest.json`.
 [Recovery](recovery.md) explains the contents and how to restore them.
 
+## Review a Skill installation
+
+In **Skills**, choose a Project or the device-wide catalog, then choose the
+Skill and its user-level target. The page shows the approved shared pin and
+the device's installation receipt. Preview the file list and select a file to
+inspect its diff before confirming installation.
+
+For an installed Skill, choose the approved pin or the previous local version
+as the candidate. Resolve external file edits before rescanning the plan.
+Update and rollback write to this device. Use [Skills and artifacts](skills-and-artifacts.md)
+to register or approve a shared pin through the CLI.
+
+## Browse run artifacts
+
+In **产物** (Artifacts), select a Project and filter by run, source device or
+content state. The selected artifact shows its reported size, SHA-256 and
+content location when available. Local runs include their recorded completion
+scope and provenance. An item with available bytes can be verified and
+exported to a new file. For a metadata-only item, the inspector shows the
+reason the synchronized record omits the payload.
+
 ## Handle viewer states
 
 | Desktop message | Next step |
@@ -125,7 +146,3 @@ A proxy route checks the proxy port. Each remote environment displays its
 own available observations and reports its provider session as unknown.
 [Tasks and Resources](tasks-and-resources.md) covers local route setup.
 
-## Planned desktop scope
-
-The desktop roadmap includes Skills and Artifact management.
-[Skills and Artifacts #32](https://github.com/whynpc9/CtxFerry/issues/32)
