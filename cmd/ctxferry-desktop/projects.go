@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/whynpc9/CtxFerry/internal/app"
@@ -24,6 +25,9 @@ type projectPage struct {
 	ctx  context.Context
 	run  func(func() func())
 
+	observedAt                                   time.Time
+	onSelect                                     func(string)
+	managementLink                               func(*ui.Context, int)
 	started, busy                                bool
 	projectChoice, checkoutChoice, profileChoice string
 	projects                                     []app.DesktopProject
@@ -81,7 +85,9 @@ func (p *projectPage) refresh() {
 			p.projects = projects
 			project := p.currentProject()
 			if project == nil {
-				p.selectProject("")
+				if p.target.ProjectID != "" {
+					p.selectProject("")
+				}
 				return
 			}
 			if !slices.ContainsFunc(project.Checkouts, func(b app.Binding) bool { return b.ID == p.target.CheckoutID }) {
@@ -94,6 +100,9 @@ func (p *projectPage) refresh() {
 
 func (p *projectPage) selectProject(id string) {
 	p.target = app.ProjectConfigurationTarget{ProjectID: id}
+	if p.onSelect != nil {
+		p.onSelect(id)
+	}
 	p.tab = projectConfig
 	p.field, p.layer, p.layerChoice = 0, "device", layerLabel("device")
 	p.fieldRows = ui.ListState{}
@@ -192,6 +201,9 @@ func (p *projectPage) view(c *ui.Context) {
 	ui.Segmented(c, &p.tab, "Context", "资源", "Tasks", "配置", "Skills", "产物").FillEqually().Label("项目内容").Disabled(p.busy)
 	if p.tab != projectConfig {
 		p.loadRelated()
+		if p.managementLink != nil {
+			p.managementLink(c, p.tab)
+		}
 		p.relatedView(c)
 	} else if p.configErr != nil {
 		section(c, "配置暂不可用")
