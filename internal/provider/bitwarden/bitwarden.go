@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -101,6 +102,31 @@ func ValidLocator(ref provider.Locator) bool {
 	id, err := uuid.Parse(ref.EntryID)
 	return err == nil && id != uuid.Nil && strings.EqualFold(id.String(), ref.EntryID) &&
 		ref == (provider.Locator{EntryID: ref.EntryID})
+}
+
+func (a *adapter) ManagementURL(ctx context.Context, p provider.Profile, ref provider.Locator) (string, error) {
+	if !selectedProfile(p) || !ValidLocator(ref) {
+		return "", provider.ErrSecretUnavailable
+	}
+	output, err := a.run(ctx, nil, "status", "--nointeraction")
+	defer clear(output)
+	var status struct {
+		ServerURL *string `json:"serverUrl"`
+	}
+	if err != nil || json.Unmarshal(output, &status) != nil {
+		return "", provider.ErrSecretUnavailable
+	}
+	server := "https://vault.bitwarden.com"
+	if status.ServerURL != nil && *status.ServerURL != "" {
+		server = *status.ServerURL
+	}
+	link, err := url.Parse(server)
+	if err != nil || link.Scheme != "https" || link.Hostname() == "" || link.User != nil ||
+		link.RawQuery != "" || link.Fragment != "" {
+		return "", provider.ErrSecretUnavailable
+	}
+	link.Path = strings.TrimRight(link.Path, "/") + "/"
+	return link.String() + "#/vault?itemId=" + url.QueryEscape(ref.EntryID), nil
 }
 
 func (a *adapter) Resolve(ctx context.Context, p provider.Profile, session []byte, ref provider.Locator) ([]byte, error) {

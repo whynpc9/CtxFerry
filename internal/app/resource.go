@@ -81,6 +81,7 @@ type Observation struct {
 	Scope           ObservationScope `json:"scope"`
 	Status          string           `json:"status"`
 	ServiceVerified bool             `json:"serviceVerified"`
+	EnvironmentKind string           `json:"environmentKind,omitempty"`
 }
 
 var resourceToken = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,62}$`)
@@ -238,7 +239,7 @@ func (a App) ListResources(ctx context.Context, selector, cwd string) (ResourceL
 	return listProjectResources(ctx, db, project)
 }
 
-func listProjectResources(ctx context.Context, db *sql.DB, project Project) (ResourceList, error) {
+func listProjectResources(ctx context.Context, db taskReader, project Project) (ResourceList, error) {
 	out := ResourceList{Project: project, Resources: []Resource{}}
 	rows, err := db.QueryContext(ctx, "SELECT metadata"+liveResources+" ORDER BY id", project.ID)
 	if err != nil {
@@ -401,6 +402,10 @@ func (a App) InspectResource(ctx context.Context, selector, cwd, id string) (Res
 const resourceCheckTimeout = 2 * time.Second
 
 func (a App) CheckResource(ctx context.Context, selector, cwd, id string) (Observation, error) {
+	return a.checkResource(ctx, selector, cwd, id, nil)
+}
+
+func (a App) checkResource(ctx context.Context, selector, cwd, id string, expected *DesktopResourceProbe) (Observation, error) {
 	var out Observation
 	db, project, err := a.openSubscribedProject(ctx, selector, cwd)
 	if err != nil {
@@ -414,14 +419,13 @@ func (a App) CheckResource(ctx context.Context, selector, cwd, id string) (Obser
 	if detail.Route.Status != "resolved" {
 		return out, Fail(detail.Route.Status, "no unambiguous TCP route for this execution environment")
 	}
+	scope := resourceProbeScope(detail)
+	if expected != nil && (detail.Environment.DeviceID != expected.DeviceID || scope != expected.Scope) {
+		return out, Fail("selection-changed", "the TCP target or execution environment changed; review the new route")
+	}
 	obsID, err := newID()
 	if err != nil {
 		return out, err
-	}
-	scope := ObservationScope{Kind: "service-endpoint", Target: detail.Route.Endpoint, Network: detail.Route.Network, OS: detail.Environment.OS, Arch: detail.Environment.Arch, ResourceRevision: detail.Resource.Revision}
-	if detail.Route.Proxy != "" {
-		scope.Kind = "proxy-endpoint"
-		scope.Target = detail.Route.Proxy
 	}
 	dialer := net.Dialer{Timeout: resourceCheckTimeout}
 	conn, dialErr := dialer.DialContext(ctx, "tcp", scope.Target)
@@ -430,7 +434,8 @@ func (a App) CheckResource(ctx context.Context, selector, cwd, id string) (Obser
 		conn.Close()
 		status = "reachable"
 	}
-	out = Observation{ID: obsID, ResourceID: id, DeviceID: detail.Environment.DeviceID, Tool: "tcp-connect", ObservedAt: now(), Scope: scope, Status: status}
+	out = Observation{ID: obsID, ResourceID: id, DeviceID: detail.Environment.DeviceID, Tool: "tcp-connect",
+		ObservedAt: now(), Scope: scope, Status: status, EnvironmentKind: localDesktopEnvironment()}
 	raw, err := json.Marshal(out)
 	if err != nil {
 		return out, err
@@ -440,4 +445,13 @@ func (a App) CheckResource(ctx context.Context, selector, cwd, id string) (Obser
 	defer cancel()
 	_, err = db.ExecContext(recordCtx, "INSERT INTO resource_observations(resource_id,device_id,data) VALUES(?,?,?)", id, out.DeviceID, string(raw))
 	return out, err
+}
+
+func resourceProbeScope(detail ResourceDetail) ObservationScope {
+	scope := ObservationScope{Kind: "service-endpoint", Target: detail.Route.Endpoint, Network: detail.Route.Network, OS: detail.Environment.OS, Arch: detail.Environment.Arch, ResourceRevision: detail.Resource.Revision}
+	if detail.Route.Proxy != "" {
+		scope.Kind = "proxy-endpoint"
+		scope.Target = detail.Route.Proxy
+	}
+	return scope
 }

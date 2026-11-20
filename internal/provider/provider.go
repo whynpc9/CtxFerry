@@ -80,6 +80,13 @@ type Adapter interface {
 	Resolve(context.Context, Profile, []byte, Locator) ([]byte, error)
 }
 
+// EntryManager supplies the provider's external management page for an exact
+// reference. Implementations source the server from the adapter or this
+// device's provider configuration.
+type EntryManager interface {
+	ManagementURL(context.Context, Profile, Locator) (string, error)
+}
+
 // Importer is optional and must be advertised for the selected method. Import
 // creates one exact shared entry and must never overwrite or adopt an entry.
 // The value and session are borrowed for the duration of the call.
