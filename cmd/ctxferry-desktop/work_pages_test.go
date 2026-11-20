@@ -26,7 +26,9 @@ func TestNavigateSkillsAndArtifacts(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := t.TempDir()
-	if err := os.WriteFile(filepath.Join(source, "SKILL.md"), []byte("---\nname: sample-skill\n---\nSynthetic instructions\n"), 0600); err != nil {
+	skillFile := filepath.Join(source, "SKILL.md")
+	const first = "---\nname: sample-skill\n---\nSynthetic instructions\n"
+	if err := os.WriteFile(skillFile, []byte(first), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := core.AddSkill(ctx, app.SkillImport{Local: source, Share: "private"}); err != nil {
@@ -91,6 +93,32 @@ func TestNavigateSkillsAndArtifacts(t *testing.T) {
 		t.Fatal("view did not reload the installation receipt")
 	}
 	see("候选 pin")
+	if err := os.WriteFile(skillFile, []byte(first+"Approved change\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	approved, err := core.AddSkill(ctx, app.SkillImport{Local: source, Share: "private"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.loadSkills()
+	window.Frame()
+	click("预览更新…")
+	click("确认更新")
+	prior := d.skills.targetState.Previous
+	if prior == nil {
+		t.Fatal("update did not retain the previous pin")
+	}
+	click("共享 · " + skillShortPin(&approved))
+	click("上次本机 · " + skillShortPin(prior))
+	click("预览回滚…")
+	see("回滚计划")
+	if d.skills.preview.After == nil || d.skills.preview.After.Digest != prior.Digest {
+		t.Fatal("rollback did not preview the selected pin")
+	}
+	click("确认回滚")
+	if got, err := os.ReadFile(filepath.Join(target, "SKILL.md")); err != nil || string(got) != first {
+		t.Fatalf("rollback bytes %q: %v", got, err)
+	}
 
 	click("产物")
 	d.openProjectArtifacts(projectID)
