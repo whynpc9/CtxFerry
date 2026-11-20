@@ -1,0 +1,156 @@
+{
+  "cli-after-alt-profile": {
+    "checkout": "/private/tmp/cf29-copy.XEFQIT/dbark-alt",
+    "profile": "diagnostics",
+    "fields": [
+      {
+        "name": "parallelism",
+        "value": 2,
+        "layer": "global"
+      },
+      {
+        "name": "timeoutSeconds",
+        "value": 120,
+        "layer": "checkout"
+      },
+      {
+        "name": "workingDirectory",
+        "value": "/private/tmp/cf29-copy.XEFQIT/dbark-alt/missing-tools",
+        "layer": "checkout"
+      }
+    ],
+    "sourceSHA256": "8b5d6e380feb902b9de9e1406adc23f79056fa7a3086275bd2d3470f0d111900"
+  },
+  "cli-after-cancel": {
+    "checkout": "/private/tmp/cf29-copy.XEFQIT/dbark",
+    "profile": "development",
+    "fields": [
+      {
+        "name": "parallelism",
+        "value": 4,
+        "layer": "profile"
+      },
+      {
+        "name": "timeoutSeconds",
+        "value": 90,
+        "layer": "device"
+      },
+      {
+        "name": "workingDirectory",
+        "value": "/private/tmp/cf29-copy.XEFQIT/dbark/tools",
+        "layer": "checkout"
+      }
+    ],
+    "sourceSHA256": "d04005d4173dc6d4d23dd16463a759de9c9f423f37cbae3ddb865c9cbbf8d679"
+  },
+  "cli-after-edit": {
+    "checkout": "/private/tmp/cf29-copy.XEFQIT/dbark",
+    "profile": "development",
+    "fields": [
+      {
+        "name": "parallelism",
+        "value": 4,
+        "layer": "profile"
+      },
+      {
+        "name": "timeoutSeconds",
+        "value": 65,
+        "layer": "project"
+      },
+      {
+        "name": "workingDirectory",
+        "value": "/private/tmp/cf29-copy.XEFQIT/dbark/tools",
+        "layer": "checkout"
+      }
+    ],
+    "sourceSHA256": "74926a440a7206286368323a299be64706893b495fec199f74b9886602bc5655"
+  },
+  "cli-after-escape": {
+    "checkout": "/private/tmp/cf29-copy.XEFQIT/dbark",
+    "profile": "development",
+    "fields": [
+      {
+        "name": "parallelism",
+        "value": 4,
+        "layer": "profile"
+      },
+      {
+        "name": "timeoutSeconds",
+        "value": 90,
+        "layer": "device"
+      },
+      {
+        "name": "workingDirectory",
+        "value": "/private/tmp/cf29-copy.XEFQIT/dbark/tools",
+        "layer": "checkout"
+      }
+    ],
+    "sourceSHA256": "d04005d4173dc6d4d23dd16463a759de9c9f423f37cbae3ddb865c9cbbf8d679"
+  },
+  "cli-after-reset": {
+    "checkout": "/private/tmp/cf29-copy.XEFQIT/dbark",
+    "profile": "development",
+    "fields": [
+      {
+        "name": "parallelism",
+        "value": 4,
+        "layer": "profile"
+      },
+      {
+        "name": "timeoutSeconds",
+        "value": 60,
+        "layer": "project"
+      },
+      {
+        "name": "workingDirectory",
+        "value": "/private/tmp/cf29-copy.XEFQIT/dbark/tools",
+        "layer": "checkout"
+      }
+    ],
+    "sourceSHA256": "01ad22bf3b9aa7bf8c9de8f0dd18eace0a3ddfb09e54e022d9895026bc83ec45"
+  },
+  "cli-before": {
+    "checkout": "/private/tmp/cf29-copy.XEFQIT/dbark",
+    "profile": "development",
+    "fields": [
+      {
+        "name": "parallelism",
+        "value": 4,
+        "layer": "profile"
+      },
+      {
+        "name": "timeoutSeconds",
+        "value": 90,
+        "layer": "device"
+      },
+      {
+        "name": "workingDirectory",
+        "value": "/private/tmp/cf29-copy.XEFQIT/dbark/tools",
+        "layer": "checkout"
+      }
+    ],
+    "sourceSHA256": "d04005d4173dc6d4d23dd16463a759de9c9f423f37cbae3ddb865c9cbbf8d679"
+  },
+  "cli-primary-unchanged": {
+    "checkout": "/private/tmp/cf29-copy.XEFQIT/dbark",
+    "profile": "development",
+    "fields": [
+      {
+        "name": "parallelism",
+        "value": 4,
+        "layer": "profile"
+      },
+      {
+        "name": "timeoutSeconds",
+        "value": 65,
+        "layer": "project"
+      },
+      {
+        "name": "workingDirectory",
+        "value": "/private/tmp/cf29-copy.XEFQIT/dbark/tools",
+        "layer": "checkout"
+      }
+    ],
+    "sourceSHA256": "74926a440a7206286368323a299be64706893b495fec199f74b9886602bc5655"
+  }
+}

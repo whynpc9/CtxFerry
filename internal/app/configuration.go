@@ -379,34 +379,10 @@ func explainConfigurationAt(ctx context.Context, db *sql.DB, loc configurationLo
 		}
 		return nil
 	}
-	project := Scope{"project", loc.project.ID}
-	shared := []struct{ layer, id string }{
-		{layerGlobal, configID(loc.workspace, Scope{"workspace", loc.workspace}, "")},
-		{layerProject, configID(loc.workspace, project, "")},
-	}
 	if out.Profile != nil {
-		shared = append(shared, struct{ layer, id string }{layerProfile, out.Profile.ID})
 		updateTimestamp(out.Profile.Origin.UpdatedAt)
 	}
-	for _, layer := range shared {
-		if err := requireNoConflict(ctx, tx, layer.id); err != nil {
-			return out, err
-		}
-		v, found, err := readConfiguration(tx.QueryRowContext(ctx, "SELECT payload FROM configurations WHERE id=?", layer.id), false)
-		if err != nil {
-			return out, err
-		}
-		if !found {
-			if layer.layer == layerProfile {
-				return out, Fail("profile-not-found", "Profile was not found in this Project")
-			}
-			continue
-		}
-		if err := apply(v, ConfigOrigin{Layer: layer.layer, Source: "configuration", ID: layer.id, Storage: "shared"}); err != nil {
-			return out, err
-		}
-	}
-	if err := applyLocalConfiguration(ctx, tx, loc, apply); err != nil {
+	if err := readConfigurationLayers(ctx, tx, loc, out.Profile, apply); err != nil {
 		return out, err
 	}
 	if entry, ok := values["workingDirectory"]; ok {
@@ -422,6 +398,37 @@ func explainConfigurationAt(ctx context.Context, db *sql.DB, loc configurationLo
 	}
 	sort.Slice(out.Values, func(i, j int) bool { return out.Values[i].Field < out.Values[j].Field })
 	return out, nil
+}
+
+// readConfigurationLayers visits configured layers in increasing precedence.
+func readConfigurationLayers(ctx context.Context, q rowQuerier, loc configurationLocation, profile *SelectedProfile, apply func(configuration, ConfigOrigin) error) error {
+	project := Scope{"project", loc.project.ID}
+	shared := []struct{ layer, id string }{
+		{layerGlobal, configID(loc.workspace, Scope{"workspace", loc.workspace}, "")},
+		{layerProject, configID(loc.workspace, project, "")},
+	}
+	if profile != nil {
+		shared = append(shared, struct{ layer, id string }{layerProfile, profile.ID})
+	}
+	for _, layer := range shared {
+		if err := requireNoConflict(ctx, q, layer.id); err != nil {
+			return err
+		}
+		v, found, err := readConfiguration(q.QueryRowContext(ctx, "SELECT payload FROM configurations WHERE id=?", layer.id), false)
+		if err != nil {
+			return err
+		}
+		if !found {
+			if layer.layer == layerProfile {
+				return Fail("profile-not-found", "Profile was not found in this Project")
+			}
+			continue
+		}
+		if err := apply(v, ConfigOrigin{Layer: layer.layer, Source: "configuration", ID: layer.id, Storage: "shared"}); err != nil {
+			return err
+		}
+	}
+	return applyLocalConfiguration(ctx, q, loc, apply)
 }
 
 func applyLocalConfiguration(ctx context.Context, q rowQuerier, loc configurationLocation, apply func(configuration, ConfigOrigin) error) error {

@@ -52,6 +52,23 @@ confirmed sync time, service state and locally available authentication evidence
 help you decide whether to run an active check. Use [Diagnostics](diagnostics.md)
 to check one credential mapping or diagnose a service.
 
+## Edit Project configuration
+
+Choose **打开项目** from Overview, or open **项目** and select the Project.
+Choose a local Checkout if the Project has several bindings. The Profile
+picker saves your choice for that Checkout on this device.
+
+Open **配置** and select a field. The source list shows the workspace default,
+Project, Profile, device and Checkout layers in inheritance order. Choose the
+write layer in the inspector. Preview an edit or **预览恢复继承…** before
+confirming. The preview identifies affected local Checkouts and the values
+they retain or adopt. Shared layers become eligible for publication through
+the normal sync workflow.
+
+After confirmation, the configuration table reloads. From the same Checkout,
+run `ctxferry context explain` to inspect the effective value and origin in the
+CLI. See the [ordinary configuration guide](context.md).
+
 ## Read Sync
 
 ![macOS Sync showing a configured private repository and the local queue](assets/desktop-sync-macos.png)
@@ -110,9 +127,5 @@ own available observations and reports its provider session as unknown.
 
 ## Planned desktop scope
 
-The desktop roadmap includes a Projects configuration editor, conflict
-resolution, Skills, and Artifacts. Follow issues
-[#29](https://github.com/whynpc9/CtxFerry/issues/29),
-[#31](https://github.com/whynpc9/CtxFerry/issues/31), and
-[#32](https://github.com/whynpc9/CtxFerry/issues/32) for that planned work.
-Until then, use the linked CLI guides for those operations.
+The desktop roadmap includes Skills and Artifact management.
+[Skills and Artifacts #32](https://github.com/whynpc9/CtxFerry/issues/32)

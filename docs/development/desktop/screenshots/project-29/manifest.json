@@ -1,0 +1,118 @@
+{
+  "implementation": "79556e7a4fc5c1f2324ff78efcf5c058e6a3958d",
+  "fixture": "/private/tmp/cf29-copy.XEFQIT",
+  "window_exit": 0,
+  "artifact": "real MyGo native macOS window, app bundle and automation plugin",
+  "design": "plans/desktop-design/04-project.png",
+  "go_build": [
+    "build\tvcs.revision=79556e7a4fc5c1f2324ff78efcf5c058e6a3958d",
+    "build\tvcs.modified=false"
+  ],
+  "upstream_candidate": null,
+  "images": [
+    {
+      "file": "01-project-two-checkouts.png",
+      "scene": "Overview 的项目 UUID 进入项目详情；有两个 Checkout 等待选择",
+      "width": 2360,
+      "height": 1436,
+      "focused": true,
+      "sha256": "9200843978fc59df5481075b66cdd81b97944f266c7247d2cbde497a39131e18"
+    },
+    {
+      "file": "02-configuration.png",
+      "scene": "development · timeout 设备层 90 · 方案并行 4 · Checkout 的 tools",
+      "width": 2360,
+      "height": 1436,
+      "focused": true,
+      "sha256": "d2cfdc8f33cd7fa697d747ed84437a592f312e85499a9aa234bb21dbc07069aa"
+    },
+    {
+      "file": "03-reset-preview.png",
+      "scene": "恢复继承确认显示设备层、目标、90 秒 → 60 秒与项目来源",
+      "width": 2360,
+      "height": 1436,
+      "focused": true,
+      "sha256": "81437addbc85b10f833232846aa29605237a6ed4c571e9a3a3ae004b9cd60af6"
+    },
+    {
+      "file": "04-reset-receipt.png",
+      "scene": "恢复继承成功，生效值 60 秒来自项目层",
+      "width": 2360,
+      "height": 1436,
+      "focused": true,
+      "sha256": "4d45087acb1e206d0376baecf2c5311a7cc68ff28aa1a44afdfbf2fccb5d12be"
+    },
+    {
+      "file": "05-shared-edit-preview.png",
+      "scene": "保存到项目共享层 · 60 秒 → 65 秒",
+      "width": 2360,
+      "height": 1436,
+      "focused": true,
+      "sha256": "fee9d4ab9f71bd7983d3508d559f176bf32faddafe94929d802650af80d16be1"
+    },
+    {
+      "file": "06-shared-edit-receipt.png",
+      "scene": "本机共享目录写入 · 项目层 65 秒",
+      "width": 2360,
+      "height": 1436,
+      "focused": true,
+      "sha256": "5433fbf1387ed5f098c3af3dcef258deb8b8f2f7821284c7eb722a17df8e7a89"
+    },
+    {
+      "file": "07-working-directory-unavailable.png",
+      "scene": "另一 Checkout 在保持 120 秒覆盖时逐字段提示 missing-tools 缺失",
+      "width": 2360,
+      "height": 1436,
+      "focused": true,
+      "sha256": "2bf576f5ea8522e4f0f4e1e1f145cc82daea1a696239fc035023147d801560fa"
+    },
+    {
+      "file": "08-project-profile-switch.png",
+      "scene": "diagnostics 仅保存于备用 Checkout",
+      "width": 2360,
+      "height": 1436,
+      "focused": true,
+      "sha256": "9d7015d2d021c11a40a0250a520b201fb5f294b126f001ff84a3ef2f1a72e050"
+    },
+    {
+      "file": "09-context.png",
+      "scene": "项目 Context 详情与披露规则",
+      "width": 2360,
+      "height": 1436,
+      "focused": true,
+      "sha256": "0b238cdb21b865e81d51a1c355056f224a2820630fa46baada334082c7518863"
+    },
+    {
+      "file": "10-resource.png",
+      "scene": "项目资源索引",
+      "width": 2360,
+      "height": 1436,
+      "focused": true,
+      "sha256": "28696e4d9f5c8421e08c3d17d0b7bd07ee4365ded6c4edabc1ea50b3652e82c4"
+    },
+    {
+      "file": "11-task.png",
+      "scene": "Task 用途、输入、资源槽位及凭据要求",
+      "width": 2360,
+      "height": 1436,
+      "focused": true,
+      "sha256": "511eee6b7bec158aac778465dbd225a219d241c16392f19b67cf9861e95ed33e"
+    },
+    {
+      "file": "12-skills.png",
+      "scene": "项目 Skill 共享选择",
+      "width": 2360,
+      "height": 1436,
+      "focused": true,
+      "sha256": "5754bd03a3a92e541b3dc97f4bc4ff9a3f5c19e804ea8532ee9be6566b37542b"
+    },
+    {
+      "file": "13-artifacts.png",
+      "scene": "项目产物索引",
+      "width": 2360,
+      "height": 1436,
+      "focused": true,
+      "sha256": "3afc36bc86d79e4729214d5a99fff79976cd6353cb3ce674ee225754274b45a8"
+    }
+  ]
+}

@@ -23,6 +23,7 @@ type desktop struct {
 	err     error
 
 	overviewState    overviewState
+	project          projectPage
 	syncState        syncPageState
 	conflict         *conflictPage
 	resolvedRevision string

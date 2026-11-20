@@ -27,8 +27,12 @@ type ConfigurationReceipt struct {
 }
 
 func (a App) ChangeConfiguration(ctx context.Context, selector, cwd string, change ConfigurationChange) (ConfigurationReceipt, error) {
+	return a.changeConfiguration(ctx, selector, cwd, change, nil)
+}
+
+func (a App) changeConfiguration(ctx context.Context, selector, cwd string, change ConfigurationChange, resolve func(context.Context, projectReader) (configurationLocation, error)) (ConfigurationReceipt, error) {
 	out := ConfigurationReceipt{Layer: change.Layer, Profile: change.Profile, Field: change.Field, Storage: "shared"}
-	local := change.Layer == layerDevice || change.Layer == layerCheckout
+	local := localConfigurationLayer(change.Layer)
 	if local {
 		out.Storage = "local-only"
 	}
@@ -74,24 +78,33 @@ func (a App) ChangeConfiguration(ctx context.Context, selector, cwd string, chan
 		return out, err
 	}
 	defer db.Close()
-	var loc configurationLocation
-	if change.Layer == layerGlobal {
-		err = db.QueryRowContext(ctx, "SELECT id FROM workspace").Scan(&loc.workspace)
-	} else {
-		loc, err = configLocation(ctx, db, selector, cwd)
-	}
-	if err != nil {
-		return out, err
+	if resolve == nil {
+		var loc configurationLocation
+		if change.Layer == layerGlobal {
+			err = db.QueryRowContext(ctx, "SELECT id FROM workspace").Scan(&loc.workspace)
+		} else {
+			loc, err = configLocation(ctx, db, selector, cwd)
+		}
+		if err != nil {
+			return out, err
+		}
+		resolve = func(context.Context, projectReader) (configurationLocation, error) {
+			return loc, nil
+		}
 	}
 	if local {
-		checkout := ""
-		if change.Layer == layerCheckout {
-			checkout, err = requireCheckout(loc)
-			if err != nil {
-				return out, err
-			}
-		}
 		err = store.Write(ctx, db, func(c *sql.Conn) error {
+			loc, err := resolve(ctx, c)
+			if err != nil {
+				return err
+			}
+			checkout := ""
+			if change.Layer == layerCheckout {
+				checkout, err = requireCheckout(loc)
+				if err != nil {
+					return err
+				}
+			}
 			v, exists, err := readConfiguration(c.QueryRowContext(ctx, `SELECT payload FROM local_configurations
 				WHERE device_id=? AND project_id=? AND checkout=?`, loc.device, loc.project.ID, checkout), true)
 			if err != nil || (change.Value == nil && !exists) {
@@ -114,12 +127,16 @@ func (a App) ChangeConfiguration(ctx context.Context, selector, cwd string, chan
 	if err := a.prepareBaseline(ctx, db); err != nil {
 		return out, err
 	}
-	scope := Scope{"workspace", loc.workspace}
-	if change.Layer != layerGlobal {
-		scope = Scope{"project", loc.project.ID}
-	}
-	out.ID = configID(loc.workspace, scope, change.Profile)
 	err = store.Write(ctx, db, func(c *sql.Conn) error {
+		loc, err := resolve(ctx, c)
+		if err != nil {
+			return err
+		}
+		scope := Scope{"workspace", loc.workspace}
+		if change.Layer != layerGlobal {
+			scope = Scope{"project", loc.project.ID}
+		}
+		out.ID = configID(loc.workspace, scope, change.Profile)
 		if err := requireNoConflict(ctx, c, out.ID); err != nil {
 			return err
 		}
@@ -153,7 +170,7 @@ func (change ConfigurationChange) apply(v *configuration) bool {
 		}
 		delete(v.Values, change.Field)
 	} else {
-		value, _ := configValue(change.Field, change.Value, change.Layer == layerDevice || change.Layer == layerCheckout)
+		value, _ := configValue(change.Field, change.Value, localConfigurationLayer(change.Layer))
 		raw, _ := json.Marshal(value)
 		if string(raw) == string(v.Values[change.Field]) {
 			return false
@@ -184,6 +201,16 @@ type ProfileSelection struct {
 }
 
 func (a App) SelectProfile(ctx context.Context, selector, cwd, name string) (ProfileSelection, error) {
+	return a.selectProfile(ctx, selector, cwd, name, nil)
+}
+
+// SelectProjectCheckoutProfile saves a Profile against an explicitly selected
+// local binding, with the same persistence and validation as profile select.
+func (a App) SelectProjectCheckoutProfile(ctx context.Context, target ProjectConfigurationTarget, name string) (ProfileSelection, error) {
+	return a.selectProfile(ctx, "", "", name, &target)
+}
+
+func (a App) selectProfile(ctx context.Context, selector, cwd, name string, target *ProjectConfigurationTarget) (ProfileSelection, error) {
 	out := ProfileSelection{}
 	if name != "" && !profileName(name) {
 		return out, Fail("invalid-profile", "Profile name must be a slug of up to 63 characters")
@@ -193,23 +220,35 @@ func (a App) SelectProfile(ctx context.Context, selector, cwd, name string) (Pro
 		return out, err
 	}
 	defer db.Close()
-	loc, err := configLocation(ctx, db, selector, cwd)
-	if err != nil {
-		return out, err
+	var loc configurationLocation
+	if target == nil {
+		loc, err = configLocation(ctx, db, selector, cwd)
+		if err != nil {
+			return out, err
+		}
 	}
-	path, err := requireCheckout(loc)
-	if err != nil {
-		return out, err
-	}
-	out.Checkout = *loc.checkout
 	err = store.Write(ctx, db, func(c *sql.Conn) error {
+		if target != nil {
+			loc, err = projectConfigurationLocation(ctx, c, *target)
+			if err != nil {
+				return err
+			}
+			if err := requireAvailableProjectCheckout(loc); err != nil {
+				return err
+			}
+		}
+		path, err := requireCheckout(loc)
+		if err != nil {
+			return err
+		}
+		out.Checkout = *loc.checkout
 		if name == "" {
 			_, err := c.ExecContext(ctx, "DELETE FROM profile_selections WHERE device_id=? AND project_id=? AND checkout=?", loc.device, loc.project.ID, path)
 			return err
 		}
 		id := configID(loc.workspace, Scope{"project", loc.project.ID}, name)
 		var exists int
-		err := c.QueryRowContext(ctx, "SELECT 1 FROM configurations WHERE id=?", id).Scan(&exists)
+		err = c.QueryRowContext(ctx, "SELECT 1 FROM configurations WHERE id=?", id).Scan(&exists)
 		if errors.Is(err, sql.ErrNoRows) {
 			return Fail("profile-not-found", "Profile was not found in this Project")
 		}

@@ -1,0 +1,46 @@
+{
+  "implementation": "5286f8be3b2d9f171c98b514dd0172b768bb5fec",
+  "fixture": "/private/tmp/cf29-fleet.EosDbu",
+  "window_exit": 0,
+  "artifact": "real MyGo native macOS window, app bundle and automation plugin",
+  "design": "plans/desktop-design/04-project.png",
+  "go_build": [
+    "build\tvcs.revision=5286f8be3b2d9f171c98b514dd0172b768bb5fec",
+    "build\tvcs.modified=false"
+  ],
+  "upstream_candidate": null,
+  "images": [
+    {
+      "file": "02-configuration.png",
+      "scene": "配置和项目路由，Fleet 与凭据已注册",
+      "width": 2360,
+      "height": 1436,
+      "focused": true,
+      "sha256": "f0cfa6c0f1d280698f254d61964e064aa47de4ecdc4e80768c23e2f372e55ef4"
+    },
+    {
+      "file": "10-resource.png",
+      "scene": "项目资源索引已显示 Fleet 入口",
+      "width": 2360,
+      "height": 1436,
+      "focused": true,
+      "sha256": "cf5f4854e0483b67f3c310f306ec9c699c3dff451a7f9ec3aa2e2a48726776f3"
+    },
+    {
+      "file": "10a-fleet-scoped.png",
+      "scene": "真实 Fleet 页面只显示路由传入的 dbark",
+      "width": 2360,
+      "height": 1436,
+      "focused": true,
+      "sha256": "94f17d5c3e32e992871947bf1ad5c61783f208ebd3df959870d0c203df301cac"
+    },
+    {
+      "file": "10b-project-return.png",
+      "scene": "回到原 Project 的资源分段及原 Checkout",
+      "width": 2360,
+      "height": 1436,
+      "focused": true,
+      "sha256": "f8b4951f0b38ca500c91e7f89d5f0e343798ee197973bb045b5108966531e488"
+    }
+  ]
+}
