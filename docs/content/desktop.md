@@ -1,147 +1,114 @@
 ---
-title: Native desktop preview
+title: Native desktop
 ---
 
-The desktop opens the same local Workspace as the CLI.
-**设备总览** (Overview) shows this device's Projects and sync health. **同步**
-(Sync) lets you inspect queued records, check a configured remote and create
-a local backup. Publishing shared records runs through the CLI or sync service.
+CtxFerry desktop opens the same local Workspace as the CLI, using native MyGo widgets only. Home answers what needs attention, Projects explain what a Project uses on this device, Catalog holds cross-Project tools, and Sync shows what can travel to another device.
 
-## Start the viewer
+## Start the app
 
-Use a desktop session supported by the native UI and a Go toolchain compatible
-with `cmd/ctxferry-desktop/go.mod`. From the CtxFerry repository root, run:
+Use a desktop session supported by MyGo Native UI and a Go toolchain compatible with `cmd/ctxferry-desktop/go.mod`:
 
 ```sh
 cd cmd/ctxferry-desktop
 go run .
 ```
 
-The desktop is its own Go module and refers to the surrounding checkout's
-application core. The window opens with **设备总览** selected.
+The window starts at 1280×800 and supports a compact 1024×680 layout. The compact layout uses an icon rail and keeps Configuration, Conflict and Backup confirmations in a pinned action bar outside the scrolling page.
 
-To inspect an isolated Workspace, set the same data root for both CLI and
-viewer. For example, in separate shells on macOS or Linux:
+To inspect an isolated Workspace, set the same data root for the CLI and desktop:
 
 ```sh
 export CTXFERRY_DATA_DIR=/path/to/isolated-ctxferry
 ctxferry init
-```
-
-Then start the desktop from `cmd/ctxferry-desktop` with that same environment:
-
-```sh
+cd /path/to/CtxFerry/cmd/ctxferry-desktop
 go run .
 ```
 
-The desktop honors `CTXFERRY_DATA_DIR`; passing `--data-dir` only to a CLI
-command does not change the viewer's location. Initialize and bind through the
-CLI first if the viewer reports **尚未初始化工作区**.
+The desktop honors `CTXFERRY_DATA_DIR`; passing `--data-dir` only to a CLI command does not change the desktop location. Every CLI handoff shown by the app includes the current root explicitly.
 
-## Read Overview
+## Open or create a Workspace
 
-![macOS Overview showing two bound Projects and their sync counts](assets/desktop-overview-macos.png)
+The readiness gate distinguishes a fresh root, a catalog needing migration, a newer schema and an unreadable catalog.
 
-This macOS example has two bound Projects, two records waiting to publish and
-one unresolved conflict. Select a Project to inspect its bound directories.
-Choose **查看队列** or **查看冲突** to open the corresponding records in Sync.
-The desktop counts conflicts separately from the pending queue.
+- **Create Workspace** previews the target and initializes the local catalog only after confirmation. No remote is configured and nothing is uploaded.
+- **Join a Workspace…** generates a `ctxferry join` command with optional Project subscriptions. Run it in a terminal and choose Refresh. Bind a Checkout afterward from Projects, using the resolved Project ID.
+- For migration or diagnostics, use the displayed CLI handoff and then Refresh. The desktop does not migrate a catalog implicitly or expose raw database diagnostics.
 
-Choose **刷新本地视图** after a CLI operation to reread local state. The last
-confirmed sync time, service state and locally available authentication evidence
-help you decide whether to run an active check. Use [Diagnostics](diagnostics.md)
-to check one credential mapping or diagnose a service.
+After a failed refresh, the last successful snapshot remains visible but stale. Writes, Backup and remote checks stay locked until a successful reread.
 
-## Edit Project configuration
+## Home
 
-Choose **打开项目** from Overview, or open **项目** and select the Project.
-Choose a local Checkout if the Project has several bindings. The Profile
-picker saves your choice for that Checkout on this device.
+Home separates **Waiting**, **Conflicts**, and **Blocked** counts. A conflict is not also counted as blocked-only or waiting. Each tile opens Sync → Queue with the matching filter.
 
-Open **配置** and select a field. The source list shows the workspace default,
-Project, Profile, device and Checkout layers in inheritance order. Choose the
-write layer in the inspector. Preview an edit or **预览恢复继承…** before
-confirming. The preview identifies affected local Checkouts and the values
-they retain or adopt. Shared layers become eligible for publication through
-the normal sync workflow.
+The Bound Projects card shows real local directories and flags unavailable paths. This device shows catalog compatibility, local read time, sync service state and the last confirmed commit separately from provider or publication claims. An empty Workspace includes a real `ctxferry project bind` handoff.
 
-After confirmation, the configuration table reloads. From the same Checkout,
-run `ctxferry context explain` to inspect the effective value and origin in the
-CLI. See the [ordinary configuration guide](context.md).
+## Projects and Configuration
 
-## Read Sync
+Projects are grouped by subscription and then name. An unsubscribed Project retains its identity and offers `ctxferry project subscribe`; the app never substitutes another writable target.
 
-![macOS Sync showing a configured private repository and the local queue](assets/desktop-sync-macos.png)
+A subscribed Project overview lists its local Checkouts. Select the exact Checkout before changing its saved Profile. A Profile change shows the affected Checkout and resulting scope before saving, then reloads Configuration, Context and Task trust.
 
-This is the same test Workspace. For a configured repository, inspect the
-branch, confirmed commit and measured Git history size. Select **检查远端** to
-check Git reachability and repository privacy. Filter the queue and select a
-record for its details. For a conflict, copy the CLI comparison command and
-follow [Conflict resolution](recovery.md#resolve-a-record-conflict).
+Configuration provides:
 
-For a new Workspace, follow the on-screen terminal commands to configure a
-private repository, preview the shared plaintext and confirm first publication.
-See [Private sync](sync.md) for the prerequisites and how to review the preview.
+- effective values and their origins;
+- ordered Workspace-default, Project, Profile, Device and Checkout contributions;
+- an explicit writable layer and its shared or local-only scope;
+- previews of affected local Checkouts, retained or inherited values, and publication effects;
+- a read-only preview ID bound to the core's stale-write check;
+- a Written / Read back / Published receipt.
 
-## Create a local backup
+The first three layers are shared. Device and Checkout layers stay on each device, so another device can override a shared value locally in ways this device cannot see. A shared write is queued locally until a confirmed commit includes it.
 
-In **同步**, choose **创建备份…**. Enter an absolute path to a new directory,
-review whether to include local-only data, and confirm the write. Backups are
-plaintext. The receipt identifies the destination and its `manifest.json`.
-[Recovery](recovery.md) explains the contents and how to restore them.
+Context keeps the same Checkout and resolved Profile for listing, opening and pagination. Tasks resolve Resource slots through that Profile. A Task shows the mapped Resource, exact TCP target and latest target-specific observation time separately from provider authentication and execution trust. Task → Resource and Task → Credential links preserve the calling scope, and Back restores it.
 
-## Review a Skill installation
+## Catalog
 
-In **Skills**, choose a Project or the device-wide catalog, then choose the
-Skill and its user-level target. The page shows the approved shared pin and
-the device's installation receipt. Preview the file list and select a file to
-inspect its diff before confirming installation.
+Catalog links four tools with an explicit subscribed-Project scope:
 
-For an installed Skill, choose the approved pin or the previous local version
-as the candidate. Resolve external file edits before rescanning the plan.
-Update and rollback write to this device. Use [Skills and artifacts](skills-and-artifacts.md)
-to register or approve a shared pin through the CLI.
+- **Resources & environments:** configured endpoints, local overrides, per-environment routes and observations, and confirmed TCP probes. Unknown evidence remains unknown, especially for another device.
+- **Credential bindings:** Project, Profile, Task and requirement scope, compatible shared references, provider locators, and separate authentication, entry-readability and reachability checks. Secret values never enter drafts, results or copied commands.
+- **Skills:** approved pins, installed receipts, candidate selection, install/update/rollback/recovery previews, and per-file diffs. A drifted file offers both installed-to-local drift and installed-to-candidate comparisons. Drift blocks confirmation until reconciled and rescanned.
+- **Run artifacts:** run/source/content filters, provenance, full digests, content availability and metadata-only explanations. Available bytes can be verified and exported to a new file.
 
-## Browse run artifacts
+The device-wide Skill catalog remains available without a Project. Related links from a Project supply its ID automatically, and Back restores the originating Project section and selection.
 
-In **产物** (Artifacts), select a Project and filter by run, source device or
-content state. The selected artifact shows its reported size, SHA-256 and
-content location when available. Local runs include their recorded completion
-scope and provenance. An item with available bytes can be verified and
-exported to a new file. For a metadata-only item, the inspector shows the
-reason the synchronized record omits the payload.
+## Sync and publication recovery
 
-## Handle viewer states
+Sync has three sections:
 
-| Desktop message | Next step |
-| --- | --- |
-| **尚未初始化工作区** | Run `ctxferry init` with the intended data root, then refresh. |
-| **本机目录需要升级** | Use a matching CLI to open and migrate the catalog, then refresh; the viewer does not migrate it. |
-| **本机快照不可用** | Run `ctxferry doctor --format json` and inspect the catalog evidence. |
+- **Repository** shows the remote, branch, confirmed commit, history size, service and latest reachability/privacy check. Routine synchronization is an explicit `ctxferry sync` handoff.
+- **Queue** filters All, Conflicts, Blocked and Waiting records by stable record ID. Inspect revision evidence, blocking reasons, and Written / Read back / Published state. Conflicts open comparison.
+- **Backup** reviews source/preflight evidence, a new absolute destination, fixed data scope, optional local-only data, plaintext exposure and acknowledgement before writing.
 
-## Map and check credential references
+Before first publication, check that the remote is reachable and private, then choose **Review export…**. The app calls the core's real preview operation and displays its paths, sizes and SHA-256 digests. Inspect original shared documents and artifact payloads separately for pasted secrets. The final `ctxferry sync init --preview <id>` handoff creates the configured branch only if absent; pushed history cannot be recalled.
 
-In **凭据绑定**, select the Project, Profile, Task and requirement slot.
-Select **映射共享绑定…** or **更换共享绑定…** to reuse a compatible reference
-or enter a new provider locator. Review the affected slot and alias before
-saving. Publish the shared mapping through your usual sync workflow.
+If first publication loses its acknowledgement, Repository reuses the original preview ID. For an uncertain routine push, it offers one-shot reconciliation with `ctxferry sync`. Backup and Conflict stay locked until Refresh confirms the journal cleared and rereads the confirmed commit.
 
-The inspector identifies the current execution environment and provider
-profile. Use **检查本机认证** to check that session, then **检查条目可读性** to
-check the referenced entry. **更新本机会话** adopts the provider session
-configured in that environment. Entry values stay within the provider
-adapter. Use the provider link and displayed locator to manage the entry.
-[Credentials and Tasks](credentials.md) covers provider setup.
+Conflict resolution compares base, local and remote evidence. Keep a whole side, apply a deletion, or replace eligible Context content. Confirmation names the consequence and checks the current conflict token. A stale comparison must be reloaded and chosen again. The receipt identifies the new local revision, not a published result.
 
-## Inspect environments and probe a resource
+## Backup contents and recovery
 
-In **设备与资源**, select a Project, Resource and execution environment.
-The page shows the Resource's purpose, stage, configured endpoint,
-applicability and recent observations. The local route includes any
-device-specific endpoint, proxy or network recorded through the CLI.
+Every backup includes the Workspace and shared catalog records, shared Context and Configuration, Skill pins and sources, queue state, and confirmed Git history when present. Local-only bindings, overrides, routes, observations, subscriptions, run records and available artifact bytes are included only with the single local-only option.
 
-Choose **在本机探测 TCP…** to review the exact host, port and environment
-before connecting. The result records TCP reachability for that target.
-A proxy route checks the proxy port. Each remote environment displays its
-own available observations and reports its provider session as unknown.
-[Tasks and Resources](tasks-and-resources.md) covers local route setup.
+Provider-held credential values, provider sessions, Git authentication and execution trust are never included. Skill installation receipts and installed Skill files are also excluded.
+
+Backups are plaintext. Context, Configuration, Skill sources and Git history can contain embedded secrets, so review the original content rather than relying on a manifest. The receipt identifies the destination, `manifest.json`, catalog SHA-256, included scope and source snapshot. [Recovery](recovery.md) provides the restore commands and required flags.
+
+## Validation and native capture
+
+Run the repository and desktop suites:
+
+```sh
+go test ./...
+cd cmd/ctxferry-desktop
+go test ./...
+go test -tags ctxferry_test ./...
+```
+
+The native capture scenario creates isolated data through real CLI/core operations and drives running MyGo windows at both supported sizes:
+
+```sh
+python3 capture_redesign.py /tmp/ctxferry-redesign-<revision> --revision <full-sha>
+```
+
+The final implementation review, data state, 22 production frames and independent K3.1 Pro findings are recorded in [Native desktop redesign implementation review](../development/desktop/review-native-redesign.md).
