@@ -1,0 +1,12 @@
+{
+  "project": {
+    "id": "1b368559-be6c-40b4-bb48-e2e2cf1fb66c",
+    "slug": "dbark",
+    "createdAt": "2026-11-20T01:43:08.008397Z"
+  },
+  "v1Pin": "1e910f0e8f593a0a644dc3f426f27885b3eb8c2fe55029959d904dafcd622c31",
+  "remoteReportSHA256": "3693e32a833b70e367a622569188bb3c69d9eba36515324acd39f75b9cab4d56",
+  "localReportSHA256": "815018b4d2655f42f87538d24da1f45f3e09f120a3a0a73e1cc49ee5c58a9c7c",
+  "remoteProvider": "Synthetic loopback repository metadata",
+  "remoteGit": "isolated bare repository"
+}

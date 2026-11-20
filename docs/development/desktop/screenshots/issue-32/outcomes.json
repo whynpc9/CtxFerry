@@ -1,0 +1,104 @@
+{
+  "revision": "4681f9394a3a5ccd3c772c82072b33ca9ffb8a46",
+  "base": "757b619",
+  "ui": [
+    "Actual native sidebar and local-db artifact provenance",
+    "Received trace metadata-only with exact bytes and omission reason",
+    "Verified and exported received summary with native Save to this fixture, receipt shown",
+    "Install v1, register v2, external edit blocks update; local and candidate diff viewed",
+    "Rescan retained checks.md, candidate diff and enabled confirmation together",
+    "Update v2, select previous local v1 from candidate picker, confirm rollback with shared v2 pin and private source labels retained",
+    "Windows-only unsupported on darwin/arm64; project filter to room-service shows empty state"
+  ],
+  "disk": {
+    "initial_install_v1_diff_equal": true,
+    "update_v2_diff_equal": true,
+    "rollback_v1_diff_equal": true,
+    "rollback_hashes": {
+      "SKILL.md": "39593368eeb231f91ff7566673ba7cb8c4cadecf52b97b19232e097bcc02233d",
+      "references/checks.md": "7df23f43fb86329730f07e23d2f4df29155210fcc94b25c44cd5779860dd7165",
+      "references/obsolete.md": "00a6884ba0ccbd328114085465ba28b65935833378c4c0111f3321c26f35dda5"
+    },
+    "v2_hashes": {
+      "SKILL.md": "950ee414feb78c616b449d545d6a108e22f3634997e4c7c81d1434a70020b5b4",
+      "references/checks.md": "2f847b19dabfe43e08094138e8b1ecf6d8a574559d5d6bb0444ab2f452445995",
+      "references/ports.md": "03ce453fd743284b2dd11e766ce097413a71dd3b81da78b1653b22b97d2bf369"
+    },
+    "export_path": "/private/tmp/ctxferry-32.q7jiJU7J/output/final-exported-summary.txt",
+    "export_sha256": "3693e32a833b70e367a622569188bb3c69d9eba36515324acd39f75b9cab4d56",
+    "expected_sha256": "3693e32a833b70e367a622569188bb3c69d9eba36515324acd39f75b9cab4d56",
+    "windows_target_absent": true
+  },
+  "cleanup": {
+    "native_close_button": true,
+    "controller_exited": true,
+    "matching_processes": "",
+    "note": "Controller held flock until native process exited. No CUA app observation followed close."
+  },
+  "screenshots": {
+    "01-local-artifact": {
+      "sha256": "a551ec7f779d359a3ca6540f20e082372d0571bd1a7c6b1c6d6510119ff6dea7",
+      "width": 2360,
+      "height": 1436
+    },
+    "02-trace-metadata": {
+      "sha256": "f5b9ec3592c0533c0b99907fe3aff168094e839164686fe0de04a7c19dae1b2f",
+      "width": 2360,
+      "height": 1436
+    },
+    "03-export-receipt": {
+      "sha256": "dedf96999770456a7d49f8bc42f670b5cf450dbd8aa2be9a0bbf617bfc1bda7a",
+      "width": 2360,
+      "height": 1436
+    },
+    "04-install-preview": {
+      "sha256": "fe52dc77905c1ee28431ba1ee2deb0eb5dbde21c207992219a3b190fe7259cb3",
+      "width": 2360,
+      "height": 1436
+    },
+    "05-update-blocked": {
+      "sha256": "4f15104f02d45aea09f310beaf7ad9cf64359dcaa0e2dff838890cd513102c79",
+      "width": 2360,
+      "height": 1436
+    },
+    "06-candidate-diff": {
+      "sha256": "151a7bc5453d06ad7cfa71689b81740ecfc756b46ff41b2e42c8bd22cfd56003",
+      "width": 2360,
+      "height": 1436
+    },
+    "07-rescanned": {
+      "sha256": "43a093a1e02ba6dafbc7f9f28f3dcaa5acdff61898e79df8c6101aeb94c3f804",
+      "width": 2360,
+      "height": 1436
+    },
+    "08-candidate-picker": {
+      "sha256": "3c8bebb460b01b70f248af21ce5bb65a0314f16d185c7b5c4f0592d24b9d1b81",
+      "width": 2360,
+      "height": 1436
+    },
+    "09-rollback-preview": {
+      "sha256": "9aa7a286dad8f25192ab2d0b649e25da1c283458d6f6fd93f4dc7b9eae77dc1e",
+      "width": 2360,
+      "height": 1436
+    },
+    "10-rollback-receipt": {
+      "sha256": "02de76b7ea230211990c257971e405aab518dda369242d3929e1bb7fe7820b7c",
+      "width": 2360,
+      "height": 1436
+    },
+    "11-windows-only": {
+      "sha256": "7750b2597dab9727fc509932cf6badfa5bd36239a5ecf5a8c552cbebfc1b6418",
+      "width": 2360,
+      "height": 1436
+    },
+    "12-project-filter": {
+      "sha256": "38a156135f1acf0c61f817017a2bc7015dd16717b99d17333dda4d9dd2f940e7",
+      "width": 2360,
+      "height": 1436
+    }
+  },
+  "limitations": [
+    "Second Save cancellation not attempted in final run; prior R3 checked cancellation.",
+    "Independent design review not performed."
+  ]
+}

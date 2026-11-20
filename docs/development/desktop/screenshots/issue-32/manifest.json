@@ -1,0 +1,62 @@
+{
+  "01-local-artifact": {
+    "sha256": "a551ec7f779d359a3ca6540f20e082372d0571bd1a7c6b1c6d6510119ff6dea7",
+    "width": 2360,
+    "height": 1436
+  },
+  "02-trace-metadata": {
+    "sha256": "f5b9ec3592c0533c0b99907fe3aff168094e839164686fe0de04a7c19dae1b2f",
+    "width": 2360,
+    "height": 1436
+  },
+  "03-export-receipt": {
+    "sha256": "dedf96999770456a7d49f8bc42f670b5cf450dbd8aa2be9a0bbf617bfc1bda7a",
+    "width": 2360,
+    "height": 1436
+  },
+  "04-install-preview": {
+    "sha256": "fe52dc77905c1ee28431ba1ee2deb0eb5dbde21c207992219a3b190fe7259cb3",
+    "width": 2360,
+    "height": 1436
+  },
+  "05-update-blocked": {
+    "sha256": "4f15104f02d45aea09f310beaf7ad9cf64359dcaa0e2dff838890cd513102c79",
+    "width": 2360,
+    "height": 1436
+  },
+  "06-candidate-diff": {
+    "sha256": "151a7bc5453d06ad7cfa71689b81740ecfc756b46ff41b2e42c8bd22cfd56003",
+    "width": 2360,
+    "height": 1436
+  },
+  "07-rescanned": {
+    "sha256": "43a093a1e02ba6dafbc7f9f28f3dcaa5acdff61898e79df8c6101aeb94c3f804",
+    "width": 2360,
+    "height": 1436
+  },
+  "08-candidate-picker": {
+    "sha256": "3c8bebb460b01b70f248af21ce5bb65a0314f16d185c7b5c4f0592d24b9d1b81",
+    "width": 2360,
+    "height": 1436
+  },
+  "09-rollback-preview": {
+    "sha256": "9aa7a286dad8f25192ab2d0b649e25da1c283458d6f6fd93f4dc7b9eae77dc1e",
+    "width": 2360,
+    "height": 1436
+  },
+  "10-rollback-receipt": {
+    "sha256": "02de76b7ea230211990c257971e405aab518dda369242d3929e1bb7fe7820b7c",
+    "width": 2360,
+    "height": 1436
+  },
+  "11-windows-only": {
+    "sha256": "7750b2597dab9727fc509932cf6badfa5bd36239a5ecf5a8c552cbebfc1b6418",
+    "width": 2360,
+    "height": 1436
+  },
+  "12-project-filter": {
+    "sha256": "38a156135f1acf0c61f817017a2bc7015dd16717b99d17333dda4d9dd2f940e7",
+    "width": 2360,
+    "height": 1436
+  }
+}
