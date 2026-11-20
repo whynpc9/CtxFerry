@@ -37,3 +37,13 @@ MyGo Native UI 使用与 CLI 相同的 Go 核心和本机 provider 适配器。�
 实机由 GPT-6.1 Terra（High）操作隔离窗口取得。应用正常退出并释放共同 Git 目录下的 OS 排他文件锁。最终图为 MyGo Automation 从运行窗口采集的 1180 × 718 原 PNG。附 [原图 SHA-256](screenshots/issue-30/SHA256SUMS)、[CLI / SQLite 回读](screenshots/issue-30/verify.json) 及对应冻结稿 [05 凭据](../../../plans/desktop-design/05-secrets.png)、[06 Fleet](../../../plans/desktop-design/06-fleet.png)。
 
 集成后，桌面模块的 vet、测试和独立生产构建通过。核心凭据与资源、探测作用域和首次私有发布的定向 CLI 测试通过。此前全量 Go 测试首轮达到 15 分钟上限；延长测试超时后，完整用例通过。验收在 macOS 实机使用合成 provider，与 Windows 和 WSL 的独立历史观察夹具配合。
+
+## 最终 Kimi 复核
+
+独立评委报告其运行模型为 `kimi-code/k3.1-pro`。T3 完成记录确认 Kimi Code provider、该模型与 Thinking Max 请求，另行提供的 `executedModel` 字段为空。评委直接打开 11 张实机原图与两张冻结原图。实机图计算哈希与清单一致，原图均成功载入。
+
+| 排版 | 层级 | 间距 | 色彩 | 图标 | 一致性 | 清晰度 | Overall |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 9.1 | 8.7 | 9.1 | 8.9 | 8.6 | 8.8 | 9.0 | 62.2 ÷ 7 ≈ 8.9 |
+
+复核通过，无阻断问题。确认保存、条目检查回执与所选槽位一致，切换任务后旧回执消失。本机 TCP 与两套远端环境的观察清楚分开，三行均完整，设备 ID 可在检查器核对。评委记录了两项非阻断观察。实机描边主按钮和灰色选中状态的视觉强调弱于冻结稿。完整设备 ID 在详情可见，当前交互没有专用复制按钮。
