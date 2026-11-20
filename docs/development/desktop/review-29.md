@@ -1,7 +1,7 @@
 # 项目与普通配置的 macOS 实机验收
 
-实机截图对应实现提交 `7eb6c154bba8a504e3a5873a6fd2cee4ddf601bd`。专属工作树起点为 `cd0c95990e87eee21cd36945a719aa17c8245b5e`。PR #59 squash 后的基底为 `463e0bc91efb04aeea2df7415d6db4429cb8adf4`。#28 随 PR #60 交付后，仅移植 #29 的提交到 `86780e2289aa69cee501876043c544897c5a252b`，保留该版的公共导航、总览与同步页面。
-随后移植到文档整理提交 `757b619733d985c9b7d3d1ec3827e31d7cef1997`。新实现提交 `8e8f59dc6b42c26a28f24bca5294fde6038395db` 的应用、测试、Go 模块和 CI 文件与截图构建版本逐文件一致。
+当前归档的实机截图对应实现提交 `79556e7a4fc5c1f2324ff78efcf5c058e6a3958d`。专属工作树起点为 `cd0c95990e87eee21cd36945a719aa17c8245b5e`。PR #59 squash 后的基底为 `463e0bc91efb04aeea2df7415d6db4429cb8adf4`。#28 随 PR #60 交付后，仅移植 #29 的提交到 `86780e2289aa69cee501876043c544897c5a252b`，保留该版的公共导航、总览与同步页面。
+随后移植到文档整理提交 `757b619733d985c9b7d3d1ec3827e31d7cef1997`。新实现提交 `8e8f59dc6b42c26a28f24bca5294fde6038395db` 的应用、测试、Go 模块和 CI 文件与合并基底版截图所用的 `7eb6c154bba8a504e3a5873a6fd2cee4ddf601bd` 逐文件一致。
 
 ## 场景和读回
 
@@ -39,3 +39,17 @@ T3 以 Kimi Code 的 `kimi-code/k3.1-pro` 和 `thinking=max` 启动首轮评审�
 | 关联记录 | [Context](screenshots/project-29/09-context.png) · [资源](screenshots/project-29/10-resource.png) · [Task 信任](screenshots/project-29/11-task.png) · [Skills](screenshots/project-29/12-skills.png) · [产物](screenshots/project-29/13-artifacts.png) |
 
 实机验证由 `gpt-6.1-terra`（High）执行，覆盖前台窗口、控件输入和 Escape 取消。完整键盘遍历、中文 IME、读屏及 Windows 和 Linux 的实机界面另有各自的验证范围。合成 provider 引用用于核对本机定义，源数据和证据仅含引用元数据。
+
+## 合并基底版独立复核
+
+Kimi Code 的 `kimi-code/k3.1-pro`（`thinking=max`）复核了实现 `7eb6c154bba8a504e3a5873a6fd2cee4ddf601bd` 的 13 张前台实机原图及冻结图 04，核对了全部 SHA-256。原图对应归档提交 `a9a09f0`。T3 记录了指定 provider、模型和推理档位，provider 未另回传 `executedModel`。
+
+| 排版 | 层级 | 间距与密度 | 色彩与对比 | 图标 | 一致性 | 清晰度 | 均值 |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 9.2 | 9.3 | 8.9 | 9.0 | 8.8 | 9.1 | 9.1 | 63.4 ÷ 7 |
+
+结论通过。Kimi 确认共享项目层预览展示两条实际路径及各自结果，Task 详情标出当前设备和执行信任状态。复核另指出两处文案清晰度改进。未选 Checkout 的方案来源行改为“请先选择本机 Checkout”，切换方案的回执显示实际保存选择的 Checkout 路径。
+
+## 测试
+
+macOS 上以 `CGO_ENABLED=0` 通过 Go 全仓测试、应用核心与 CLI 专项、桌面模块测试和静态检查，并构建了生产桌面二进制。全仓测试最初触及 10 分钟和 15 分钟上限，改用 25 分钟上限后通过。`TestProjectResetThroughNativeView` 走正常页面路径，验证取消、确认和核心解释结果。`TestProjectManagementLinksUseRegisteredRoutes` 使用测试 renderer 验证路由注册、项目范围及返回后的选择。

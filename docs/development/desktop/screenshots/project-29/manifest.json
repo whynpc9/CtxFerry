@@ -1,11 +1,11 @@
 {
-  "implementation": "7eb6c154bba8a504e3a5873a6fd2cee4ddf601bd",
-  "fixture": "/private/tmp/cf29-final.RkEnr5",
+  "implementation": "79556e7a4fc5c1f2324ff78efcf5c058e6a3958d",
+  "fixture": "/private/tmp/cf29-copy.XEFQIT",
   "window_exit": 0,
   "artifact": "real MyGo native macOS window, app bundle and automation plugin",
   "design": "plans/desktop-design/04-project.png",
   "go_build": [
-    "build\tvcs.revision=7eb6c154bba8a504e3a5873a6fd2cee4ddf601bd",
+    "build\tvcs.revision=79556e7a4fc5c1f2324ff78efcf5c058e6a3958d",
     "build\tvcs.modified=false"
   ],
   "upstream_candidate": null,
@@ -16,7 +16,7 @@
       "width": 2360,
       "height": 1436,
       "focused": true,
-      "sha256": "9dee31e7453358370ec15fe053065939d86c16307398e91527f86960590d973a"
+      "sha256": "9200843978fc59df5481075b66cdd81b97944f266c7247d2cbde497a39131e18"
     },
     {
       "file": "02-configuration.png",
@@ -24,7 +24,7 @@
       "width": 2360,
       "height": 1436,
       "focused": true,
-      "sha256": "2820d7ddef10ef67d786b37ec68f42c8b7881c1a0096d8ac5b8d06822b0c099e"
+      "sha256": "d2cfdc8f33cd7fa697d747ed84437a592f312e85499a9aa234bb21dbc07069aa"
     },
     {
       "file": "03-reset-preview.png",
@@ -32,7 +32,7 @@
       "width": 2360,
       "height": 1436,
       "focused": true,
-      "sha256": "a208147525b6ef107439bfaceffbc25e52eea62e42964be2f605108dca98ec99"
+      "sha256": "81437addbc85b10f833232846aa29605237a6ed4c571e9a3a3ae004b9cd60af6"
     },
     {
       "file": "04-reset-receipt.png",
@@ -40,7 +40,7 @@
       "width": 2360,
       "height": 1436,
       "focused": true,
-      "sha256": "df444e5180ab67804d0d98d94b443f4d407e3188177433115764fa6fc989d2c0"
+      "sha256": "4d45087acb1e206d0376baecf2c5311a7cc68ff28aa1a44afdfbf2fccb5d12be"
     },
     {
       "file": "05-shared-edit-preview.png",
@@ -48,7 +48,7 @@
       "width": 2360,
       "height": 1436,
       "focused": true,
-      "sha256": "9612bbabdf49471ccbffacb1cce86caf3599ee9e1157ca2e37908bd5761a8295"
+      "sha256": "fee9d4ab9f71bd7983d3508d559f176bf32faddafe94929d802650af80d16be1"
     },
     {
       "file": "06-shared-edit-receipt.png",
@@ -56,7 +56,7 @@
       "width": 2360,
       "height": 1436,
       "focused": true,
-      "sha256": "138f7d83ccb23582a13984ec998309e27840c08b82c665c300e87d35cd9400e3"
+      "sha256": "5433fbf1387ed5f098c3af3dcef258deb8b8f2f7821284c7eb722a17df8e7a89"
     },
     {
       "file": "07-working-directory-unavailable.png",
@@ -64,7 +64,7 @@
       "width": 2360,
       "height": 1436,
       "focused": true,
-      "sha256": "2ada1379abf8810be8a7a7985f0cbde159535cd372248f0fceae78be686176f7"
+      "sha256": "2bf576f5ea8522e4f0f4e1e1f145cc82daea1a696239fc035023147d801560fa"
     },
     {
       "file": "08-project-profile-switch.png",
@@ -72,7 +72,7 @@
       "width": 2360,
       "height": 1436,
       "focused": true,
-      "sha256": "0af7edca939b36fe0801424df5dc4bd079fa8ed79c057c379fb2ab6ce7d57764"
+      "sha256": "9d7015d2d021c11a40a0250a520b201fb5f294b126f001ff84a3ef2f1a72e050"
     },
     {
       "file": "09-context.png",
@@ -80,7 +80,7 @@
       "width": 2360,
       "height": 1436,
       "focused": true,
-      "sha256": "e611d0fb16a692ed747393a21d5f26290b5ff4ecc4a063f3198bf634463664c0"
+      "sha256": "0b238cdb21b865e81d51a1c355056f224a2820630fa46baada334082c7518863"
     },
     {
       "file": "10-resource.png",
@@ -88,7 +88,7 @@
       "width": 2360,
       "height": 1436,
       "focused": true,
-      "sha256": "d3642903766e3942f6cbd3a33c5a32b5bf02eeb0a7eaac7a428ac1f63149382c"
+      "sha256": "28696e4d9f5c8421e08c3d17d0b7bd07ee4365ded6c4edabc1ea50b3652e82c4"
     },
     {
       "file": "11-task.png",
@@ -96,7 +96,7 @@
       "width": 2360,
       "height": 1436,
       "focused": true,
-      "sha256": "547ee0211f44586be05e09022014c114fd05c9d8ee31d07ef9b9ffb0018bfe53"
+      "sha256": "511eee6b7bec158aac778465dbd225a219d241c16392f19b67cf9861e95ed33e"
     },
     {
       "file": "12-skills.png",
@@ -104,7 +104,7 @@
       "width": 2360,
       "height": 1436,
       "focused": true,
-      "sha256": "b3c3ebb27c5d7ec4531717bace0c913cb6e03876fc33fabd50f5d51a23634ca4"
+      "sha256": "5754bd03a3a92e541b3dc97f4bc4ff9a3f5c19e804ea8532ee9be6566b37542b"
     },
     {
       "file": "13-artifacts.png",
@@ -112,7 +112,7 @@
       "width": 2360,
       "height": 1436,
       "focused": true,
-      "sha256": "eb93fbebbf646a7cd0781d2204033ab5379a67e60906578a7c089f1dc62889d8"
+      "sha256": "3afc36bc86d79e4729214d5a99fff79976cd6353cb3ce674ee225754274b45a8"
     }
   ]
 }

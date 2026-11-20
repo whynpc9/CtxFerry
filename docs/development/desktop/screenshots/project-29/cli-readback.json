@@ -1,6 +1,6 @@
 {
   "cli-after-alt-profile": {
-    "checkout": "/private/tmp/cf29-final.RkEnr5/dbark-alt",
+    "checkout": "/private/tmp/cf29-copy.XEFQIT/dbark-alt",
     "profile": "diagnostics",
     "fields": [
       {
@@ -15,14 +15,14 @@
       },
       {
         "name": "workingDirectory",
-        "value": "/private/tmp/cf29-final.RkEnr5/dbark-alt/missing-tools",
+        "value": "/private/tmp/cf29-copy.XEFQIT/dbark-alt/missing-tools",
         "layer": "checkout"
       }
     ],
-    "sourceSHA256": "3fdf8480dc98746adeac3a4eac7371cacea54a8b39aea1d665d0e0ae1ce9fa1d"
+    "sourceSHA256": "8b5d6e380feb902b9de9e1406adc23f79056fa7a3086275bd2d3470f0d111900"
   },
   "cli-after-cancel": {
-    "checkout": "/private/tmp/cf29-final.RkEnr5/dbark",
+    "checkout": "/private/tmp/cf29-copy.XEFQIT/dbark",
     "profile": "development",
     "fields": [
       {
@@ -37,14 +37,14 @@
       },
       {
         "name": "workingDirectory",
-        "value": "/private/tmp/cf29-final.RkEnr5/dbark/tools",
+        "value": "/private/tmp/cf29-copy.XEFQIT/dbark/tools",
         "layer": "checkout"
       }
     ],
-    "sourceSHA256": "4327a77b90e334cac421e7184bd8eaed7729a7658aad7f38217f31dc5180eca4"
+    "sourceSHA256": "d04005d4173dc6d4d23dd16463a759de9c9f423f37cbae3ddb865c9cbbf8d679"
   },
   "cli-after-edit": {
-    "checkout": "/private/tmp/cf29-final.RkEnr5/dbark",
+    "checkout": "/private/tmp/cf29-copy.XEFQIT/dbark",
     "profile": "development",
     "fields": [
       {
@@ -59,14 +59,14 @@
       },
       {
         "name": "workingDirectory",
-        "value": "/private/tmp/cf29-final.RkEnr5/dbark/tools",
+        "value": "/private/tmp/cf29-copy.XEFQIT/dbark/tools",
         "layer": "checkout"
       }
     ],
-    "sourceSHA256": "220b0097d1c5bfb76a90eff9164c304ff972571a4cdf00125967f8743a9c2b97"
+    "sourceSHA256": "74926a440a7206286368323a299be64706893b495fec199f74b9886602bc5655"
   },
   "cli-after-escape": {
-    "checkout": "/private/tmp/cf29-final.RkEnr5/dbark",
+    "checkout": "/private/tmp/cf29-copy.XEFQIT/dbark",
     "profile": "development",
     "fields": [
       {
@@ -81,14 +81,14 @@
       },
       {
         "name": "workingDirectory",
-        "value": "/private/tmp/cf29-final.RkEnr5/dbark/tools",
+        "value": "/private/tmp/cf29-copy.XEFQIT/dbark/tools",
         "layer": "checkout"
       }
     ],
-    "sourceSHA256": "4327a77b90e334cac421e7184bd8eaed7729a7658aad7f38217f31dc5180eca4"
+    "sourceSHA256": "d04005d4173dc6d4d23dd16463a759de9c9f423f37cbae3ddb865c9cbbf8d679"
   },
   "cli-after-reset": {
-    "checkout": "/private/tmp/cf29-final.RkEnr5/dbark",
+    "checkout": "/private/tmp/cf29-copy.XEFQIT/dbark",
     "profile": "development",
     "fields": [
       {
@@ -103,14 +103,14 @@
       },
       {
         "name": "workingDirectory",
-        "value": "/private/tmp/cf29-final.RkEnr5/dbark/tools",
+        "value": "/private/tmp/cf29-copy.XEFQIT/dbark/tools",
         "layer": "checkout"
       }
     ],
-    "sourceSHA256": "77202e383c53bbb2dbf471eb00ebcf6d4efe1298bf448dcfc9880bff9a6f1d9d"
+    "sourceSHA256": "01ad22bf3b9aa7bf8c9de8f0dd18eace0a3ddfb09e54e022d9895026bc83ec45"
   },
   "cli-before": {
-    "checkout": "/private/tmp/cf29-final.RkEnr5/dbark",
+    "checkout": "/private/tmp/cf29-copy.XEFQIT/dbark",
     "profile": "development",
     "fields": [
       {
@@ -125,14 +125,14 @@
       },
       {
         "name": "workingDirectory",
-        "value": "/private/tmp/cf29-final.RkEnr5/dbark/tools",
+        "value": "/private/tmp/cf29-copy.XEFQIT/dbark/tools",
         "layer": "checkout"
       }
     ],
-    "sourceSHA256": "4327a77b90e334cac421e7184bd8eaed7729a7658aad7f38217f31dc5180eca4"
+    "sourceSHA256": "d04005d4173dc6d4d23dd16463a759de9c9f423f37cbae3ddb865c9cbbf8d679"
   },
   "cli-primary-unchanged": {
-    "checkout": "/private/tmp/cf29-final.RkEnr5/dbark",
+    "checkout": "/private/tmp/cf29-copy.XEFQIT/dbark",
     "profile": "development",
     "fields": [
       {
@@ -147,10 +147,10 @@
       },
       {
         "name": "workingDirectory",
-        "value": "/private/tmp/cf29-final.RkEnr5/dbark/tools",
+        "value": "/private/tmp/cf29-copy.XEFQIT/dbark/tools",
         "layer": "checkout"
       }
     ],
-    "sourceSHA256": "220b0097d1c5bfb76a90eff9164c304ff972571a4cdf00125967f8743a9c2b97"
+    "sourceSHA256": "74926a440a7206286368323a299be64706893b495fec199f74b9886602bc5655"
   }
 }
