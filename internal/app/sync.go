@@ -306,7 +306,7 @@ func privacyCheck(ctx context.Context, c SyncConfig) SyncCheck {
 	}
 	return r
 }
-func loadSync(ctx context.Context, db *sql.DB) (SyncConfig, error) {
+func loadSync(ctx context.Context, db rowQuerier) (SyncConfig, error) {
 	var c SyncConfig
 	err := db.QueryRowContext(ctx, "SELECT remote,workspace_id,branch,identity FROM sync_config WHERE singleton=1").Scan(&c.Remote, &c.WorkspaceID, &c.Branch, &c.Identity)
 	if err == sql.ErrNoRows {
@@ -953,7 +953,7 @@ func (a App) SyncStatus(ctx context.Context) (SyncResult, error) {
 	return readSyncStatus(ctx, db)
 }
 
-func readSyncStatus(ctx context.Context, db *sql.DB) (SyncResult, error) {
+func readSyncStatus(ctx context.Context, db projectReader) (SyncResult, error) {
 	r := SyncResult{Boundary: plaintextBoundary, State: "disabled"}
 	c, err := loadSync(ctx, db)
 	if err != nil {
