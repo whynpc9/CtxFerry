@@ -453,7 +453,7 @@ func decodeContext(raw string, d *ContextDoc) error {
 	return nil
 }
 
-func requireSubscription(ctx context.Context, db *sql.DB, projectID string) error {
+func requireSubscription(ctx context.Context, db rowQuerier, projectID string) error {
 	var subscribed int
 	err := db.QueryRowContext(ctx, "SELECT subscribed FROM project_subscriptions WHERE project_id=?", projectID).Scan(&subscribed)
 	if err == sql.ErrNoRows {
