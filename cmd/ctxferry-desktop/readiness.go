@@ -1,13 +1,11 @@
 package main
 
 import (
-	"errors"
 	"strings"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/whynpc9/CtxFerry/internal/app"
-	"github.com/whynpc9/CtxFerry/internal/store"
 )
 
 type setupState struct {
@@ -78,17 +76,18 @@ func (d *desktop) readinessView(c *ui.Context) {
 		ui.Divider(c)
 		muted(c, "Wrong location? Restart CtxFerry with CTXFERRY_DATA_DIR set to another data root. Every copied command carries the same explicit --data-dir.")
 	})
-	switch {
-	case errors.Is(d.err, store.ErrNotInitialized):
+	state := app.ClassifyCatalog(d.err)
+	switch state {
+	case app.CatalogUninitialized:
 		d.setupView(c)
-	case errors.Is(d.err, store.ErrMigrationRequired):
+	case app.CatalogMigrationRequired:
 		d.recoveryCommand(c, "Migrate with the matching CLI", "Open the catalog once with the matching CtxFerry CLI. The migration preserves the data root.", desktopCommand(d.core.DataDir, "project", "list"))
-	case errors.Is(d.err, store.ErrUnsupportedSchema):
+	case app.CatalogUnsupportedSchema:
 		banner(c, toneUnknown, "Update required", "No write action is available for a newer schema.", nil)
 	default:
 		d.recoveryCommand(c, "Diagnose this data root", "The desktop does not expose raw database diagnostics. Use the CLI report to identify the failed catalog check.", desktopCommand(d.core.DataDir, "doctor", "--format", "json"))
 	}
-	if d.err != nil && !errors.Is(d.err, store.ErrNotInitialized) {
+	if state != app.CatalogReady && state != app.CatalogUninitialized {
 		ui.Row(c).Justify(ui.End).Children(func() {
 			iconButton(c, icSync, "Refresh", false).OnClick(d.refresh)
 		})

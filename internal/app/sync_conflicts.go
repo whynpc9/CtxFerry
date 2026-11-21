@@ -34,7 +34,12 @@ type ConflictDetail struct {
 }
 
 // ConflictVersion is the disclosure-filtered form of a published revision.
-type ConflictVersion publishedEnvelope
+// Hidden names the payload fields its disclosure policy withheld, so a front
+// end can say why a field is absent without re-deriving the policy.
+type ConflictVersion struct {
+	publishedEnvelope
+	Hidden []string `json:"hidden,omitempty"`
+}
 
 type ResolutionInput struct {
 	Title      string  `json:"title"`
@@ -395,18 +400,21 @@ func conflictView(b []byte, files map[string][]byte) (*ConflictVersion, error) {
 	if e = json.Unmarshal(r.Data, &payload); e != nil {
 		return nil, e
 	}
+	var hidden []string
 	if r.Kind == "context" {
 		delete(payload, "body")
-		if r.Policy.AgentDisclosure == "full" && r.Value.Body != nil {
+		if r.Policy.AgentDisclosure != "full" {
+			hidden = append(hidden, "body")
+		} else if r.Value.Body != nil {
 			payload["body"] = string(files["objects/"+r.Value.Body.SHA256])
 		}
 		if r.Policy.AgentDisclosure == "reference" || r.Policy.AgentDisclosure == "local-tool" {
 			delete(payload, "summary")
+			hidden = append(hidden, "summary")
 		}
 	}
 	r.Payload = payload
-	version := ConflictVersion(r.publishedEnvelope)
-	return &version, nil
+	return &ConflictVersion{r.publishedEnvelope, hidden}, nil
 }
 func (a App) Conflict(ctx context.Context, id string) (ConflictDetail, error) {
 	var out ConflictDetail

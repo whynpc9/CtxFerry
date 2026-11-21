@@ -31,7 +31,7 @@ func loadMappedResource(ctx context.Context, q rowQuerier, id string) (Resource,
 	var raw []byte
 	err := q.QueryRowContext(ctx, `SELECT metadata FROM records WHERE id=? AND kind='resource'
 		AND coalesce(json_extract(metadata,'$.deleted'),0)=0
-		AND NOT EXISTS (SELECT 1 FROM sync_tombstones t WHERE t.id IN (records.id, records.project_id))`, id).Scan(&raw)
+		AND `+live("records.id", "records.project_id"), id).Scan(&raw)
 	if err == sql.ErrNoRows {
 		return Resource{}, Fail("resource-not-found", "mapped Resource not found")
 	}

@@ -373,7 +373,7 @@ func (a App) ListProjectsAll(ctx context.Context, all bool) (ListResult, error) 
 
 func listProjects(ctx context.Context, db *sql.DB, all bool) (ListResult, error) {
 	r := ListResult{Projects: []Project{}}
-	query := "SELECT id,slug,created_at FROM projects WHERE id NOT IN (SELECT id FROM sync_tombstones)"
+	query := "SELECT id,slug,created_at FROM projects WHERE " + live("projects.id")
 	if !all {
 		query += " AND id NOT IN (SELECT project_id FROM project_subscriptions WHERE subscribed=0)"
 	}

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"maps"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 
@@ -166,9 +167,14 @@ func joinWorkspace(t *testing.T, remote *memoryRemote) App {
 
 func putShared(t *testing.T, a App, id, revision, body string) ContextDoc {
 	t.Helper()
+	return putSharedAs(t, a, id, revision, body, "full")
+}
+
+func putSharedAs(t *testing.T, a App, id, revision, body, disclosure string) ContextDoc {
+	t.Helper()
 	r, err := a.PutContext(t.Context(), "shared", "", PutContext{
 		ID: id, IfRevision: revision, Title: "Runbook", Purpose: "note", Source: "test",
-		Body: body, Storage: "shared", Disclosure: "full",
+		Summary: "summary", Body: body, Storage: "shared", Disclosure: disclosure,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -218,7 +224,7 @@ func TestSyncRoundRecordsConcurrentEditsAsConflict(t *testing.T) {
 	second := joinWorkspace(t, remote)
 
 	putShared(t, first, doc.ID, doc.Revision, "first edit")
-	putShared(t, second, doc.ID, doc.Revision, "second edit")
+	putSharedAs(t, second, doc.ID, doc.Revision, "second edit", "reference")
 	if _, err := first.Sync(t.Context()); err != nil {
 		t.Fatal(err)
 	}
@@ -232,6 +238,14 @@ func TestSyncRoundRecordsConcurrentEditsAsConflict(t *testing.T) {
 	}
 	if got := contextBody(t, second, doc.ID); got != "second edit" {
 		t.Fatalf("conflict replaced the local working version with %q", got)
+	}
+	// The disclosure policy travels with each version as the fields it withheld.
+	local, remoteVersion := conflict.Local.Payload.(map[string]any), conflict.Remote.Payload.(map[string]any)
+	if !slices.Equal(conflict.Local.Hidden, []string{"body", "summary"}) || local["body"] != nil || local["summary"] != nil {
+		t.Fatalf("reference version disclosed %+v (hidden %v)", local, conflict.Local.Hidden)
+	}
+	if len(conflict.Remote.Hidden) != 0 || remoteVersion["body"] != "first edit" {
+		t.Fatalf("full version withheld %v: %+v", conflict.Remote.Hidden, remoteVersion)
 	}
 }
 

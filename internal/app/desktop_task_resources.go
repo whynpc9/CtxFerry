@@ -13,7 +13,7 @@ type DesktopTaskResource struct {
 }
 
 func (a App) DesktopTaskResources(ctx context.Context, projectID, profile, taskID string) ([]DesktopTaskResource, error) {
-	db, p, err := a.openDesktopProject(ctx, projectID)
+	db, p, err := a.openProjectReadOnly(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}

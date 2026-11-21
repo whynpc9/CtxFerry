@@ -91,7 +91,7 @@ func impactBindings(ctx context.Context, q projectReader, loc configurationLocat
 	rows, err := q.QueryContext(ctx, `SELECT p.id,p.slug,p.created_at,b.id,b.path
 		FROM checkout_bindings b JOIN projects p ON p.id=b.project_id
 		WHERE b.device_id=? AND (?='global' OR p.id=?) AND (?<>'checkout' OR b.path=?)
-		AND NOT EXISTS (SELECT 1 FROM sync_tombstones t WHERE t.id=p.id)
+		AND `+live("p.id")+`
 		AND NOT EXISTS (SELECT 1 FROM project_subscriptions s WHERE s.project_id=p.id AND s.subscribed=0)
 		ORDER BY p.slug,p.id,b.path`, loc.device, layer, loc.project.ID, layer, path)
 	if err != nil {

@@ -125,7 +125,7 @@ func (d *desktop) loadWorkProjects(refresh bool) {
 		return
 	}
 	p.loading = true
-	desktopJob(d, d.core.ListDesktopProjects, func(projects []app.Project, err error) {
+	desktopJob(d, func(ctx context.Context) ([]app.Project, error) { return d.core.ReadProjects(ctx, true) }, func(projects []app.Project, err error) {
 		p.items, p.err, p.loading, p.loaded = projects, err, false, true
 		if err != nil {
 			return

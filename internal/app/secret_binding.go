@@ -98,8 +98,8 @@ func secretBindingFromRecord(r remoteRecord) SecretBinding {
 	return SecretBinding{r.SecretBinding, r.ID, r.Scope, r.Revision, r.Provenance.UpdatedAt}
 }
 
-const liveSecretBindings = ` FROM records WHERE kind='secret-binding' AND coalesce(json_extract(metadata,'$.deleted'),0)=0
-	AND NOT EXISTS (SELECT 1 FROM sync_tombstones t WHERE t.id IN (records.id, records.project_id))`
+var liveSecretBindings = ` FROM records WHERE kind='secret-binding' AND coalesce(json_extract(metadata,'$.deleted'),0)=0
+	AND ` + live("records.id", "records.project_id")
 
 func secretBindingRecord(raw []byte) (remoteRecord, error) {
 	r, err := decodeRecord(raw)

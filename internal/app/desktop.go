@@ -99,7 +99,7 @@ func (a App) ReadDesktopSnapshot(ctx context.Context) (DesktopSnapshot, error) {
 
 func desktopBindings(ctx context.Context, tx *sql.Tx, device string) ([]DesktopBinding, error) {
 	rows, err := tx.QueryContext(ctx, `SELECT p.id,p.slug,b.path FROM checkout_bindings b JOIN projects p ON p.id=b.project_id
-		WHERE b.device_id=? AND NOT EXISTS (SELECT 1 FROM sync_tombstones t WHERE t.id=p.id)
+		WHERE b.device_id=? AND `+live("p.id")+`
 		ORDER BY p.slug,b.path`, device)
 	if err != nil {
 		return nil, err

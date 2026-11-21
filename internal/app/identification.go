@@ -170,7 +170,7 @@ type projectReader interface {
 
 func selectProject(ctx context.Context, q queryer, selector string) (Project, error) {
 	var p Project
-	e := q.QueryRowContext(ctx, "SELECT id,slug,created_at FROM projects WHERE (id=? OR slug=?) AND id NOT IN (SELECT id FROM sync_tombstones) ORDER BY CASE WHEN id=? THEN 0 ELSE 1 END LIMIT 1", selector, selector, selector).Scan(&p.ID, &p.Slug, &p.CreatedAt)
+	e := q.QueryRowContext(ctx, "SELECT id,slug,created_at FROM projects WHERE (id=? OR slug=?) AND "+live("projects.id")+" ORDER BY CASE WHEN id=? THEN 0 ELSE 1 END LIMIT 1", selector, selector, selector).Scan(&p.ID, &p.Slug, &p.CreatedAt)
 	if errors.Is(e, sql.ErrNoRows) {
 		return p, Fail("project-not-found", "selected Project was not found")
 	}
@@ -326,7 +326,7 @@ func resolveProjectAt(ctx context.Context, db projectReader, selector string, r 
 		r.Source = "explicit"
 		return r, nil
 	}
-	rows, e := db.QueryContext(ctx, "SELECT project_id,path FROM checkout_bindings WHERE device_id=? AND project_id NOT IN (SELECT id FROM sync_tombstones)", r.Device.ID)
+	rows, e := db.QueryContext(ctx, "SELECT project_id,path FROM checkout_bindings WHERE device_id=? AND "+live("checkout_bindings.project_id"), r.Device.ID)
 	if e != nil {
 		return r, e
 	}
@@ -359,7 +359,7 @@ func resolveProjectAt(ctx context.Context, db projectReader, selector string, r 
 		return resolveCandidates(ctx, db, r, nil)
 	}
 	// Locally explicit common-dir evidence is stronger than remote candidates.
-	rows, e = db.QueryContext(ctx, `SELECT DISTINCT p.id,p.slug,p.created_at,m.repository_id,m.id,m.subdirectory FROM checkout_bindings b JOIN memberships m ON m.id=b.membership_id JOIN projects p ON p.id=m.project_id WHERE b.device_id=? AND b.git_common_dir=? AND NOT EXISTS (SELECT 1 FROM sync_tombstones t WHERE t.id IN (p.id,m.id,m.repository_id))`, r.Device.ID, r.Git.CommonDir)
+	rows, e = db.QueryContext(ctx, `SELECT DISTINCT p.id,p.slug,p.created_at,m.repository_id,m.id,m.subdirectory FROM checkout_bindings b JOIN memberships m ON m.id=b.membership_id JOIN projects p ON p.id=m.project_id WHERE b.device_id=? AND b.git_common_dir=? AND `+live("p.id", "m.id", "m.repository_id"), r.Device.ID, r.Git.CommonDir)
 	if e != nil {
 		return r, e
 	}
@@ -420,7 +420,7 @@ func resolveCandidates(ctx context.Context, db projectReader, r Resolution, comm
 	} else {
 		seen := map[string]bool{}
 		for _, remote := range r.Git.remotes {
-			rows, e := db.QueryContext(ctx, `SELECT p.id,p.slug,p.created_at,m.repository_id,m.id,m.subdirectory FROM repository_aliases a JOIN memberships m ON m.repository_id=a.repository_id JOIN projects p ON p.id=m.project_id WHERE a.remote=? AND NOT EXISTS (SELECT 1 FROM sync_tombstones t WHERE t.id IN (p.id,m.id,m.repository_id))`, remote)
+			rows, e := db.QueryContext(ctx, `SELECT p.id,p.slug,p.created_at,m.repository_id,m.id,m.subdirectory FROM repository_aliases a JOIN memberships m ON m.repository_id=a.repository_id JOIN projects p ON p.id=m.project_id WHERE a.remote=? AND `+live("p.id", "m.id", "m.repository_id"), remote)
 			if e != nil {
 				return r, e
 			}

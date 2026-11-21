@@ -274,7 +274,7 @@ func (a App) InspectTask(ctx context.Context, selector, cwd, name string) (Task,
 
 func taskMembership(ctx context.Context, q rowQuerier, projectID, id string) (repository, subdir string, err error) {
 	err = q.QueryRowContext(ctx, `SELECT m.repository_id,m.subdirectory FROM memberships m
-		WHERE m.id=? AND m.project_id=? AND NOT EXISTS(SELECT 1 FROM sync_tombstones t WHERE t.id IN (m.id,m.repository_id,m.project_id))`,
+		WHERE m.id=? AND m.project_id=? AND `+live("m.id", "m.repository_id", "m.project_id"),
 		id, projectID).Scan(&repository, &subdir)
 	if errors.Is(err, sql.ErrNoRows) || err == nil && !taskPath(subdir) {
 		err = Fail("invalid-reference", "Task must reference a live Repository membership in its Project")
