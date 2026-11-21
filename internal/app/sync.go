@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -395,316 +396,157 @@ func exportSnapshot(ctx context.Context, db *sql.DB, c SyncConfig) (map[string][
 	})
 	return files, ops, err
 }
+
+// snapshotExport accumulates the shared snapshot while each recordKind exports itself.
+type snapshotExport struct {
+	ctx             context.Context
+	conn            *sql.Conn
+	conf            SyncConfig
+	files           map[string][]byte
+	ops             []string
+	projects, repos map[string]bool
+	deviceID, stamp string
+}
+
+func (x *snapshotExport) addJSON(path string, v any) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	if strings.HasPrefix(path, "records/") && len(b) > MetadataLimit {
+		return Fail("size-limit", "published record envelope exceeds 256 KiB")
+	}
+	x.files[path] = append(b, '\n')
+	return nil
+}
+
+// add publishes a typed catalog row. Rows without a stored envelope (doc == nil)
+// keep their revision in export_identities until their normalized payload changes.
+func (x *snapshotExport) add(id, kind string, scope Scope, payload any, doc *ContextDoc) error {
+	ctx, conn := x.ctx, x.conn
+	if _, err := uuid.Parse(id); err != nil {
+		return Fail("invalid-record", "record ID must be a UUID")
+	}
+	env := publishedEnvelope{SchemaVersion: 1, ID: id, Kind: kind, WorkspaceID: x.conf.WorkspaceID, Scope: scope, Policy: Policy{"shared", "full"}, Payload: payload}
+	env.Provenance.DeviceID = x.deviceID
+	env.Provenance.UpdatedAt = x.stamp
+	if doc != nil {
+		env.Deleted = doc.Deleted
+		env.Revision = doc.Revision
+		env.PreviousRevision = doc.PreviousRevision
+		env.OperationID = doc.OperationID
+		env.Policy = doc.Policy
+		env.Provenance.DeviceID = doc.DeviceID
+		env.Provenance.UpdatedAt = doc.UpdatedAt
+	} else {
+		b, err := json.Marshal(payload)
+		if err != nil {
+			return err
+		}
+		var normalized any
+		json.Unmarshal(b, &normalized)
+		b, _ = json.Marshal(normalized)
+		hash := digest(b)
+		var previousHash string
+		err = conn.QueryRowContext(ctx, "SELECT revision,operation_id,fingerprint,previous_revision FROM export_identities WHERE id=?", id).Scan(&env.Revision, &env.OperationID, &previousHash, &env.PreviousRevision)
+		if err != nil && err != sql.ErrNoRows {
+			return err
+		}
+		if previousHash != hash {
+			// Older publishers hashed struct field order. Reuse confirmed identity when only encoding changed.
+			var baseline []byte
+			if e := conn.QueryRowContext(ctx, "SELECT data FROM sync_baselines WHERE path=?", recordPath(id)).Scan(&baseline); e == nil {
+				if prior, e := decodeRecord(baseline); e == nil && bytes.Equal(prior.Data, b) && !prior.Deleted {
+					env.Revision = prior.Revision
+					env.OperationID = prior.OperationID
+					env.PreviousRevision = prior.PreviousRevision
+					previousHash = hash
+					err = nil
+					if _, e = conn.ExecContext(ctx, "UPDATE export_identities SET fingerprint=?,revision=?,operation_id=?,previous_revision=? WHERE id=?", hash, env.Revision, env.OperationID, env.PreviousRevision, id); e != nil {
+						return e
+					}
+				}
+			}
+		}
+		if err == sql.ErrNoRows || previousHash != hash {
+			env.PreviousRevision = env.Revision
+			env.Revision = uuid.NewString()
+			env.OperationID = uuid.NewString()
+			if _, err = conn.ExecContext(ctx, "INSERT INTO export_identities VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,operation_id=excluded.operation_id,fingerprint=excluded.fingerprint,previous_revision=excluded.previous_revision", id, env.Revision, env.OperationID, hash, env.PreviousRevision); err != nil {
+				return err
+			}
+		}
+	}
+	for _, v := range []string{env.Revision, env.OperationID, env.Provenance.DeviceID} {
+		if _, err := uuid.Parse(v); err != nil {
+			return Fail("invalid-record", "invalid record identity or revision")
+		}
+	}
+	x.ops = append(x.ops, env.OperationID)
+	return x.addJSON(recordPath(id), env)
+}
+
+// eachRecord visits the generic records rows of one kind. The callback must not
+// write while the cursor is open; stored envelopes already carry their revisions.
+func (x *snapshotExport) eachRecord(kind string, fn func(id, projectID, raw string, body sql.NullString) error) error {
+	rows, err := x.conn.QueryContext(x.ctx, "SELECT r.id,r.project_id,r.metadata,b.body FROM records r LEFT JOIN context_bodies b ON b.record_id=r.id WHERE r.kind=? ORDER BY r.id", kind)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, pid, raw string
+		var body sql.NullString
+		if err = rows.Scan(&id, &pid, &raw, &body); err != nil {
+			return err
+		}
+		if err = fn(id, pid, raw, body); err != nil {
+			return err
+		}
+	}
+	if err = rows.Err(); err != nil {
+		return err
+	}
+	return rows.Close()
+}
+
 func exportConn(ctx context.Context, conn *sql.Conn, c SyncConfig) (map[string][]byte, []string, error) {
-	files := map[string][]byte{}
-	ops := []string{}
+	x := &snapshotExport{ctx: ctx, conn: conn, conf: c, files: map[string][]byte{}, ops: []string{}, projects: map[string]bool{}, repos: map[string]bool{}}
 	err := func() error {
-		var epoch, did, stamp string
+		var epoch string
 		if err := conn.QueryRowContext(ctx, "SELECT epoch FROM sync_state WHERE singleton=1").Scan(&epoch); err != nil {
 			return err
 		}
-		if err := conn.QueryRowContext(ctx, "SELECT id,created_at FROM device WHERE singleton=1").Scan(&did, &stamp); err != nil {
+		if err := conn.QueryRowContext(ctx, "SELECT id,created_at FROM device WHERE singleton=1").Scan(&x.deviceID, &x.stamp); err != nil {
 			return err
 		}
-		addJSON := func(path string, v any) error {
-			b, err := json.Marshal(v)
-			if err != nil {
-				return err
-			}
-			if strings.HasPrefix(path, "records/") && len(b) > MetadataLimit {
-				return Fail("size-limit", "published record envelope exceeds 256 KiB")
-			}
-			files[path] = append(b, '\n')
-			return nil
-		}
-		if err := addJSON("workspace.json", map[string]any{"format": 1, "workspaceId": c.WorkspaceID, "epoch": epoch, "storageMode": "plaintext"}); err != nil {
+		if err := x.addJSON("workspace.json", map[string]any{"format": 1, "workspaceId": c.WorkspaceID, "epoch": epoch, "storageMode": "plaintext"}); err != nil {
 			return err
 		}
-		files["README.md"] = []byte("# CtxFerry sync format v1\n\n" + plaintextBoundary + "\n\nPrivate repository access covers the whole workspace; it is not end-to-end encryption. Revoking a device cannot erase downloaded plaintext. History retains deleted content. Rotate any accidentally published secret. Preserve Git history and the local catalog for recovery; do not reset the sync branch.\n")
-		add := func(id, kind string, scope Scope, payload any, doc *ContextDoc) error {
-			if _, err := uuid.Parse(id); err != nil {
-				return Fail("invalid-record", "record ID must be a UUID")
-			}
-			env := publishedEnvelope{SchemaVersion: 1, ID: id, Kind: kind, WorkspaceID: c.WorkspaceID, Scope: scope, Policy: Policy{"shared", "full"}, Payload: payload}
-			env.Provenance.DeviceID = did
-			env.Provenance.UpdatedAt = stamp
-			if doc != nil {
-				env.Deleted = doc.Deleted
-				env.Revision = doc.Revision
-				env.PreviousRevision = doc.PreviousRevision
-				env.OperationID = doc.OperationID
-				env.Policy = doc.Policy
-				env.Provenance.DeviceID = doc.DeviceID
-				env.Provenance.UpdatedAt = doc.UpdatedAt
-			} else {
-				b, err := json.Marshal(payload)
-				if err != nil {
-					return err
-				}
-				var normalized any
-				json.Unmarshal(b, &normalized)
-				b, _ = json.Marshal(normalized)
-				hash := digest(b)
-				var previousHash string
-				err = conn.QueryRowContext(ctx, "SELECT revision,operation_id,fingerprint,previous_revision FROM export_identities WHERE id=?", id).Scan(&env.Revision, &env.OperationID, &previousHash, &env.PreviousRevision)
-				if err != nil && err != sql.ErrNoRows {
-					return err
-				}
-				if previousHash != hash {
-					// Older publishers hashed struct field order. Reuse confirmed identity when only encoding changed.
-					var baseline []byte
-					if e := conn.QueryRowContext(ctx, "SELECT data FROM sync_baselines WHERE path=?", recordPath(id)).Scan(&baseline); e == nil {
-						if prior, e := decodeRecord(baseline); e == nil && bytes.Equal(prior.Data, b) && !prior.Deleted {
-							env.Revision = prior.Revision
-							env.OperationID = prior.OperationID
-							env.PreviousRevision = prior.PreviousRevision
-							previousHash = hash
-							err = nil
-							if _, e = conn.ExecContext(ctx, "UPDATE export_identities SET fingerprint=?,revision=?,operation_id=?,previous_revision=? WHERE id=?", hash, env.Revision, env.OperationID, env.PreviousRevision, id); e != nil {
-								return e
-							}
-						}
-					}
-				}
-				if err == sql.ErrNoRows || previousHash != hash {
-					env.PreviousRevision = env.Revision
-					env.Revision = uuid.NewString()
-					env.OperationID = uuid.NewString()
-					if _, err = conn.ExecContext(ctx, "INSERT INTO export_identities VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,operation_id=excluded.operation_id,fingerprint=excluded.fingerprint,previous_revision=excluded.previous_revision", id, env.Revision, env.OperationID, hash, env.PreviousRevision); err != nil {
-						return err
-					}
-				}
-			}
-			for _, v := range []string{env.Revision, env.OperationID, env.Provenance.DeviceID} {
-				if _, err := uuid.Parse(v); err != nil {
-					return Fail("invalid-record", "invalid record identity or revision")
-				}
-			}
-			ops = append(ops, env.OperationID)
-			return addJSON("records/"+strings.ReplaceAll(id, "-", "")[:2]+"/"+id+".json", env)
-		}
-		projects := map[string]bool{}
-		repos := map[string]bool{}
-		rows, err := conn.QueryContext(ctx, "SELECT id,slug,created_at FROM projects ORDER BY id")
+		x.files["README.md"] = []byte("# CtxFerry sync format v1\n\n" + plaintextBoundary + "\n\nPrivate repository access covers the whole workspace; it is not end-to-end encryption. Revoking a device cannot erase downloaded plaintext. History retains deleted content. Rotate any accidentally published secret. Preserve Git history and the local catalog for recovery; do not reset the sync branch.\n")
+		kinds, err := queryStrings(ctx, conn, "SELECT DISTINCT kind FROM records")
 		if err != nil {
 			return err
 		}
-		type entity struct {
-			id, kind string
-			scope    Scope
-			payload  any
-		}
-		entities := []entity{}
-		for rows.Next() {
-			var p Project
-			if err = rows.Scan(&p.ID, &p.Slug, &p.CreatedAt); err != nil {
-				rows.Close()
-				return err
-			}
-			projects[p.ID] = true
-			entities = append(entities, entity{p.ID, "project", Scope{"workspace", c.WorkspaceID}, p})
-		}
-		if err = rows.Err(); err != nil {
-			rows.Close()
-			return err
-		}
-		rows.Close()
-		rows, err = conn.QueryContext(ctx, "SELECT id FROM repositories ORDER BY id")
-		if err != nil {
-			return err
-		}
-		for rows.Next() {
-			var id string
-			if err = rows.Scan(&id); err != nil {
-				rows.Close()
-				return err
-			}
-			repos[id] = true
-		}
-		if err = rows.Err(); err != nil {
-			rows.Close()
-			return err
-		}
-		rows.Close()
-		ids := []string{}
-		for id := range repos {
-			ids = append(ids, id)
-		}
-		sort.Strings(ids)
-		for _, id := range ids {
-			aliases := []string{}
-			rows, err = conn.QueryContext(ctx, "SELECT remote FROM repository_aliases WHERE repository_id=? ORDER BY remote", id)
-			if err != nil {
-				return err
-			}
-			for rows.Next() {
-				var alias string
-				if err = rows.Scan(&alias); err != nil {
-					rows.Close()
-					return err
-				}
-				normalized, e := normalizeRemote("https://" + alias)
-				if e != nil || normalized != alias {
-					rows.Close()
-					return Fail("invalid-record", "invalid shared repository alias")
-				}
-				aliases = append(aliases, alias)
-			}
-			if err = rows.Err(); err != nil {
-				rows.Close()
-				return err
-			}
-			rows.Close()
-			entities = append(entities, entity{id, "repository", Scope{"workspace", c.WorkspaceID}, map[string]any{"remoteAliases": aliases}})
-		}
-		rows, err = conn.QueryContext(ctx, "SELECT id,project_id,repository_id,subdirectory FROM memberships ORDER BY id")
-		if err != nil {
-			return err
-		}
-		for rows.Next() {
-			var id, pid, rid, sub string
-			if err = rows.Scan(&id, &pid, &rid, &sub); err != nil {
-				rows.Close()
-				return err
-			}
-			if !projects[pid] || !repos[rid] || filepath.IsAbs(sub) || strings.Contains(sub, "..") {
-				rows.Close()
-				return Fail("invalid-reference", "membership has an invalid shared dependency")
-			}
-			entities = append(entities, entity{id, "membership", Scope{"project", pid}, map[string]any{"repositoryId": rid, "subdirectory": sub}})
-		}
-		if err = rows.Err(); err != nil {
-			rows.Close()
-			return err
-		}
-		rows.Close()
-		for _, e := range entities {
-			if err = add(e.id, e.kind, e.scope, e.payload, nil); err != nil {
-				return err
-			}
-		}
-		configs, err := exportConfigurations(ctx, conn, c.WorkspaceID, projects)
-		if err != nil {
-			return err
-		}
-		for _, cfg := range configs {
-			if err = add(cfg.id, "configuration", cfg.scope, cfg.value, nil); err != nil {
-				return err
-			}
-		}
-		rows, err = conn.QueryContext(ctx, "SELECT r.id,r.project_id,r.kind,r.metadata,b.body FROM records r LEFT JOIN context_bodies b ON b.record_id=r.id ORDER BY r.id")
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var id, pid, kind, raw string
-			var body sql.NullString
-			if err = rows.Scan(&id, &pid, &kind, &raw, &body); err != nil {
-				return err
-			}
-			if kind == artifactKind {
-				r, err := decodeRecord([]byte(raw))
-				if err != nil {
-					return err
-				}
-				if !validUUID(id) || r.ID != id || r.Kind != kind || r.Scope != (Scope{"project", pid}) ||
-					!projects[pid] || r.WorkspaceID != c.WorkspaceID || r.Policy != (Policy{"shared", "reference"}) ||
-					!validArtifactPublication(r.Artifact) || body.Valid {
-					return Fail("invalid-reference", "shared artifact has invalid metadata or Project dependency")
-				}
-				if _, exists := files[recordPath(id)]; exists {
-					return Fail("record-collision", "shared artifact ID collides with another record")
-				}
-				files[recordPath(id)] = []byte(raw)
-				ops = append(ops, r.OperationID)
-				continue
-			}
-			if kind == "resource" || kind == "task" || kind == secretBindingKind {
-				r, err := decodeRecord([]byte(raw))
-				if err != nil {
-					return err
-				}
-				disclosure := "full"
-				if kind == secretBindingKind {
-					disclosure = "reference"
-				}
-				if r.Kind != kind || r.Scope.Kind != "project" || !validPolicy(r.Policy) || r.Policy.AgentDisclosure != disclosure ||
-					kind == secretBindingKind && r.Policy.Storage != "shared" {
-					return Fail("invalid-record", "invalid "+kind+" record scope or policy")
-				}
-				switch kind {
-				case "resource":
-					err = validateResourceSpec(r.Resource, r.Policy.Storage == "shared")
-				case "task":
-					err = validateTask(r.Task)
-				case secretBindingKind:
-					err = validateSecretBinding(r.SecretBinding)
-				}
-				if err != nil {
-					return err
-				}
-				if r.Policy.Storage == "local-only" {
-					continue
-				}
-				if !validUUID(r.ID) || r.ID != id || r.Scope.ID != pid || !projects[pid] || r.WorkspaceID != c.WorkspaceID || body.Valid {
-					return Fail("invalid-reference", "shared "+kind+" has an invalid Project dependency")
-				}
-				if _, exists := files[recordPath(id)]; exists {
-					return Fail("record-collision", "shared "+kind+" ID collides with another record")
-				}
-				if err = addJSON(recordPath(id), r.publishedEnvelope); err != nil {
-					return err
-				}
-				ops = append(ops, r.OperationID)
-				continue
-			}
-			if kind != "context" {
+		for _, kind := range kinds {
+			if !slices.Contains(registeredKinds("records"), kind) {
 				return Fail("unsupported-schema", "unknown record kind blocks export")
 			}
-			var d ContextDoc
-			if err = decodeContext(raw, &d); err != nil {
-				return err
-			}
-			if d.SchemaVersion != 1 || !validPolicy(d.Policy) {
-				return Fail("invalid-policy", "unsupported record schema or policy blocks export")
-			}
-			if d.Policy.Storage == "local-only" {
-				continue
-			}
-			if d.ID != id || d.Kind != "context" || d.Scope.Kind != "project" || d.Scope.ID != pid || !projects[pid] || d.WorkspaceID != c.WorkspaceID || !body.Valid || len(raw) > MetadataLimit || len(body.String) > BodyLimit {
-				return Fail("invalid-reference", "shared context has invalid metadata, object or scope dependency")
-			}
-			data := []byte(body.String)
-			hash := digest(data)
-			files["objects/"+hash] = data
-			payload := map[string]any{"title": d.Title, "purpose": d.Purpose, "source": d.Source, "summary": d.Summary, "observedAt": d.ObservedAt, "validUntil": d.ValidUntil, "body": map[string]any{"type": "text/markdown", "size": len(data), "sha256": hash}}
-			// Do not write while the cursor is open: doc envelopes reuse existing revisions.
-			if err = add(id, "context", d.Scope, payload, &d); err != nil {
+		}
+		for _, k := range recordKinds {
+			if err := k.export(x); err != nil {
 				return err
 			}
 		}
-		if err := rows.Err(); err != nil {
-			return err
-		}
-		if err := rows.Close(); err != nil {
-			return err
-		}
-		skillOps, err := exportSkills(ctx, conn, c.WorkspaceID, projects, files)
-		if err != nil {
-			return err
-		}
-		ops = append(ops, skillOps...)
-
 		return nil
 	}()
 	if err == nil {
-		err = overlayTombstones(ctx, conn, files)
+		err = overlayTombstones(ctx, conn, x.files)
 		if err == nil {
-			err = retainDeferredRecords(ctx, conn, files)
+			err = retainDeferredRecords(ctx, conn, x.files)
 		}
 	}
-	return files, ops, err
+	return x.files, x.ops, err
 }
 
 func snapshotFingerprint(files map[string][]byte, c SyncConfig) string {

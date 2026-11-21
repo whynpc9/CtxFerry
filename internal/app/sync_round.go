@@ -7,13 +7,11 @@ import (
 	"encoding/json"
 	"io"
 	"os"
-	"path/filepath"
 	"runtime"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/whynpc9/CtxFerry/internal/store"
@@ -119,48 +117,15 @@ func decodeRecord(b []byte) (remoteRecord, error) {
 			return r, err
 		}
 	}
-	if r.Kind == "configuration" {
-		config, err := decodeConfiguration(wire.Payload, false)
-		if err != nil {
-			return r, err
-		}
-		r.Config = config
-	}
 	raw, err := json.Marshal(r.Payload)
 	if err != nil {
 		return r, err
 	}
 	r.Data = raw
-	switch r.Kind {
-	case "configuration":
-		return r, nil
-	case "resource":
-		err = strictJSON(raw, &r.Resource)
-	case artifactKind:
-		err = strictJSON(wire.Payload, &r.Artifact)
-	case secretBindingKind:
-		for field, keys := range map[string][]string{
-			"scope":      {"kind", "id"},
-			"provenance": {"deviceId", "updatedAt"},
-			"policy":     {"storage", "agentDisclosure"},
-		} {
-			if err := exactSecretFields(fields[field], keys...); err != nil {
-				return r, err
-			}
-		}
-		err = decodeSecretBinding(wire.Payload, &r.SecretBinding)
-	case skillPinKind:
-		err = strictJSON(wire.Payload, &r.SkillPin)
-	case skillGroupKind:
-		err = strictJSON(wire.Payload, &r.SkillGroup)
-	case "task":
-		if _, err = configurationFields(wire.Payload); err == nil {
-			err = strictJSON(wire.Payload, &r.Task)
-		}
-	default:
-		err = strictJSON(raw, &r.Value)
+	if k, ok := lookupKind(r.Kind); ok && k.decode != nil {
+		return r, k.decode(&r, wire.Payload, fields)
 	}
-	return r, err
+	return r, strictJSON(raw, &r.Value)
 }
 func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceFormat, map[string]remoteRecord, error) {
 	var w workspaceFormat
@@ -180,11 +145,9 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 	if len(files["README.md"]) == 0 {
 		return invalid()
 	}
-	slugs := map[string]bool{}
-	summaries := map[string]bool{}
-	artifactObjects := map[string]bool{}
+	unique := map[string]bool{}
 	ordinaryObjects := map[string]bool{}
-	runs := map[string]remoteRecord{}
+	check := &snapshotCheck{workspace: w, files: files, runs: map[string]remoteRecord{}, artifactObjects: map[string]bool{}}
 	for path, b := range files {
 		if path == "workspace.json" || path == "README.md" {
 			continue
@@ -199,8 +162,9 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 			return invalid()
 		}
 		r, err := decodeRecord(b)
+		kind, known := lookupKind(r.Kind)
 		if err != nil {
-			if (r.Kind == "configuration" || r.Kind == "task") && Classify(err).Code != "unsupported-schema" {
+			if known && kind.detailedDecodeErrors && Classify(err).Code != "unsupported-schema" {
 				return w, nil, Fail("incomplete", "invalid "+r.Kind+" record: "+Classify(err).Message)
 			}
 			return w, nil, err
@@ -214,129 +178,17 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 		if _, err = time.Parse(time.RFC3339Nano, r.Provenance.UpdatedAt); err != nil {
 			return invalid()
 		}
-		v := r.Value
-		switch r.Kind {
-		case "project":
-			var p Project
-			if err := strictJSON(r.Data, &p); err != nil {
-				return w, nil, err
-			}
-			if p.ID != r.ID || !validSlug.MatchString(p.Slug) || len(p.Slug) > 63 || (!r.Deleted && slugs[p.Slug]) || r.Scope != (Scope{"workspace", w.WorkspaceID}) {
-				return invalid()
-			}
-			if !r.Deleted {
-				slugs[p.Slug] = true
-			}
-			if _, err = time.Parse(time.RFC3339Nano, p.CreatedAt); err != nil {
-				return invalid()
-			}
-		case "repository":
-			var p struct {
-				RemoteAliases []string `json:"remoteAliases"`
-			}
-			if err := strictJSON(r.Data, &p); err != nil {
-				return w, nil, err
-			}
-			if r.Scope != (Scope{"workspace", w.WorkspaceID}) {
-				return invalid()
-			}
-			for _, alias := range v.RemoteAliases {
-				n, e := normalizeRemote("https://" + alias)
-				if e != nil || n != alias {
-					return invalid()
-				}
-			}
-		case "membership":
-			var p struct {
-				RepositoryID string `json:"repositoryId"`
-				Subdirectory string `json:"subdirectory"`
-			}
-			if err := strictJSON(r.Data, &p); err != nil {
-				return w, nil, err
-			}
-			if r.Scope.Kind != "project" || !validUUID(v.RepositoryID) || v.Subdirectory == "" || filepath.IsAbs(v.Subdirectory) || strings.Contains(v.Subdirectory, "..") || strings.Contains(v.Subdirectory, "\\") {
-				return invalid()
-			}
-		case "configuration":
-			if !validConfigurationScope(r.ID, w.WorkspaceID, r.Scope, r.Config.Profile) || r.Policy.AgentDisclosure != "full" {
-				return invalid()
-			}
-		case "context":
-			var p struct {
-				Title      string          `json:"title"`
-				Purpose    string          `json:"purpose"`
-				Source     string          `json:"source"`
-				Summary    *string         `json:"summary"`
-				ObservedAt *string         `json:"observedAt"`
-				ValidUntil string          `json:"validUntil"`
-				Body       *objectManifest `json:"body"`
-			}
-			if err := strictJSON(r.Data, &p); err != nil {
-				return w, nil, err
-			}
-			if r.Scope.Kind != "project" || strings.TrimSpace(v.Title) == "" || strings.TrimSpace(v.Purpose) == "" || strings.TrimSpace(v.Source) == "" || v.Body == nil {
-				return invalid()
-			}
-			b, ok := files["objects/"+v.Body.SHA256]
-			if !ok || len(b) > BodyLimit || v.Body.Type != "text/markdown" || v.Body.Size != len(b) || digest(b) != v.Body.SHA256 || !utf8.Valid(b) {
-				return invalid()
-			}
-			if v.ValidUntil != "" {
-				if _, err = time.Parse(time.RFC3339, v.ValidUntil); err != nil {
-					return invalid()
-				}
-			}
-			if !r.Deleted && v.Purpose == "project-summary" {
-				if summaries[r.Scope.ID] {
-					return invalid()
-				}
-				summaries[r.Scope.ID] = true
-			}
-		case artifactKind:
-			p := r.Artifact
-			if r.Scope.Kind != "project" || r.Policy != (Policy{"shared", "reference"}) ||
-				!validArtifactPublication(p) {
-				return invalid()
-			}
-			if prior, ok := runs[p.Run.ID]; ok && (prior.Scope != r.Scope || prior.Artifact.Run != p.Run) {
-				return invalid()
-			}
-			runs[p.Run.ID] = r
-			if p.Omitted == "" {
-				b, ok := files[p.objectPath()]
-				if !ok || int64(len(b)) != p.Size || excludedArtifactBytes(b) {
-					return invalid()
-				}
-				artifactObjects[p.objectPath()] = true
-			}
-		case skillPinKind, skillGroupKind:
-			if err := r.validateSkillRecord(w.WorkspaceID); err != nil {
-				return w, nil, err
-			}
-			if r.Kind == skillPinKind && r.SkillPin.SourceKind == "private" {
-				if _, err := privateSkillData(r.SkillPin, func(path string) ([]byte, error) {
-					if data, ok := files[path]; ok {
-						return data, nil
-					}
-					return nil, Fail("incomplete", "private Skill object is missing")
-				}); err != nil {
-					return w, nil, err
-				}
-			}
-		case secretBindingKind:
-			if r.Scope.Kind != "project" || r.Policy != (Policy{"shared", "reference"}) || validateSecretBinding(r.SecretBinding) != nil {
-				return invalid()
-			}
-		case "task":
-			if r.Scope.Kind != "project" || r.Policy.AgentDisclosure != "full" || validateTask(r.Task) != nil {
-				return invalid()
-			}
-		case "resource":
-			if r.Scope.Kind != "project" || r.Policy.AgentDisclosure != "full" || validateResourceSpec(r.Resource, true) != nil {
-				return invalid()
-			}
-		default:
+		if !known {
 			return w, nil, Fail("unsupported-schema", "unsupported catalog record kind")
+		}
+		if err := kind.validate(r, check); err != nil {
+			return w, nil, err
+		}
+		if key := uniquenessKey(r); key != "" && !r.Deleted {
+			if unique[key] {
+				return invalid()
+			}
+			unique[key] = true
 		}
 		for _, path := range r.ordinaryObjectPaths() {
 			ordinaryObjects[path] = true
@@ -345,7 +197,7 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 	}
 	var ordinaryBytes, artifactBytes int
 	for path, b := range files {
-		if artifactObjects[path] {
+		if check.artifactObjects[path] {
 			artifactBytes += len(b)
 			if !ordinaryObjects[path] {
 				continue
@@ -363,23 +215,11 @@ func validateSnapshot(files map[string][]byte, wid, epoch string) (workspaceForm
 		if r.Deleted {
 			continue
 		}
-		if r.Scope.Kind == "project" {
-			if p, ok := records[r.Scope.ID]; !ok || p.Kind != "project" || p.Deleted {
-				return invalid()
-			}
-		}
-		for _, id := range skillGroupDependencies(r) {
-			if pin := records[id]; pin.Kind != skillPinKind || pin.Deleted {
-				return invalid()
-			}
-		}
-		if len(invalidTaskDependencies(r, records)) != 0 {
+		if r.Scope.Kind == "project" && !liveRecord(records, r.Scope.ID, "project") {
 			return invalid()
 		}
-		if r.Kind == "membership" {
-			if p, ok := records[r.Value.RepositoryID]; !ok || p.Kind != "repository" || p.Deleted {
-				return invalid()
-			}
+		if k, _ := lookupKind(r.Kind); k.references != nil && !k.references(r, records) {
+			return invalid()
 		}
 	}
 	return w, records, nil
@@ -632,12 +472,11 @@ func installSnapshot(ctx context.Context, c *sql.Conn, files map[string][]byte, 
 	if err != nil {
 		return err
 	}
-	for _, kind := range []string{"project", "repository", "membership", "context", "configuration", "resource", "task", secretBindingKind, artifactKind, skillPinKind, skillGroupKind} {
+	for _, kind := range recordKinds {
 		for id, r := range records {
-			if r.Kind != kind {
+			if r.Kind != kind.name {
 				continue
 			}
-			v := r.Value
 			if r.Deleted {
 				b, _ := json.Marshal(r.publishedEnvelope)
 				if _, err := c.ExecContext(ctx, "INSERT INTO sync_tombstones VALUES(?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data", id, b); err != nil {
@@ -648,70 +487,10 @@ func installSnapshot(ctx context.Context, c *sql.Conn, files map[string][]byte, 
 					return err
 				}
 			}
-			var err error
-			switch kind {
-			case "project":
-				_, err = c.ExecContext(ctx, "INSERT INTO projects VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET slug=excluded.slug", id, v.Slug, v.CreatedAt)
-			case "repository":
-				_, err = c.ExecContext(ctx, "INSERT OR IGNORE INTO repositories VALUES(?,?)", id, r.Provenance.UpdatedAt)
-				if err != nil {
-					return err
-				}
-				if _, err = c.ExecContext(ctx, "DELETE FROM repository_aliases WHERE repository_id=?", id); err != nil {
-					return err
-				}
-				for _, alias := range v.RemoteAliases {
-					if _, err = c.ExecContext(ctx, "INSERT INTO repository_aliases VALUES(?,?)", id, alias); err != nil {
-						return err
-					}
-				}
-			case "membership":
-				_, err = c.ExecContext(ctx, "INSERT INTO memberships VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id,repository_id=excluded.repository_id,subdirectory=excluded.subdirectory", id, r.Scope.ID, v.RepositoryID, v.Subdirectory)
-			case artifactKind:
-				err = installArtifactPublication(ctx, c, r)
-			case "configuration":
-				if r.Deleted {
-					_, err = c.ExecContext(ctx, "DELETE FROM configurations WHERE id=?", id)
-				} else {
-					err = saveConfiguration(ctx, c, id, r.Scope, r.Config)
-				}
-			case skillPinKind, skillGroupKind:
-				for _, path := range r.skillObjects() {
-					if _, err := c.ExecContext(ctx, "INSERT OR IGNORE INTO sync_objects VALUES(?,COALESCE(?,X''))", path, files[path]); err != nil {
-						return err
-					}
-				}
-				if err := installSkillRecord(ctx, c, r); err != nil {
-					return err
-				}
-				continue
-			case "resource", "task", secretBindingKind:
-				var b []byte
-				b, err = json.Marshal(r.publishedEnvelope)
-				if err != nil {
-					return err
-				}
-				_, err = c.ExecContext(ctx, "INSERT INTO records VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET metadata=excluded.metadata", id, r.Scope.ID, kind, string(b))
-			case "context":
-				d := ContextDoc{Deleted: r.Deleted, SchemaVersion: 1, ID: id, Kind: kind, WorkspaceID: r.WorkspaceID, Scope: r.Scope, Revision: r.Revision, PreviousRevision: r.PreviousRevision, OperationID: r.OperationID, DeviceID: r.Provenance.DeviceID, UpdatedAt: r.Provenance.UpdatedAt, Title: v.Title, Purpose: v.Purpose, Source: v.Source, Summary: v.Summary, ObservedAt: v.ObservedAt, ValidUntil: v.ValidUntil, Policy: r.Policy, Freshness: "unknown"}
-				b, _ := json.Marshal(d)
-				_, err = c.ExecContext(ctx, "INSERT INTO records VALUES(?,?,'context',?) ON CONFLICT(id) DO UPDATE SET metadata=excluded.metadata", id, r.Scope.ID, string(b))
-				if err != nil {
-					return err
-				}
-				body := string(files["objects/"+v.Body.SHA256])
-				if _, err = c.ExecContext(ctx, "INSERT INTO context_bodies VALUES(?,?) ON CONFLICT(record_id) DO UPDATE SET body=excluded.body", id, body); err != nil {
-					return err
-				}
-				d.Body = &body
-				if err = indexDoc(ctx, c, d); err != nil {
-					return err
-				}
-			}
-			if err != nil {
+			if err := kind.install(ctx, c, files, r); err != nil {
 				return err
 			}
-			if kind != "context" && kind != "resource" && kind != "task" && kind != secretBindingKind {
+			if kind.exportIdentity {
 				b, _ := json.Marshal(r.Payload)
 				if _, err = c.ExecContext(ctx, "INSERT INTO export_identities VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,operation_id=excluded.operation_id,fingerprint=excluded.fingerprint,previous_revision=excluded.previous_revision", id, r.Revision, r.OperationID, digest(b), r.PreviousRevision); err != nil {
 					return err

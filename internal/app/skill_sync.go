@@ -304,53 +304,58 @@ func localSkillObject(ctx context.Context, q rowQuerier, path string) ([]byte, e
 	return b, nil
 }
 
-// Export only typed Skill records and the private objects their manifests reference.
-func exportSkills(ctx context.Context, c *sql.Conn, workspace string, projects map[string]bool, files map[string][]byte) ([]string, error) {
-	rows, err := c.QueryContext(ctx, "SELECT id,metadata FROM skill_records ORDER BY id")
+// Export only typed Skill records of one kind and the private objects their manifests reference.
+func (x *snapshotExport) exportSkillRecords(kind string) error {
+	rows, err := x.conn.QueryContext(x.ctx, "SELECT id,metadata FROM skill_records ORDER BY id")
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer rows.Close()
-	var ops []string
 	var records []remoteRecord
 	for rows.Next() {
 		var id string
 		var raw []byte
 		if err := rows.Scan(&id, &raw); err != nil {
-			return nil, err
+			return err
 		}
 		r, err := decodeRecord(raw)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		if len(raw)+1 > MetadataLimit || r.ID != id || !validUUID(r.ID) || files[recordPath(r.ID)] != nil ||
-			r.Kind != skillPinKind && r.Kind != skillGroupKind || r.Scope.Kind == "project" && !projects[r.Scope.ID] {
-			return nil, Fail("invalid-reference", "invalid shared Skill record identity or Project dependency")
+		if len(raw)+1 > MetadataLimit || r.ID != id || !validUUID(r.ID) ||
+			!slices.Contains(registeredKinds("skill_records"), r.Kind) || r.Scope.Kind == "project" && !x.projects[r.Scope.ID] {
+			return Fail("invalid-reference", "invalid shared Skill record identity or Project dependency")
 		}
-		if err := r.validateSkillRecord(workspace); err != nil {
-			return nil, err
+		if r.Kind != kind {
+			continue
 		}
-		files[recordPath(r.ID)] = append(raw, '\n')
-		ops = append(ops, r.OperationID)
+		if x.files[recordPath(r.ID)] != nil {
+			return Fail("invalid-reference", "invalid shared Skill record identity or Project dependency")
+		}
+		if err := r.validateSkillRecord(x.conf.WorkspaceID); err != nil {
+			return err
+		}
+		x.files[recordPath(r.ID)] = append(raw, '\n')
+		x.ops = append(x.ops, r.OperationID)
 		records = append(records, r)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return err
 	}
 	if err := rows.Close(); err != nil {
-		return nil, err
+		return err
 	}
 	for _, r := range records {
 		for _, path := range r.skillObjects() {
-			if _, exists := files[path]; exists {
+			if _, exists := x.files[path]; exists {
 				continue
 			}
-			b, err := localSkillObject(ctx, c, path)
+			b, err := localSkillObject(x.ctx, x.conn, path)
 			if err != nil {
-				return nil, err
+				return err
 			}
-			files[path] = b
+			x.files[path] = b
 		}
 	}
-	return ops, nil
+	return nil
 }

@@ -61,22 +61,10 @@ func dependencies(r remoteRecord) []string {
 	if r.Scope.Kind == "project" {
 		ids = append(ids, r.Scope.ID)
 	}
-	switch r.Kind {
-	case "membership":
-		ids = append(ids, r.Value.RepositoryID)
-	case "task":
-		ids = append(ids, r.Task.MembershipID)
-	case secretBindingKind:
-		ids = append(ids, r.SecretBinding.ResourceID)
-	case "configuration":
-		for _, m := range r.Config.SecretMappings {
-			ids = append(ids, m.TaskID, m.BindingID)
-		}
-		for _, m := range r.Config.ResourceMappings {
-			ids = append(ids, m.TaskID, m.ResourceID)
-		}
+	if k, ok := lookupKind(r.Kind); ok && k.dependencies != nil {
+		ids = append(ids, k.dependencies(r)...)
 	}
-	return append(ids, skillGroupDependencies(r)...)
+	return ids
 }
 
 // Pending dependencies form commit units; unchanged parents do not couple unrelated edits.
@@ -213,13 +201,7 @@ func planOperations(remote, local map[string][]byte, ops []operation) (map[strin
 			if r.Deleted {
 				continue
 			}
-			key := ""
-			if r.Kind == "project" {
-				key = "slug:" + r.Value.Slug
-			}
-			if r.Kind == "context" && r.Value.Purpose == "project-summary" {
-				key = "summary:" + r.Scope.ID
-			}
+			key := uniquenessKey(r)
 			if key == "" {
 				continue
 			}
@@ -808,24 +790,11 @@ func retainDeferredRecords(ctx context.Context, c *sql.Conn, files map[string][]
 		if e != nil {
 			return e
 		}
-		table := ""
-		switch r.Kind {
-		case "project":
-			table = "projects"
-		case "repository":
-			table = "repositories"
-		case "membership":
-			table = "memberships"
-		case "context", "resource", "task", secretBindingKind, artifactKind:
-			table = "records"
-		case "configuration":
-			table = "configurations"
-		case skillPinKind, skillGroupKind:
-			table = "skill_records"
-		}
-		if table == "" {
+		kind, ok := lookupKind(r.Kind)
+		if !ok {
 			continue
 		}
+		table := kind.table
 		var n int
 		if e = c.QueryRowContext(ctx, "SELECT count(*) FROM "+table+" WHERE id=?", r.ID).Scan(&n); e != nil {
 			return e
