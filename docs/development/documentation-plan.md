@@ -8,6 +8,7 @@ device. A coding agent can follow the same examples and use the JSON output.
 | --- | --- | --- |
 | Start here | [index.md](../content/index.md) | Choose the next guide from a goal. |
 | Start here | [getting-started.md](../content/getting-started.md) | Install the CLI from source, bind a checkout and inspect the result offline. |
+| Start here | [tutorial.md](../content/tutorial.md) | Complete a two-device proof of concept with Context, Tasks, a credential reference, execution trust and private sync. |
 | Start here | [desktop.md](../content/desktop.md) | Open Home, review Configuration, find Catalog tools and trace the sync queue. |
 | Work in a project | [context.md](../content/context.md) | Write and retrieve a note, choose its storage and disclosure, and explain Profile overrides. |
 | Work in a project | [tasks-and-resources.md](../content/tasks-and-resources.md) | Describe a resource, check reachability and run a local Task. |

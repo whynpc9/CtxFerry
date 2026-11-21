@@ -13,6 +13,8 @@ optional until you want the same shared context on another device.
 
 - [Install and bind a checkout](getting-started.md): build the CLI from source,
   initialize a local workspace, and inspect a Project without network access.
+- [Follow the end-to-end tutorial](tutorial.md): take a Go Project from local
+  Context and Tasks through credentialed execution and two-device sync.
 - [Open the native desktop](desktop.md) to follow a conflict from Home to the
   queue, inspect a Checkout’s effective configuration or find tools in Catalog.
 

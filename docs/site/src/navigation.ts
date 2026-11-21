@@ -1,5 +1,8 @@
 export const guideGroups = [
-  { label: "Start here", pages: ["docs", "docs/getting-started", "docs/desktop"] },
+  {
+    label: "Start here",
+    pages: ["docs", "docs/getting-started", "docs/tutorial", "docs/desktop"],
+  },
   {
     label: "Work in a project",
     pages: [

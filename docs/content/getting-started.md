@@ -123,6 +123,8 @@ instead; see [Resources and Tasks](tasks-and-resources.md#run-a-local-task).
 
 ## Next steps
 
+- [Follow the end-to-end tutorial](tutorial.md) to connect Context, Tasks,
+  credentials and a second device in one proof-of-concept workflow.
 - [Write a Context document](context.md) and choose whether it stays local or
   becomes eligible for private sync.
 - [Check this device with doctor](diagnostics.md) when a binding or path does
