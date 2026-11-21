@@ -155,20 +155,14 @@ func (a App) PutContext(ctx context.Context, selector, cwd string, in PutContext
 		return r, e
 	}
 	defer db.Close()
-	if e = a.prepareBaseline(ctx, db); e != nil {
-		return r, e
-	}
-	e = store.Write(ctx, db, func(c *sql.Conn) error {
+	e = a.mutateCatalog(ctx, db, func(c *sql.Conn) (bool, error) {
 		var doc ContextDoc
 		if err := writeContext(ctx, c, r.Project.ID, in, &doc); err != nil {
-			return err
-		}
-		if err := queueChanges(ctx, c); err != nil {
-			return err
+			return false, err
 		}
 		r.Document = &doc
 		r.UpdatedAt = doc.UpdatedAt
-		return nil
+		return true, nil
 	})
 	return r, e
 }

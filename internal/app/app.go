@@ -94,6 +94,8 @@ type App struct {
 	// Trust decides whether a credentialed execution definition is enabled on
 	// this device. Nil refuses every credentialed run.
 	Trust ExecutionTrust
+	// backend replaces the Git sync remote in tests. Nil uses managed Git.
+	backend syncBackend
 }
 
 func now() string            { return time.Now().UTC().Format(time.RFC3339Nano) }
@@ -255,14 +257,8 @@ func (a App) BindProjectWith(ctx context.Context, path, slug, selector, reposito
 		return r, e
 	}
 	defer db.Close()
-	if e = a.prepareBaseline(ctx, db); e != nil {
-		return r, e
-	}
-	e = store.Write(ctx, db, func(c *sql.Conn) error {
-		if err := bindProject(ctx, c, &r, path, slug, selector, repository, git, aliases); err != nil {
-			return err
-		}
-		return queueChanges(ctx, c)
+	e = a.mutateCatalog(ctx, db, func(c *sql.Conn) (bool, error) {
+		return true, bindProject(ctx, c, &r, path, slug, selector, repository, git, aliases)
 	})
 	return r, e
 }
@@ -377,7 +373,7 @@ func (a App) ListProjectsAll(ctx context.Context, all bool) (ListResult, error) 
 
 func listProjects(ctx context.Context, db *sql.DB, all bool) (ListResult, error) {
 	r := ListResult{Projects: []Project{}}
-	query := "SELECT id,slug,created_at FROM projects WHERE id NOT IN (SELECT id FROM sync_tombstones)"
+	query := "SELECT id,slug,created_at FROM projects WHERE " + live("projects.id")
 	if !all {
 		query += " AND id NOT IN (SELECT project_id FROM project_subscriptions WHERE subscribed=0)"
 	}

@@ -1,13 +1,12 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/egoist/mygo/ui"
-	"github.com/whynpc9/CtxFerry/internal/store"
+	"github.com/whynpc9/CtxFerry/internal/app"
 )
 
 var (
@@ -405,14 +404,14 @@ func (d *desktop) waitingHold() string {
 }
 
 func readinessError(err error) (string, string) {
-	switch {
-	case err == nil:
+	switch app.ClassifyCatalog(err) {
+	case app.CatalogReady:
 		return "", ""
-	case errors.Is(err, store.ErrNotInitialized):
+	case app.CatalogUninitialized:
 		return "Welcome to CtxFerry", "Set up this device by creating a Workspace or joining one. Nothing is written until you confirm."
-	case errors.Is(err, store.ErrMigrationRequired):
+	case app.CatalogMigrationRequired:
 		return "This catalog needs migration", "Open it once with a matching CtxFerry CLI, then Refresh. The desktop will not migrate it implicitly."
-	case errors.Is(err, store.ErrUnsupportedSchema):
+	case app.CatalogUnsupportedSchema:
 		return "This catalog is from a newer CtxFerry", "Update CtxFerry before opening this data root. Your existing catalog is preserved."
 	default:
 		return "The local catalog is unavailable", "Run ctxferry doctor for this data root, resolve the reported problem, then Refresh."

@@ -124,13 +124,10 @@ func (a App) changeConfiguration(ctx context.Context, selector, cwd string, chan
 		return out, err
 	}
 
-	if err := a.prepareBaseline(ctx, db); err != nil {
-		return out, err
-	}
-	err = store.Write(ctx, db, func(c *sql.Conn) error {
+	err = a.mutateCatalog(ctx, db, func(c *sql.Conn) (bool, error) {
 		loc, err := resolve(ctx, c)
 		if err != nil {
-			return err
+			return false, err
 		}
 		scope := Scope{"workspace", loc.workspace}
 		if change.Layer != layerGlobal {
@@ -138,25 +135,25 @@ func (a App) changeConfiguration(ctx context.Context, selector, cwd string, chan
 		}
 		out.ID = configID(loc.workspace, scope, change.Profile)
 		if err := requireNoConflict(ctx, c, out.ID); err != nil {
-			return err
+			return false, err
 		}
 		v, exists, err := readConfiguration(c.QueryRowContext(ctx, "SELECT payload FROM configurations WHERE id=?", out.ID), false)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if change.Create && exists {
-			return Fail("profile-exists", "Profile already exists in this Project")
+			return false, Fail("profile-exists", "Profile already exists in this Project")
 		}
 		if change.Layer == layerProfile && !change.Create && !exists {
-			return Fail("profile-not-found", "create the Profile before editing its configuration")
+			return false, Fail("profile-not-found", "create the Profile before editing its configuration")
 		}
 		if !change.apply(&v) {
-			return nil
+			return false, nil
 		}
 		if err := saveConfiguration(ctx, c, out.ID, scope, v); err != nil {
-			return err
+			return false, err
 		}
-		return queueChanges(ctx, c)
+		return true, nil
 	})
 	return out, err
 }

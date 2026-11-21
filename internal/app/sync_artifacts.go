@@ -204,13 +204,7 @@ func limitPublicationUnits(remote, local map[string][]byte, ops []operation, edg
 			if bytes.Equal(b, o.proposed) {
 				objects[o.id] = r.ordinaryObjectPaths()
 			}
-			key := ""
-			switch {
-			case r.Kind == "project":
-				key = "slug:" + r.Value.Slug
-			case r.Kind == "context" && r.Value.Purpose == "project-summary":
-				key = "summary:" + r.Scope.ID
-			}
+			key := uniquenessKey(r)
 			if key == "" {
 				continue
 			}

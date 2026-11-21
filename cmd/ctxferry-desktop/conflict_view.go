@@ -274,7 +274,7 @@ func (d *desktop) conflictCard(c *ui.Context, name string, v *app.ConflictVersio
 		ui.Text(c, label).FontSize(fsMeta).Bold().TextColor(tk.Muted)
 		conflictValue(c, v, field, value, present)
 	}
-	if v.Kind == "context" && v.Policy.AgentDisclosure != "full" {
+	if slices.Contains(v.Hidden, "body") {
 		muted(c, "Body hidden by the disclosure policy")
 	}
 }
@@ -303,9 +303,7 @@ func conflictTime(raw string) string {
 
 func conflictValue(c *ui.Context, v *app.ConflictVersion, field comparisonField, value any, present bool) {
 	switch {
-	case v.Kind == "context" && !present && field.key == "body" && v.Policy.AgentDisclosure != "full",
-		v.Kind == "context" && !present && field.key == "summary" &&
-			(v.Policy.AgentDisclosure == "reference" || v.Policy.AgentDisclosure == "local-tool"):
+	case !present && slices.Contains(v.Hidden, field.key):
 		muted(c, "Hidden by disclosure policy")
 	case !present || value == nil:
 		muted(c, "Not set")

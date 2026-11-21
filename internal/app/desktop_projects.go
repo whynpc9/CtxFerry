@@ -28,7 +28,7 @@ func (a App) ReadDesktopProjects(ctx context.Context) ([]DesktopProject, error) 
 		FROM projects p LEFT JOIN project_subscriptions s ON s.project_id=p.id
 		LEFT JOIN checkout_bindings b ON b.project_id=p.id AND b.device_id=(SELECT id FROM device WHERE singleton=1)
 		LEFT JOIN memberships m ON m.id=b.membership_id
-		WHERE NOT EXISTS (SELECT 1 FROM sync_tombstones t WHERE t.id=p.id)
+		WHERE `+live("p.id")+`
 		ORDER BY p.slug,p.id,b.path`)
 	if err != nil {
 		return nil, err

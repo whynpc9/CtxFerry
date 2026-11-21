@@ -34,8 +34,8 @@ func (d *desktop) refreshManagement() {
 		return
 	}
 	d.projects.loading = true
-	desktopWork(d, d.core.DesktopProjects, func(result app.ListResult, err error) {
-		d.projects = desktopProjects{items: result.Projects, ready: true, err: err}
+	desktopWork(d, func(ctx context.Context) ([]app.Project, error) { return d.core.ReadProjects(ctx, false) }, func(projects []app.Project, err error) {
+		d.projects = desktopProjects{items: projects, ready: true, err: err}
 		if err != nil {
 			return
 		}

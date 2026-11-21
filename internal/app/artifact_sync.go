@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/whynpc9/CtxFerry/internal/store"
 )
 
 const (
@@ -180,36 +179,33 @@ func (a App) ShareArtifact(ctx context.Context, selector, cwd, id, mode, approva
 		return result, err
 	}
 	defer db.Close()
-	if err := a.prepareBaseline(ctx, db); err != nil {
-		return result, err
-	}
 	conf, err := loadSync(ctx, db)
 	if err != nil {
 		return result, err
 	}
-	err = store.Write(ctx, db, func(c *sql.Conn) error {
+	err = a.mutateCatalog(ctx, db, func(c *sql.Conn) (bool, error) {
 		m, err := scanArtifact(c.QueryRowContext(ctx, artifactQuery+" AND a.id=?", resolution.Project.ID, id))
 		if errors.Is(err, sql.ErrNoRows) {
-			return Fail("artifact-not-found", "only an artifact registered locally in this Project can be shared")
+			return false, Fail("artifact-not-found", "only an artifact registered locally in this Project can be shared")
 		}
 		if err != nil {
-			return err
+			return false, err
 		}
 		if m.Run.ProjectID != resolution.Project.ID || m.Run.DeviceID != resolution.Device.ID {
-			return Fail("invalid-reference", "artifact run does not belong to this Project and device")
+			return false, Fail("invalid-reference", "artifact run does not belong to this Project and device")
 		}
 		var exists, reused bool
 		if err := c.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM records WHERE id=?), EXISTS(SELECT 1 FROM sync_baselines WHERE path=?)",
 			id, "objects/"+m.Payload.SHA256).Scan(&exists, &reused); err != nil {
-			return err
+			return false, err
 		}
 		if exists {
-			return Fail("artifact-already-shared", "this immutable artifact already has a publication record")
+			return false, Fail("artifact-already-shared", "this immutable artifact already has a publication record")
 		}
 		var head string
 		var history sql.NullInt64
 		if err := c.QueryRowContext(ctx, "SELECT confirmed_head,history_bytes FROM sync_state").Scan(&head, &history); err != nil {
-			return err
+			return false, err
 		}
 		p := artifactPublication{
 			Run:  artifactRunSummary{m.Run.ID, m.Run.DeviceID, m.Run.CreatedAt, m.Run.OS, m.Run.Arch, m.Run.Summary},
@@ -220,14 +216,14 @@ func (a App) ShareArtifact(ctx context.Context, selector, cwd, id, mode, approva
 		if p.Omitted == "" {
 			data, err := a.readLocalArtifactBytes(p)
 			if err != nil {
-				return err
+				return false, err
 			}
 			if excludedArtifactBytes(data) {
 				p.Omitted = "excluded-format"
 			}
 		}
 		if !validArtifactPublication(p) || !validUUID(id) {
-			return Fail("artifact-invalid", "artifact metadata cannot be shared")
+			return false, Fail("artifact-invalid", "artifact metadata cannot be shared")
 		}
 		const boundary = "The previewed manifest and eligible payload can enter private Git history in plaintext. Review the name, summary and payload for private paths, raw data and credentials. History retains published content."
 		result = ArtifactSharePreview{ID: id, ProjectID: m.Run.ProjectID, Manifest: p, Boundary: boundary, State: "preview"}
@@ -252,32 +248,29 @@ func (a App) ShareArtifact(ctx context.Context, selector, cwd, id, mode, approva
 			NewPayloadBytes int64
 		}{env, head, result.NewPayloadBytes})
 		if err != nil {
-			return err
+			return false, err
 		}
 		// Leave room for the assigned revision and operation IDs.
 		if len(preview) > MetadataLimit-256 {
-			return Fail("size-limit", "artifact publication metadata exceeds 256 KiB")
+			return false, Fail("size-limit", "artifact publication metadata exceeds 256 KiB")
 		}
 		result.PreviewID = digest(preview)
 		if approval == "" {
-			return nil
+			return false, nil
 		}
 		if approval != result.PreviewID {
-			return Fail("stale-preview", "inspect a fresh artifact share preview")
+			return false, Fail("stale-preview", "inspect a fresh artifact share preview")
 		}
 		env.Revision, env.OperationID = uuid.NewString(), uuid.NewString()
 		data, err := json.Marshal(env)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if _, err := c.ExecContext(ctx, "INSERT INTO records VALUES(?,?,?,?)", id, m.Run.ProjectID, artifactKind, string(data)); err != nil {
-			return err
-		}
-		if err := queueChanges(ctx, c); err != nil {
-			return err
+			return false, err
 		}
 		result.State = "pending"
-		return nil
+		return true, nil
 	})
 	return result, err
 }

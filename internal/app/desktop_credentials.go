@@ -7,7 +7,6 @@ import (
 	"slices"
 
 	"github.com/whynpc9/CtxFerry/internal/provider"
-	"github.com/whynpc9/CtxFerry/internal/store"
 )
 
 // DesktopCredentialCatalog lists selection metadata without running a task,
@@ -36,25 +35,16 @@ type DesktopCredentialSlot struct {
 	workspace, profileRevision, taskRevision string
 }
 
-func (a App) DesktopProjects(ctx context.Context) (ListResult, error) {
-	db, err := store.OpenReadOnly(ctx, a.DataDir)
-	if err != nil {
-		return ListResult{}, err
-	}
-	defer db.Close()
-	return listProjects(ctx, db, false)
-}
-
 func (a App) DesktopCredentials(ctx context.Context, project string) (DesktopCredentialCatalog, error) {
 	var out DesktopCredentialCatalog
-	db, p, err := a.openDesktopProject(ctx, project)
+	db, p, err := a.openProjectReadOnly(ctx, project)
 	if err != nil {
 		return out, err
 	}
 	defer db.Close()
 	rows, err := db.QueryContext(ctx, `SELECT DISTINCT json_extract(payload,'$.profile') FROM configurations
 		WHERE project_id=? AND json_type(payload,'$.profile')='text'
-		AND id NOT IN (SELECT id FROM sync_tombstones) ORDER BY 1`, p.ID)
+		AND `+live("configurations.id")+` ORDER BY 1`, p.ID)
 	if err != nil {
 		return out, err
 	}
@@ -88,25 +78,9 @@ func (a App) DesktopCredentials(ctx context.Context, project string) (DesktopCre
 	return out, nil
 }
 
-func (a App) openDesktopProject(ctx context.Context, project string) (*sql.DB, Project, error) {
-	db, err := store.OpenReadOnly(ctx, a.DataDir)
-	if err != nil {
-		return nil, Project{}, err
-	}
-	p, err := selectProject(ctx, db, project)
-	if err == nil {
-		err = requireSubscription(ctx, db, p.ID)
-	}
-	if err != nil {
-		db.Close()
-		return nil, Project{}, err
-	}
-	return db, p, nil
-}
-
 func (a App) DesktopSecretSlot(ctx context.Context, project string, target SecretTarget) (DesktopCredentialSlot, error) {
 	out := DesktopCredentialSlot{Status: SecretStatus{Task: target.Task, Requirement: target.Requirement}}
-	db, p, err := a.openDesktopProject(ctx, project)
+	db, p, err := a.openProjectReadOnly(ctx, project)
 	if err != nil {
 		return out, err
 	}

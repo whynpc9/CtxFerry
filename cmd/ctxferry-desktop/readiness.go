@@ -1,13 +1,11 @@
 package main
 
 import (
-	"errors"
 	"strings"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/whynpc9/CtxFerry/internal/app"
-	"github.com/whynpc9/CtxFerry/internal/store"
 )
 
 type setupState struct {
@@ -22,6 +20,18 @@ type setupState struct {
 
 func shellArgument(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
+}
+
+// joinArgs subscribes to the listed Projects, or to all of them when none is listed.
+func joinArgs(remote, subscriptions string) []string {
+	args := []string{"join", remote}
+	for _, subscription := range strings.FieldsFunc(subscriptions, func(r rune) bool { return r == ',' || r == ' ' || r == '\n' }) {
+		args = append(args, "--subscribe", subscription)
+	}
+	if len(args) == 2 {
+		args = append(args, "--all-projects")
+	}
+	return args
 }
 
 func desktopCommand(dataRoot string, args ...string) string {
@@ -78,17 +88,18 @@ func (d *desktop) readinessView(c *ui.Context) {
 		ui.Divider(c)
 		muted(c, "Wrong location? Restart CtxFerry with CTXFERRY_DATA_DIR set to another data root. Every copied command carries the same explicit --data-dir.")
 	})
-	switch {
-	case errors.Is(d.err, store.ErrNotInitialized):
+	state := app.ClassifyCatalog(d.err)
+	switch state {
+	case app.CatalogUninitialized:
 		d.setupView(c)
-	case errors.Is(d.err, store.ErrMigrationRequired):
+	case app.CatalogMigrationRequired:
 		d.recoveryCommand(c, "Migrate with the matching CLI", "Open the catalog once with the matching CtxFerry CLI. The migration preserves the data root.", desktopCommand(d.core.DataDir, "project", "list"))
-	case errors.Is(d.err, store.ErrUnsupportedSchema):
+	case app.CatalogUnsupportedSchema:
 		banner(c, toneUnknown, "Update required", "No write action is available for a newer schema.", nil)
 	default:
 		d.recoveryCommand(c, "Diagnose this data root", "The desktop does not expose raw database diagnostics. Use the CLI report to identify the failed catalog check.", desktopCommand(d.core.DataDir, "doctor", "--format", "json"))
 	}
-	if d.err != nil && !errors.Is(d.err, store.ErrNotInitialized) {
+	if state != app.CatalogReady && state != app.CatalogUninitialized {
 		ui.Row(c).Justify(ui.End).Children(func() {
 			iconButton(c, icSync, "Refresh", false).OnClick(d.refresh)
 		})
@@ -174,14 +185,7 @@ func (d *desktop) joinView(c *ui.Context) {
 				banner(c, toneUnknown, "Repository required", "Enter the private Git remote to generate the join command.", nil)
 				return
 			}
-			args := []string{"join", remote}
-			for _, subscription := range strings.FieldsFunc(d.setup.subscriptions, func(r rune) bool { return r == ',' || r == ' ' || r == '\n' }) {
-				args = append(args, "--subscribe", subscription)
-			}
-			if len(args) == 2 {
-				args = append(args, "--all-projects")
-			}
-			d.commandBlock(c, desktopCommand(d.core.DataDir, args...), true)
+			d.commandBlock(c, desktopCommand(d.core.DataDir, joinArgs(remote, d.setup.subscriptions)...), true)
 			d.afterRun(c, "After it finishes, Refresh reads the joined catalog and resolves each Project ID. Bind a Checkout from Projects.")
 		})
 	})

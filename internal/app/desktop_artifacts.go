@@ -6,33 +6,7 @@ import (
 	"errors"
 	"io"
 	"path/filepath"
-
-	"github.com/whynpc9/CtxFerry/internal/store"
 )
-
-func (a App) ListDesktopProjects(ctx context.Context) ([]Project, error) {
-	db, err := store.OpenReadOnly(ctx, a.DataDir)
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-	rows, err := db.QueryContext(ctx, `SELECT id,slug,created_at FROM projects p
-		WHERE NOT EXISTS (SELECT 1 FROM sync_tombstones WHERE id=p.id)
-		ORDER BY slug,id`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []Project
-	for rows.Next() {
-		var p Project
-		if err := rows.Scan(&p.ID, &p.Slug, &p.CreatedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, p)
-	}
-	return out, rows.Err()
-}
 
 type DesktopArtifact struct {
 	ArtifactManifest
@@ -41,7 +15,7 @@ type DesktopArtifact struct {
 }
 
 func (a App) ListDesktopArtifacts(ctx context.Context, project string) ([]DesktopArtifact, error) {
-	db, p, err := a.desktopArtifactProject(ctx, project)
+	db, p, err := a.openProjectReadOnly(ctx, project)
 	if err != nil {
 		return nil, err
 	}
@@ -99,25 +73,9 @@ func artifactContentError(err error) string {
 	}
 }
 
-func (a App) desktopArtifactProject(ctx context.Context, project string) (*sql.DB, Project, error) {
-	db, err := store.OpenReadOnly(ctx, a.DataDir)
-	if err != nil {
-		return nil, Project{}, err
-	}
-	p, err := selectProject(ctx, db, project)
-	if err == nil {
-		err = requireSubscription(ctx, db, p.ID)
-	}
-	if err != nil {
-		db.Close()
-		return nil, Project{}, err
-	}
-	return db, p, nil
-}
-
 // CheckDesktopArtifact verifies the current local bytes without moving them.
 func (a App) CheckDesktopArtifact(ctx context.Context, project, id string) error {
-	db, p, err := a.desktopArtifactProject(ctx, project)
+	db, p, err := a.openProjectReadOnly(ctx, project)
 	if err != nil {
 		return err
 	}

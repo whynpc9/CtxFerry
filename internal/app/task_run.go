@@ -316,7 +316,7 @@ func boundCommonDirs(ctx context.Context, q taskReader, device, repository strin
 	rows, err := q.QueryContext(ctx, `SELECT DISTINCT b.git_common_dir FROM checkout_bindings b
 		JOIN memberships m ON m.id=b.membership_id
 		WHERE b.device_id=? AND m.repository_id=? AND coalesce(b.git_common_dir,'')<>''
-		AND NOT EXISTS(SELECT 1 FROM sync_tombstones t WHERE t.id IN (m.id,m.project_id)) ORDER BY 1`, device, repository)
+		AND `+live("m.id", "m.project_id")+` ORDER BY 1`, device, repository)
 	if err != nil {
 		return nil, err
 	}

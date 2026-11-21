@@ -193,36 +193,28 @@ func (a App) AddResource(ctx context.Context, selector, cwd, storage string, spe
 		return out, err
 	}
 	defer db.Close()
-	if shared {
-		if err = a.prepareBaseline(ctx, db); err != nil {
-			return out, err
-		}
-	}
-	err = store.Write(ctx, db, func(c *sql.Conn) error {
+	err = a.mutateCatalog(ctx, db, func(c *sql.Conn) (bool, error) {
 		env := publishedEnvelope{SchemaVersion: 1, Kind: "resource", Scope: Scope{"project", project.ID}, Policy: Policy{storage, "full"}, Payload: spec}
 		for _, id := range []*string{&env.ID, &env.Revision, &env.OperationID} {
 			value, err := newID()
 			if err != nil {
-				return err
+				return false, err
 			}
 			*id = value
 		}
 		env.Provenance.UpdatedAt = now()
 		if err := c.QueryRowContext(ctx, "SELECT workspace.id, device.id FROM workspace CROSS JOIN device").Scan(&env.WorkspaceID, &env.Provenance.DeviceID); err != nil {
-			return err
+			return false, err
 		}
 		raw, err := json.Marshal(env)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if _, err = c.ExecContext(ctx, "INSERT INTO records VALUES(?,?,'resource',?)", env.ID, project.ID, string(raw)); err != nil {
-			return err
+			return false, err
 		}
 		out = resourceFromRecord(remoteRecord{publishedEnvelope: env, Resource: spec})
-		if shared {
-			return queueChanges(ctx, c)
-		}
-		return nil
+		return shared, nil
 	})
 	return out, err
 }

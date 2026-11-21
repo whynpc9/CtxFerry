@@ -35,7 +35,7 @@ type DesktopResourceProbe struct {
 // device ID, but carries no hostname, login evidence or remote route.
 func (a App) DesktopFleetView(ctx context.Context, project, resourceID string) (DesktopFleet, error) {
 	var out DesktopFleet
-	db, p, err := a.openDesktopProject(ctx, project)
+	db, p, err := a.openProjectReadOnly(ctx, project)
 	if err != nil {
 		return out, err
 	}
@@ -90,7 +90,7 @@ func desktopEnvironments(ctx context.Context, tx *sql.Tx, project, resource stri
 	// Retain imported or historical evidence if this database has it.
 	rows, err := tx.QueryContext(ctx, `WITH known(id) AS (
 		SELECT json_extract(metadata,'$.provenance.deviceId') FROM records WHERE project_id=?
-		AND coalesce(json_extract(metadata,'$.deleted'),0)=0 AND id NOT IN (SELECT id FROM sync_tombstones)
+		AND coalesce(json_extract(metadata,'$.deleted'),0)=0 AND `+live("records.id")+`
 		UNION SELECT device_id FROM resource_observations WHERE resource_id IN
 			(SELECT id FROM records WHERE project_id=? AND kind='resource')
 	)
