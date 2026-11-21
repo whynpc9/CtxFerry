@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -224,18 +223,6 @@ type DesktopSkillPreview struct {
 	Before, After                          *SkillPackage
 	Files                                  []DesktopSkillDiff
 	Issues                                 []SkillProblem
-}
-
-func (p skillProjection) installConfirmation() string {
-	if p.Status != "ready" && p.Status != "recovery-pending" {
-		return ""
-	}
-	wire, _ := json.Marshal(struct {
-		Plan    SkillPlan
-		Receipt skillReceipt
-		Shared  bool
-	}{p.SkillPlan, p.receipt, p.shared})
-	return digest(wire)
 }
 
 func (a App) PreviewDesktopSkillInstall(ctx context.Context, name, target string, symlink bool) (DesktopSkillPreview, error) {

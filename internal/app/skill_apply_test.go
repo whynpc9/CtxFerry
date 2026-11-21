@@ -80,3 +80,32 @@ func TestSkillApplyRecovery(t *testing.T) {
 		})
 	}
 }
+
+// The preview token covers everything the person confirmed and nothing else.
+func TestInstallConfirmationCoversPlanReceiptAndScope(t *testing.T) {
+	p := skillProjection{SkillPlan: SkillPlan{Status: "ready", Path: "/skills/a", Mode: "copy"}}
+	token := p.installConfirmation()
+	if token == "" || p.installConfirmation() != token {
+		t.Fatal("ready plan has no stable confirmation")
+	}
+	for name, change := range map[string]func(*skillProjection){
+		"plan":    func(p *skillProjection) { p.Mode = "symlink" },
+		"receipt": func(p *skillProjection) { p.receipt.State = "pending" },
+		"scope":   func(p *skillProjection) { p.shared = true },
+	} {
+		changed := p
+		change(&changed)
+		if changed.installConfirmation() == token {
+			t.Errorf("a %s change kept the confirmation", name)
+		}
+	}
+	unchanged := p
+	unchanged.version = "other"
+	if unchanged.installConfirmation() != token {
+		t.Error("an unconfirmed field changed the confirmation")
+	}
+	p.Status = "installed"
+	if p.installConfirmation() != "" {
+		t.Error("an installed plan can be confirmed")
+	}
+}
