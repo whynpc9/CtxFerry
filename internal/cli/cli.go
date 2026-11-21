@@ -33,6 +33,20 @@ type Services struct {
 	// Trust is the pre-execution decision for credentialed runs. Nil uses the
 	// device-local trust records in the data directory.
 	Trust app.ExecutionTrust
+	// parseOnly checks arguments and flags without running the command.
+	parseOnly bool
+}
+
+// Validate checks args against the CLI grammar, including flag names, argument
+// counts and usage rules, without touching a data directory. Front ends that
+// print commands for people to copy validate them with it, so a renamed flag
+// fails their tests instead of a user's terminal.
+func Validate(args []string) error {
+	var stderr strings.Builder
+	if RunWithServices(context.Background(), args, io.Discard, &stderr, Services{parseOnly: true}) != 0 {
+		return errors.New(strings.TrimSpace(stderr.String()))
+	}
+	return nil
 }
 
 func RunWithProviders(ctx context.Context, args []string, stdout, stderr io.Writer, providers provider.Services) int {
@@ -61,6 +75,9 @@ func RunWithServices(ctx context.Context, args []string, stdout, stderr io.Write
 			}
 			if format != "text" && format != "json" && !((cmd.Name() == "run" || cmd.Name() == "exec") && format == "jsonl") {
 				return app.Fail("usage", "format must be text or json")
+			}
+			if services.parseOnly {
+				return nil
 			}
 			dir, e := platform.DataDir(dataDir, cmd.Flags().Changed("data-dir"))
 			if e != nil {

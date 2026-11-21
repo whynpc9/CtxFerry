@@ -22,6 +22,18 @@ func shellArgument(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }
 
+// joinArgs subscribes to the listed Projects, or to all of them when none is listed.
+func joinArgs(remote, subscriptions string) []string {
+	args := []string{"join", remote}
+	for _, subscription := range strings.FieldsFunc(subscriptions, func(r rune) bool { return r == ',' || r == ' ' || r == '\n' }) {
+		args = append(args, "--subscribe", subscription)
+	}
+	if len(args) == 2 {
+		args = append(args, "--all-projects")
+	}
+	return args
+}
+
 func desktopCommand(dataRoot string, args ...string) string {
 	parts := []string{"ctxferry"}
 	parts = append(parts, args...)
@@ -173,14 +185,7 @@ func (d *desktop) joinView(c *ui.Context) {
 				banner(c, toneUnknown, "Repository required", "Enter the private Git remote to generate the join command.", nil)
 				return
 			}
-			args := []string{"join", remote}
-			for _, subscription := range strings.FieldsFunc(d.setup.subscriptions, func(r rune) bool { return r == ',' || r == ' ' || r == '\n' }) {
-				args = append(args, "--subscribe", subscription)
-			}
-			if len(args) == 2 {
-				args = append(args, "--all-projects")
-			}
-			d.commandBlock(c, desktopCommand(d.core.DataDir, args...), true)
+			d.commandBlock(c, desktopCommand(d.core.DataDir, joinArgs(remote, d.setup.subscriptions)...), true)
 			d.afterRun(c, "After it finishes, Refresh reads the joined catalog and resolves each Project ID. Bind a Checkout from Projects.")
 		})
 	})
