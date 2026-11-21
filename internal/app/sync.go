@@ -358,7 +358,11 @@ func (a App) EnableSync(ctx context.Context, remote, branch string) (SyncResult,
 	if err = db.QueryRowContext(ctx, "SELECT id FROM workspace WHERE singleton=1").Scan(&c.WorkspaceID); err != nil {
 		return r, err
 	}
-	check := checkSync(ctx, dir, c)
+	backend, err := a.openSyncBackend(ctx)
+	if err != nil {
+		return r, err
+	}
+	check := backend.Check(ctx, c)
 	r.Check = &check
 	if !check.GitReachable || check.Privacy != "private" {
 		r.State = "unverified"
@@ -673,7 +677,7 @@ func (a App) initSync(ctx context.Context, previewID string) (r SyncResult, err 
 		return r, err
 	}
 	r.Config = &c
-	dir, err := a.managedGit(ctx)
+	backend, err := a.openSyncBackend(ctx)
 	if err != nil {
 		return r, err
 	}
@@ -694,7 +698,7 @@ func (a App) initSync(ctx context.Context, previewID string) (r SyncResult, err 
 		if pending.PreviewID != previewID {
 			return r, Fail("push-pending", "a prior push must be reconciled before publishing another snapshot")
 		}
-		files, err = readSnapshot(ctx, dir, pending.Candidate)
+		files, err = backend.Snapshot(ctx, pending.Candidate)
 		if err != nil {
 			return r, err
 		}
@@ -718,7 +722,7 @@ func (a App) initSync(ctx context.Context, previewID string) (r SyncResult, err 
 	if fingerprint != snapshotFingerprint(files, c) {
 		return r, Fail("stale-preview", "shared snapshot changed; inspect a new sync preview")
 	}
-	check := checkSync(ctx, dir, c)
+	check := backend.Check(ctx, c)
 	r.Check = &check
 	if !check.GitReachable || check.Privacy != "private" {
 		code := check.Failure
@@ -728,35 +732,28 @@ func (a App) initSync(ctx context.Context, previewID string) (r SyncResult, err 
 		return r, &Error{Code: code, Message: "upload refused: Git reachability and authenticated private repository identity are required", Details: check}
 	}
 	if raw == "" {
-		candidate, err := candidateCommit(ctx, dir, files)
+		candidate, err := backend.Stage(ctx, files, "")
 		if err != nil {
 			return r, err
 		}
 		pending = pendingPush{ExpectedHead: "", Candidate: candidate, Epoch: epoch, OperationIDs: ops, PreviewID: previewID}
-		if _, err = syncGit(ctx, dir, nil, "update-ref", "refs/ctxferry/pending", candidate); err != nil {
-			return r, err
-		}
 		encoded, _ := json.Marshal(pending)
 		// FULL synchronous catalog commit happens before any push invocation.
 		if _, err = db.ExecContext(ctx, "UPDATE sync_state SET pending=? WHERE singleton=1", string(encoded)); err != nil {
 			return r, err
 		}
 	}
-	parents, err := syncGit(ctx, dir, nil, "rev-list", "--parents", "-n", "1", pending.Candidate)
-	if err != nil {
+	if err = backend.Verify(ctx, pending.Candidate, ""); err != nil {
 		return r, err
 	}
-	if len(strings.Fields(parents)) != 1 || strings.Fields(parents)[0] != pending.Candidate {
-		return r, Fail("invalid-pending", "initial candidate must be a root commit")
-	}
-	exists, err := inspectInitialization(ctx, dir, c, pending)
+	exists, err := inspectInitialization(ctx, backend, c, pending)
 	if err != nil {
 		return r, err
 	}
 	if !exists {
-		if err = newSyncBackend().Publish(ctx, dir, c, pending); err != nil {
+		if err = backend.Publish(ctx, c, pending); err != nil {
 			if Classify(err).Code == "lease-rejected" {
-				_, inspectErr := inspectInitialization(ctx, dir, c, pending)
+				_, inspectErr := inspectInitialization(ctx, backend, c, pending)
 				if inspectErr != nil {
 					return r, inspectErr
 				}
@@ -764,7 +761,7 @@ func (a App) initSync(ctx context.Context, previewID string) (r SyncResult, err 
 			return r, err
 		}
 	}
-	history, err := measureSyncHistory(ctx, dir, pending.Candidate)
+	history, err := backend.History(ctx, pending.Candidate)
 	if err != nil {
 		return r, err
 	}
@@ -849,11 +846,11 @@ func (a App) CheckSync(ctx context.Context) (SyncResult, error) {
 	if err != nil {
 		return r, err
 	}
-	dir, err := a.managedGit(ctx)
+	backend, err := a.openSyncBackend(ctx)
 	if err != nil {
 		return r, err
 	}
-	check := checkSync(ctx, dir, *r.Config)
+	check := backend.Check(ctx, *r.Config)
 	r.Check = &check
 	return r, nil
 }

@@ -94,6 +94,8 @@ type App struct {
 	// Trust decides whether a credentialed execution definition is enabled on
 	// this device. Nil refuses every credentialed run.
 	Trust ExecutionTrust
+	// backend replaces the Git sync remote in tests. Nil uses managed Git.
+	backend syncBackend
 }
 
 func now() string            { return time.Now().UTC().Format(time.RFC3339Nano) }

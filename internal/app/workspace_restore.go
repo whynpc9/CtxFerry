@@ -197,15 +197,14 @@ func (a App) RestoreWorkspace(ctx context.Context, source, expected string, newE
 	if conf.WorkspaceID != m.WorkspaceID {
 		return result, Fail("workspace-mismatch", "backup belongs to a different workspace")
 	}
-	dir, err := a.managedGit(ctx)
+	backend, err := a.openSyncBackend(ctx)
 	if err != nil {
 		return result, err
 	}
-	if check := privacyCheck(ctx, conf); check.Privacy != "private" {
+	if check := backend.Privacy(ctx, conf); check.Privacy != "private" {
 		return result, Fail(check.Failure, "authenticated private repository identity could not be confirmed")
 	}
-	backend := newSyncBackend()
-	head, current, err := backend.Fetch(ctx, dir, conf)
+	head, current, err := backend.Fetch(ctx, conf)
 	if err != nil {
 		return result, err
 	}
@@ -226,7 +225,7 @@ func (a App) RestoreWorkspace(ctx context.Context, source, expected string, newE
 			return result, Fail("push-pending", "run sync to reconcile the pending publication before restoring")
 		}
 		if prior.ExpectedHead == expected && prior.RestoredFrom == m.Head {
-			accepted, err := backend.Ancestor(ctx, dir, prior.Candidate, head)
+			accepted, err := backend.Ancestor(ctx, prior.Candidate, head)
 			if err != nil {
 				return result, err
 			}
@@ -235,25 +234,30 @@ func (a App) RestoreWorkspace(ctx context.Context, source, expected string, newE
 				return result, nil
 			}
 			if head == expected {
-				return result, backend.Publish(ctx, dir, conf, prior)
+				return result, backend.Publish(ctx, conf, prior)
 			}
 		}
 	}
 	if head != expected {
 		return result, Fail("stale-head", "published head changed; inspect it before choosing a new --if-head")
 	}
-	extends, err := backend.Ancestor(ctx, dir, confirmed, head)
+	extends, err := backend.Ancestor(ctx, confirmed, head)
 	if err != nil {
 		return result, err
 	}
 	if !extends {
 		return result, Fail("history-rewritten", "remote head no longer extends confirmed history")
 	}
+	// The bundle is unpacked into the managed repository, beside the remote's objects.
+	dir, err := a.managedGit(ctx)
+	if err != nil {
+		return result, err
+	}
 	w, files, err := importWorkspaceBundle(ctx, dir, source, m)
 	if err != nil {
 		return result, err
 	}
-	extends, err = backend.Ancestor(ctx, dir, m.Head, head)
+	extends, err = backend.Ancestor(ctx, m.Head, head)
 	if err != nil {
 		return result, err
 	}
@@ -296,16 +300,13 @@ func (a App) RestoreWorkspace(ctx context.Context, source, expected string, newE
 	if _, _, err = validateSnapshot(files, conf.WorkspaceID, w.Epoch); err != nil {
 		return result, err
 	}
-	candidate, err := candidateCommit(ctx, dir, files, head)
+	candidate, err := backend.Stage(ctx, files, head)
 	if err != nil {
 		return result, err
 	}
 	attempt := pendingPush{ExpectedHead: head, Candidate: candidate, Epoch: w.Epoch, RestoredFrom: m.Head}
 	encoded, err := json.Marshal(attempt)
 	if err != nil {
-		return result, err
-	}
-	if _, err = syncGit(ctx, dir, nil, "update-ref", "refs/ctxferry/pending", candidate); err != nil {
 		return result, err
 	}
 	if err = store.Write(ctx, db, func(c *sql.Conn) error {
@@ -319,5 +320,5 @@ func (a App) RestoreWorkspace(ctx context.Context, source, expected string, newE
 		return result, err
 	}
 	result = WorkspaceRestoreResult{conf.WorkspaceID, w.Epoch, candidate, m.Head}
-	return result, backend.Publish(ctx, dir, conf, attempt)
+	return result, backend.Publish(ctx, conf, attempt)
 }

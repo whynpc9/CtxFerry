@@ -241,9 +241,9 @@ func (a App) CheckDesktopRemote(ctx context.Context) (SyncConfig, SyncCheck, err
 	if err != nil || canonical != conf.Remote {
 		return conf, SyncCheck{}, Fail("invalid-remote", "saved sync repository is invalid")
 	}
-	dir, err := a.managedGit(ctx)
+	backend, err := a.openSyncBackend(ctx)
 	if err != nil {
 		return conf, SyncCheck{}, err
 	}
-	return conf, checkSync(ctx, dir, conf), nil
+	return conf, backend.Check(ctx, conf), nil
 }

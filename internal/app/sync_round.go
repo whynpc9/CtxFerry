@@ -563,13 +563,17 @@ func (a App) Join(ctx context.Context, remote, branch string, subscriptions []st
 		return r, Fail("usage", "invalid sync branch")
 	}
 	conf := SyncConfig{Remote: remote, Branch: branch}
-	check := checkSync(ctx, dir, conf)
+	backend, err := a.openSyncBackend(ctx)
+	if err != nil {
+		return r, err
+	}
+	check := backend.Check(ctx, conf)
 	r.Check = &check
 	if !check.GitReachable || check.Privacy != "private" {
 		return r, Fail("privacy-unconfirmed", "join requires reachable Git and confirmed private repository identity")
 	}
 	conf.Identity = check.Identity
-	head, files, err := newSyncBackend().Fetch(ctx, dir, conf)
+	head, files, err := backend.Fetch(ctx, conf)
 	if err != nil {
 		return r, err
 	}
@@ -591,7 +595,7 @@ func (a App) Join(ctx context.Context, remote, branch string, subscriptions []st
 			return r, Fail("project-not-found", "subscription project was not found")
 		}
 	}
-	history, err := measureSyncHistory(ctx, dir, head)
+	history, err := backend.History(ctx, head)
 	if err != nil {
 		return r, err
 	}
@@ -705,11 +709,11 @@ func (a App) syncRound(ctx context.Context, db *sql.DB) (result SyncResult, err 
 		return result, err
 	}
 
-	dir, err := a.managedGit(ctx)
+	backend, err := a.openSyncBackend(ctx)
 	if err != nil {
 		return result, err
 	}
-	check := privacyCheck(ctx, conf)
+	check := backend.Privacy(ctx, conf)
 	result.Check = &check
 	if check.Privacy != "private" {
 		code := check.Failure
@@ -718,7 +722,7 @@ func (a App) syncRound(ctx context.Context, db *sql.DB) (result SyncResult, err 
 		}
 		return result, Fail(code, "authenticated private repository identity could not be confirmed")
 	}
-	head, remote, err := newSyncBackend().Fetch(ctx, dir, conf)
+	head, remote, err := backend.Fetch(ctx, conf)
 	if err != nil {
 		return result, err
 	}
@@ -729,7 +733,7 @@ func (a App) syncRound(ctx context.Context, db *sql.DB) (result SyncResult, err 
 	if confirmed == "" {
 		return result, Fail("initialization-required", "use explicit sync init for first publication")
 	}
-	extends, err := newSyncBackend().Ancestor(ctx, dir, confirmed, head)
+	extends, err := backend.Ancestor(ctx, confirmed, head)
 	if err != nil {
 		return result, err
 	}
@@ -741,7 +745,7 @@ func (a App) syncRound(ctx context.Context, db *sql.DB) (result SyncResult, err 
 		if workspace.RestoredFrom == "" {
 			return result, Fail("incomplete", "workspace epoch changed without a restore marker")
 		}
-		extends, err := newSyncBackend().Ancestor(ctx, dir, workspace.RestoredFrom, head)
+		extends, err := backend.Ancestor(ctx, workspace.RestoredFrom, head)
 		if err != nil {
 			return result, err
 		}
@@ -751,7 +755,7 @@ func (a App) syncRound(ctx context.Context, db *sql.DB) (result SyncResult, err 
 	}
 	history := previousHistory.Int64
 	if !previousHistory.Valid || confirmed != head {
-		history, err = measureSyncHistory(ctx, dir, head)
+		history, err = backend.History(ctx, head)
 		if err != nil {
 			return result, err
 		}
@@ -766,12 +770,12 @@ func (a App) syncRound(ctx context.Context, db *sql.DB) (result SyncResult, err 
 		if json.Unmarshal([]byte(pending), &attempt) != nil || attempt.ExpectedHead == "" || attempt.RestoredFrom == "" && attempt.Epoch != epoch {
 			return result, Fail("push-pending", "pending initialization requires its explicit preview retry")
 		}
-		accepted, e := newSyncBackend().Ancestor(ctx, dir, attempt.Candidate, head)
+		accepted, e := backend.Ancestor(ctx, attempt.Candidate, head)
 		if e != nil {
 			return result, e
 		}
 		if accepted && !epochChanged && attempt.RestoredFrom == "" {
-			candidateFiles, e := readSnapshot(ctx, dir, attempt.Candidate)
+			candidateFiles, e := backend.Snapshot(ctx, attempt.Candidate)
 			if e != nil {
 				return result, e
 			}
@@ -823,7 +827,7 @@ func (a App) syncRound(ctx context.Context, db *sql.DB) (result SyncResult, err 
 				return e
 			}
 			if !hasBaseline {
-				files, e := readSnapshot(ctx, dir, confirmed)
+				files, e := backend.Snapshot(ctx, confirmed)
 				if e != nil {
 					return e
 				}
@@ -962,33 +966,23 @@ func (a App) syncRound(ctx context.Context, db *sql.DB) (result SyncResult, err 
 		}
 		return result, err
 	}
-	candidate, err := candidateCommit(ctx, dir, merged, head)
+	candidate, err := backend.Stage(ctx, merged, head)
 	if err != nil {
 		return result, err
 	}
-	candidateHistory, err := measureSyncHistory(ctx, dir, candidate)
+	candidateHistory, err := backend.History(ctx, candidate)
 	if err != nil {
 		return result, err
-	}
-	parents, err := syncGit(ctx, dir, nil, "rev-list", "--parents", "-n", "1", candidate)
-	if err != nil {
-		return result, err
-	}
-	if parents != candidate+" "+head {
-		return result, Fail("invalid-candidate", "candidate must have the fetched head as its only parent")
 	}
 	attempt := pendingPush{ExpectedHead: head, Candidate: candidate, Epoch: workspace.Epoch}
 	for _, o := range selected {
 		attempt.OperationIDs = append(attempt.OperationIDs, o.op)
 	}
 	encoded, _ := json.Marshal(attempt)
-	if _, err = syncGit(ctx, dir, nil, "update-ref", "refs/ctxferry/pending", candidate); err != nil {
-		return result, err
-	}
 	if _, err = db.ExecContext(ctx, "UPDATE sync_state SET pending=?", string(encoded)); err != nil {
 		return result, err
 	}
-	if err = newSyncBackend().Publish(ctx, dir, conf, attempt); err != nil {
+	if err = backend.Publish(ctx, conf, attempt); err != nil {
 		return result, err
 	}
 	// Install only acknowledged records, keeping conflicting local working versions.

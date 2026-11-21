@@ -23,14 +23,14 @@ func syncEndpoints(remote string) (string, string) {
 // Faults exist only in the scenario binary and wrap the real Git backend.
 type faultSyncBackend struct{ syncBackend }
 
-func newSyncBackend() syncBackend { return faultSyncBackend{gitSyncBackend{}} }
-func (b faultSyncBackend) Ancestor(ctx context.Context, dir, base, head string) (bool, error) {
+func newSyncBackend(dir string) syncBackend { return faultSyncBackend{gitSyncBackend{dir}} }
+func (b faultSyncBackend) Ancestor(ctx context.Context, base, head string) (bool, error) {
 	if os.Getenv("CTXFERRY_TEST_ANCESTRY_FAILURE") == "1" {
 		return false, Fail("git-error", "injected ancestry failure")
 	}
-	return b.syncBackend.Ancestor(ctx, dir, base, head)
+	return b.syncBackend.Ancestor(ctx, base, head)
 }
-func (b faultSyncBackend) Publish(ctx context.Context, dir string, conf SyncConfig, p pendingPush) error {
+func (b faultSyncBackend) Publish(ctx context.Context, conf SyncConfig, p pendingPush) error {
 	if marker := os.Getenv("CTXFERRY_TEST_PUSH_FAULT"); marker != "" {
 		// Exclusive creation makes a fault happen once across command restarts.
 		f, err := os.OpenFile(marker, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
@@ -43,24 +43,24 @@ func (b faultSyncBackend) Publish(ctx context.Context, dir string, conf SyncConf
 				}
 				race := p
 				race.Candidate = candidate
-				if err = b.syncBackend.Publish(ctx, peer, conf, race); err != nil {
+				if err = (gitSyncBackend{peer}).Publish(ctx, conf, race); err != nil {
 					return err
 				}
 			} else {
-				if err := b.syncBackend.Publish(ctx, dir, conf, p); err != nil {
+				if err := b.syncBackend.Publish(ctx, conf, p); err != nil {
 					return err
 				}
 				return Fail("push-pending", "injected lost push response")
 			}
 		}
 	}
-	if err := b.syncBackend.Publish(ctx, dir, conf, p); err != nil {
+	if err := b.syncBackend.Publish(ctx, conf, p); err != nil {
 		return err
 	}
 	return waitForTestGate(ctx, "CTXFERRY_TEST_PUSH_GATE")
 }
 
-func (b faultSyncBackend) Fetch(ctx context.Context, dir string, conf SyncConfig) (string, map[string][]byte, error) {
+func (b faultSyncBackend) Fetch(ctx context.Context, conf SyncConfig) (string, map[string][]byte, error) {
 	if path := os.Getenv("CTXFERRY_TEST_FETCH_LOG"); path != "" {
 		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
 		if err == nil {
@@ -74,7 +74,7 @@ func (b faultSyncBackend) Fetch(ctx context.Context, dir string, conf SyncConfig
 	if err := waitForTestGate(ctx, "CTXFERRY_TEST_FETCH_GATE"); err != nil {
 		return "", nil, err
 	}
-	return b.syncBackend.Fetch(ctx, dir, conf)
+	return b.syncBackend.Fetch(ctx, conf)
 }
 
 func waitForTestGate(ctx context.Context, key string) error {
