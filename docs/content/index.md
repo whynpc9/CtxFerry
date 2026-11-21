@@ -13,6 +13,8 @@ optional until you want the same shared context on another device.
 
 - [Install and bind a checkout](getting-started.md): build the CLI from source,
   initialize a local workspace, and inspect a Project without network access.
+- [Open the native desktop](desktop.md) to follow a conflict from Home to the
+  queue, inspect a Checkout’s effective configuration or find tools in Catalog.
 
 ### Work in a project
 
@@ -33,11 +35,6 @@ optional until you want the same shared context on another device.
 - [Resolve conflicts and recover data](recovery.md): compare record versions,
   restore one document, recover a local device, or restore shared history under
   a new epoch.
-
-### Desktop preview
-
-- [Use the native desktop preview](desktop.md): read the implemented Overview
-  and Sync views and find the CLI operation behind each one.
 
 ### Troubleshooting
 

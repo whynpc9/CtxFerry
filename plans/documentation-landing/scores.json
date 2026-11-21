@@ -1,0 +1,370 @@
+{
+  "threshold": 9,
+  "maximumRounds": 10,
+  "rubric": [
+    "Typography",
+    "Hierarchy",
+    "Spacing & density",
+    "Color & contrast",
+    "Iconography",
+    "Consistency & polish",
+    "Clarity"
+  ],
+  "seats": {
+    "Astra": "codex/gpt-6.2-astra high",
+    "Gemini": "cursor/gemini-4-neon high",
+    "Kimi": "acpRegistry_kimi_code/kimi-code/k3.1-pro max"
+  },
+  "rounds": [
+    {
+      "Astra": [
+        9.2,
+        9.3,
+        9.0,
+        9.4,
+        9.1,
+        8.9,
+        8.7
+      ],
+      "Gemini": [
+        8.7,
+        8.8,
+        8.2,
+        9.2,
+        8.7,
+        8.1,
+        8.1
+      ],
+      "Kimi": [
+        8.9,
+        8.9,
+        8.4,
+        8.6,
+        8.7,
+        8.2,
+        8.6
+      ],
+      "taskIds": {
+        "Astra": "929760d3-dd69-4b06-bfff-4dc9a2dd95f5",
+        "Gemini": "5a4912d0-deab-4702-9a35-335fe47201d7",
+        "Kimi": "a3bcf6e8-3c90-43b1-a5d8-c1fdffc2ce93"
+      },
+      "findings": "Mobile caption wrapped. Native conflict state needed enlargement and clearer screenshot framing. Projects copy needed notes and tasks."
+    },
+    {
+      "Astra": [
+        9.3,
+        9.1,
+        8.9,
+        9.4,
+        9.1,
+        9.1,
+        8.8
+      ],
+      "Gemini": [
+        8.6,
+        8.5,
+        8.1,
+        8.8,
+        8.9,
+        8.2,
+        8.0
+      ],
+      "Kimi": [
+        9.0,
+        9.1,
+        8.9,
+        8.8,
+        8.5,
+        9.0,
+        8.3
+      ],
+      "taskIds": {
+        "Astra": "8a4bac32-6368-427c-84ac-9369b86140b9",
+        "Gemini": "450542e3-ab28-49ca-8560-8669993de807",
+        "Kimi": "6d6f42e7-7233-420d-be45-8dd112cd2f87"
+      },
+      "findings": "Inset obscured the device panel and mobile frame. Native queue action resembled a live CTA. Clarify source install, specimen state and tooltip-sized utility links."
+    },
+    {
+      "Astra": [
+        9.1,
+        9.2,
+        9.0,
+        9.4,
+        9.0,
+        9.2,
+        8.8
+      ],
+      "Gemini": [
+        8.8,
+        8.9,
+        8.6,
+        9.2,
+        9.0,
+        8.5,
+        8.6
+      ],
+      "Kimi": [
+        9.1,
+        9.3,
+        8.9,
+        9.2,
+        9.0,
+        9.2,
+        9.0
+      ],
+      "taskIds": {
+        "Astra": "b484ce87-6d7d-47cc-95c5-da3e8f69a412",
+        "Gemini": "739f0378-6db1-40d5-9f53-05843133c4c4",
+        "Kimi": "84dcf7be-ae65-430d-9f60-fb25acc8bb1b"
+      },
+      "findings": "The full mobile window needed legible in-page project and device evidence. Clarify the queue guide and frame the status strip consistently."
+    },
+    {
+      "Astra": [
+        9.5,
+        9.5,
+        9.3,
+        9.6,
+        9.4,
+        9.4,
+        9.2
+      ],
+      "Gemini": [
+        8.6,
+        8.7,
+        8.8,
+        9.4,
+        9.0,
+        8.4,
+        8.6
+      ],
+      "Kimi": [
+        9.2,
+        9.3,
+        9.0,
+        9.1,
+        8.9,
+        9.2,
+        9.0
+      ],
+      "taskIds": {
+        "Astra": "c18f10d9-185a-43a7-a7b5-6d2fd81ba18a",
+        "Gemini": "0e659fed-ad16-4011-ae8d-d66ccaf9dd7b",
+        "Kimi": "fde1ac7a-de68-461e-9585-f0272f482804"
+      },
+      "findings": "Preserve the whole window on mobile, show its queue action, and let readers inspect native metadata at its original scale on either layout."
+    },
+    {
+      "Astra": [
+        9.3,
+        9.4,
+        9.0,
+        9.4,
+        9.0,
+        9.2,
+        8.7
+      ],
+      "Gemini": [
+        9.0,
+        8.8,
+        8.2,
+        9.3,
+        8.7,
+        7.9,
+        8.8
+      ],
+      "Kimi": [
+        9.0,
+        9.1,
+        8.8,
+        8.9,
+        8.8,
+        9.0,
+        8.2
+      ],
+      "taskIds": {
+        "Astra": "8ad6e73c-a408-4c96-80a9-a6bb1aaec4b3",
+        "Gemini": "b93ae2e2-9f4b-4de4-8dc6-380f2393b8fc",
+        "Kimi": "26cb6719-d30d-40af-a245-cbe5491eba1f"
+      },
+      "findings": "Horizontal pan hid key path evidence. Fix the desktop height shift and inconsistent double borders. Clarify the conflict step and device observation."
+    },
+    {
+      "Astra": [
+        9.1,
+        9.3,
+        8.8,
+        9.4,
+        9.1,
+        9.0,
+        9.2
+      ],
+      "Gemini": [
+        9.1,
+        9.0,
+        8.3,
+        9.5,
+        9.2,
+        8.6,
+        9.1
+      ],
+      "Kimi": [
+        9.2,
+        9.4,
+        8.9,
+        9.4,
+        9.1,
+        9.3,
+        8.8
+      ],
+      "taskIds": {
+        "Astra": "6a754f2b-4f77-4926-9a0f-267518ff12cc",
+        "Gemini": "010e00e4-b155-4273-a58a-6ca73b9e8068",
+        "Kimi": "2fff6c5a-7273-40ed-84a7-9a1dfe141f76"
+      },
+      "findings": "Reduce height and whitespace, unify excerpt scale and click behavior, keep readable identifiers and remove repeated device fields."
+    },
+    {
+      "Astra": [
+        9.4,
+        9.3,
+        9.2,
+        9.6,
+        9.3,
+        9.4,
+        9.1
+      ],
+      "Gemini": [
+        9.3,
+        9.2,
+        8.6,
+        9.4,
+        8.8,
+        8.5,
+        8.8
+      ],
+      "Kimi": [
+        9.1,
+        9.3,
+        9.0,
+        9.1,
+        9.0,
+        9.2,
+        8.7
+      ],
+      "taskIds": {
+        "Astra": "aff35820-2597-4013-a746-46abeb6b10cf",
+        "Gemini": "5b05e6e2-71ea-421a-8e1a-5fbf55f95dfa",
+        "Kimi": "654dc4a7-628e-4f60-a30f-5e0063c90401"
+      },
+      "findings": "Show Selected and Saved Profile together, add room around the Device outline, place controls above the mobile window and give pictured actions a consistent destination."
+    },
+    {
+      "Astra": [
+        9.2,
+        9.4,
+        8.9,
+        9.5,
+        9.3,
+        9.3,
+        9.1
+      ],
+      "Gemini": [
+        9.1,
+        8.8,
+        8.3,
+        9.4,
+        9.0,
+        8.4,
+        8.7
+      ],
+      "Kimi": [
+        8.8,
+        9.1,
+        8.5,
+        8.9,
+        8.6,
+        9.1,
+        8.7
+      ],
+      "taskIds": {
+        "Astra": "79c7321f-7053-48e6-adc5-7aa558aa4818",
+        "Gemini": "e0ec294a-5a8c-4d78-8ebe-a366db0ba0d8",
+        "Kimi": "e3e61d38-7c6c-444d-908c-21a8b433dfd2"
+      },
+      "findings": "Bring guide captions up to their screenshots, make native window context readable on mobile, align each callout with visible evidence and surface guide navigation early."
+    },
+    {
+      "Astra": [
+        9.4,
+        9.3,
+        9.0,
+        9.6,
+        9.2,
+        9.4,
+        9.2
+      ],
+      "Gemini": [
+        9.1,
+        8.9,
+        8.8,
+        9.4,
+        8.5,
+        8.3,
+        8.7
+      ],
+      "Kimi": [
+        9.3,
+        9.4,
+        9.0,
+        9.3,
+        9.1,
+        9.4,
+        9.0
+      ],
+      "taskIds": {
+        "Astra": "c9b80a78-ef97-4867-b923-97c0411f4e5e",
+        "Gemini": "0d8fd4d2-7a4c-4cee-8eca-591ba86644a5",
+        "Kimi": "c8bb0ac4-0e91-4a67-8273-544b9f1e71e3"
+      },
+      "findings": "Match the Project excerpt to its complete outlined controls, remove the duplicate mobile excerpt in actual-size mode, and distinguish screenshot evidence from the guide action."
+    },
+    {
+      "Astra": [
+        9.3,
+        9.5,
+        9.0,
+        9.5,
+        9.2,
+        9.2,
+        9.1
+      ],
+      "Gemini": [
+        8.8,
+        8.6,
+        8.2,
+        9.1,
+        8.5,
+        8.1,
+        8.7
+      ],
+      "Kimi": [
+        9.3,
+        9.5,
+        9.1,
+        9.0,
+        9.2,
+        9.2,
+        8.9
+      ],
+      "taskIds": {
+        "Astra": "582ed1d9-502d-4325-9a80-941228efac6b",
+        "Gemini": "382f948e-b7ac-4894-b4e3-a798ab2cd7ad",
+        "Kimi": "054cfaed-7099-4962-8fb4-4fa6fcc34665"
+      },
+      "findings": "At actual size the desktop repeats the record detail, while the phone viewport clips the outline and requires panning to find Open comparison. Project metadata renders smaller than the other excerpts and the desktop Conflict panel leaves excessive space below its guide link. The default mobile overview needs zoom for surrounding context."
+    }
+  ]
+}

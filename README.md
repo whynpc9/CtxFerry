@@ -35,7 +35,7 @@ The CLI parses and renders; `internal/app` owns operations and validation, and `
 
 Run `go test -count=1 ./...` and `go vet ./...`. The reusable `internal/testcli` harness exercises the real binary with isolated data/home directories, sanitized environment, deadlines, separate streams and exact JSON decoding. CI checks Linux, macOS and Windows with CGO disabled and runs an offline Linux container smoke test.
 
-## Native desktop preview
+## Native desktop
 
 Run the MyGo native desktop from its own Go module at the repository root.
 
@@ -44,17 +44,15 @@ cd cmd/ctxferry-desktop
 go run .
 ```
 
-Overview, Sync and Projects use the same local workspace as the CLI. Set
-`CTXFERRY_DATA_DIR` to select an isolated workspace. **刷新本地视图** reads the
-local catalog. **检查远端** checks Git access and repository privacy on demand.
-**创建备份…** shows the scope and destination before writing the plaintext backup.
-In Projects, select a Checkout to see its Profile and each setting's effective
-value and origin. Preview a write or reset before applying it to a layer. Run
-`ctxferry context explain` from the same Checkout to inspect the result in the CLI.
+Home, Projects, Catalog and Sync open the same local workspace as the CLI.
+Home shows what needs attention on this device. Projects lets you inspect a
+Checkout and preview configuration changes. Catalog holds resources,
+credentials, Skills and run artifacts. Sync shows the repository, queue and
+backup scope. Set `CTXFERRY_DATA_DIR` in both shells to choose another workspace.
 
-Initialize workspaces with the CLI and run background sync as a separate user
-service. See the [desktop smoke procedure](docs/development/desktop/acceptance-28.md#复现)
-and [desktop redesign specification](plans/desktop-information-architecture.md).
+See the [illustrated desktop guide](docs/content/desktop.md) for setup and a
+walkthrough, or the [native implementation review](docs/development/desktop/review-native-redesign.md)
+for the captured scenarios.
 
 ## First-device onboarding
 

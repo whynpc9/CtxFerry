@@ -1,3 +1,6 @@
 import { markdownRoute } from "@cloudflare/nimbus-docs/agent-endpoints";
+import { withImageUrls } from "../../markdown-images";
 
-export const { GET, getStaticPaths } = markdownRoute();
+const route = markdownRoute();
+export const { getStaticPaths } = route;
+export const GET = withImageUrls(route.GET);

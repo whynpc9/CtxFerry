@@ -129,5 +129,5 @@ instead; see [Resources and Tasks](tasks-and-resources.md#run-a-local-task).
   not resolve as expected.
 - [Connect private sync](sync.md) only when you are ready to review and publish
   shared plaintext records.
-- [Open the desktop preview](desktop.md) to inspect the same local workspace
-  without initializing or changing it.
+- [Open the native desktop](desktop.md) to inspect this checkout, preview a
+  configuration change or review records waiting to sync.

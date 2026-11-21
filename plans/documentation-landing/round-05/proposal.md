@@ -1,0 +1,5 @@
+# CtxFerry landing
+
+The primary actions open native desktop source setup and the CLI quickstart; the hero links to private sync. The worked example uses the native Home window from atlas-api on legion-pc. The entire screenshot stays visible at each width. The outlined region follows the Conflict, Project and Device radio controls. Each control opens a native-resolution excerpt, a short explanation and its relevant guide. Wide details can be panned horizontally inside their pane. Open original opens the full 1280 × 800 image. The screenshot's conflict action and Read the queue guide both open the Queue instructions. Projects, Catalog and Sync lead into the desktop guide.
+
+Review desktop.png and mobile.png for the full default page; desktop-project.png, mobile-project.png, desktop-device.png, mobile-device.png show the other states of the inspector at those viewport sizes. All six are renders of the same HTML. Production provenance is recorded in docs/development/desktop/review-native-redesign.md and functional references are docs/content/desktop.md and plans/desktop-information-architecture.md.

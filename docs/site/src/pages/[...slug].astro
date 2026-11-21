@@ -1,7 +1,11 @@
 ---
 import { getCollection } from "astro:content";
-import { getDocsPage, getDocsStaticPaths } from "@cloudflare/nimbus-docs/runtime";
-import { guideGroups } from "../navigation";
+import {
+  getDocsPage,
+  getDocsStaticPaths,
+} from "@cloudflare/nimbus-docs/runtime";
+import GuideNavigation from "../components/GuideNavigation.astro";
+import FerrySymbols from "../components/FerrySymbols.astro";
 import "../styles/docs.css";
 
 export const getStaticPaths = getDocsStaticPaths;
@@ -9,8 +13,11 @@ const page = await getDocsPage(Astro);
 if (page instanceof Response) return page;
 const { entry, Content } = page;
 const home = import.meta.env.BASE_URL;
-const titles = new Map((await getCollection("docs")).map(doc => [doc.id, doc.data.title]));
+const titles = new Map(
+  (await getCollection("docs")).map((doc) => [doc.id, doc.data.title]),
+);
 ---
+
 <!doctype html>
 <html lang="en">
   <head>
@@ -20,19 +27,34 @@ const titles = new Map((await getCollection("docs")).map(doc => [doc.id, doc.dat
     <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
   </head>
   <body>
-    <header><a href={home}>CtxFerry</a><a href="https://github.com/whynpc9/CtxFerry">GitHub ↗</a></header>
-    <main>
-      <nav aria-label="Documentation">
-        {guideGroups.map(group => (
-          <section>
-            <h2>{group.label}</h2>
-            <ul>{group.pages.map(id => (
-              <li><a href={home + id + "/"} aria-current={id === entry.id ? "page" : undefined}>{titles.get(id)}</a></li>
-            ))}</ul>
-          </section>
-        ))}
-      </nav>
-      <article data-pagefind-body><h1>{entry.data.title}</h1><Content /></article>
+    <FerrySymbols />
+    <a class="skip" href="#article">Skip to guide</a>
+    <header class="mast">
+      <div class="bar">
+        <a class="brand" href={home}
+          ><span class="mark"
+            ><svg aria-hidden="true"><use href="#ferry"></use></svg></span
+          >CtxFerry</a
+        >
+        <a href={home + "docs/"}>Docs</a>
+        <a class="repository" href="https://github.com/whynpc9/CtxFerry"
+          >GitHub ↗</a
+        >
+      </div>
+    </header>
+    <main class="guide-layout">
+      <aside class="sidebar">
+        <GuideNavigation current={entry.id} titles={titles} />
+      </aside>
+      <details class="mobile-nav">
+        <summary>Browse guides</summary><GuideNavigation
+          current={entry.id}
+          titles={titles}
+        />
+      </details>
+      <article id="article" data-pagefind-body>
+        <h1>{entry.data.title}</h1><Content />
+      </article>
     </main>
   </body>
 </html>

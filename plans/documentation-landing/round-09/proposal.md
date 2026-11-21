@@ -1,0 +1,7 @@
+# CtxFerry landing
+
+Visitors can start the native desktop from source, follow the CLI quickstart, or open the private sync guide. The interactive example shows atlas-api on legion-pc. Conflict and Device use the original Home window, while Project opens the original Project overview. Each selected screenshot detail is outlined in its matching complete window. Excerpts show the queue tile, the selected checkout row with its saved Profile, or the sync service and commit observations. The detail image and its guide caption are one link to the matching documentation. Actual size shows the screenshot at native resolution inside the page, centers the outlined region and supports keyboard or touch panning; unchecking it restores the overview. Open original opens the original PNG. The masthead Guides link jumps directly to the three workspace guides. The selector precedes the full window and its detail at both widths. Selectable text preserves the full checkout directory and last confirmed commit on narrow screens.
+
+Review desktop.png and mobile.png as the complete Conflict pages; desktop-project.png, mobile-project.png, desktop-device.png and mobile-device.png are the other states of the explorer at both widths. The synthetic workspace and real native capture are documented in docs/development/desktop/review-native-redesign.md. See docs/content/desktop.md and plans/desktop-information-architecture.md for functions and flows.
+
+desktop-zoom.png and mobile-zoom.png show the actual-size Conflict state.

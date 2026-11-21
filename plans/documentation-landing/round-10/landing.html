@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>CtxFerry — Project context across devices</title><link rel="stylesheet" href="landing.css"></head><body>
+<!-- symbols -->
+<a class="skip" href="#main">Skip to content</a>
+<header class="mast"><div class="wrap row"><a class="brand" href="/CtxFerry/"><span class="mark"><svg aria-hidden="true"><use href="#ferry"/></svg></span>CtxFerry</a>
+<nav aria-label="Main"><a href="#guide-title">Guides</a><a href="/CtxFerry/docs/">Docs</a><a href="https://github.com/whynpc9/CtxFerry">GitHub <svg class="icon" aria-hidden="true"><use href="#out"/></svg></a></nav></div></header>
+<main id="main">
+<section class="hero"><div class="wrap hero-grid"><div class="intro">
+<p class="kicker"><span></span>Local-first developer tools</p>
+<h1>Project context,<br><em>across devices.</em></h1></div>
+<div class="start"><p class="lead">Work with the same project notes, settings and tasks in the native app or CLI. Keep work local, or <a class="inline-guide" href="/CtxFerry/docs/sync/">sync shared records</a> to a private GitHub repository.</p>
+<div class="actions"><a class="primary" href="/CtxFerry/docs/desktop/#start-the-app">Desktop from source <svg class="icon" aria-hidden="true"><use href="#arrow"/></svg></a><a class="secondary" href="/CtxFerry/docs/getting-started/">CLI quickstart <svg class="icon" aria-hidden="true"><use href="#arrow"/></svg></a></div>
+</div></div></section>
+<section class="wrap tour" aria-labelledby="tour-title">
+<div class="tour-head"><div><p class="location"><svg class="icon" aria-hidden="true"><use href="#monitor"/></svg> Native desktop <span>/</span> Workspace</p><h2 id="tour-title">Inside a workspace</h2></div>
+<p>One record needs a decision in <strong>atlas-api</strong>. Explore the native windows on <strong>legion-pc</strong> to locate the conflict, bound checkout and sync evidence.</p></div>
+<div class="explorer">
+<fieldset class="explorer-controls"><legend>Inspect a detail</legend><div class="switches">
+<label><input type="radio" name="detail" value="conflict" checked><span>Conflict</span></label>
+<label><input type="radio" name="detail" value="project"><span>Project</span></label>
+<label><input type="radio" name="detail" value="device"><span>Device</span></label>
+</div></fieldset>
+<figure class="window queue-window"><figcaption><strong>Sync queue</strong><div class="viewer-actions"><label class="zoom-control"><input type="checkbox"><span>Actual size</span></label><a href="QUEUE_IMAGE">Open original <svg class="icon" aria-hidden="true"><use href="#expand"/></svg></a></div></figcaption><div class="stage"><div class="pan-window" tabindex="0" role="region" aria-label="Screenshot viewport; use arrow keys to pan at actual size"><div class="screen"><img src="QUEUE_IMAGE" width="1280" height="800" alt="Sync queue on legion-pc. Deployment runbook is selected in atlas-api and marked Conflict."><span class="focus-rect" aria-hidden="true"></span></div></div></div><p class="pan-help"><span class="fit-help">Full window · 1280 × 800</span><span class="zoom-help">↔ Pan with a swipe, scroll or arrow keys</span></p></figure>
+<figure class="window home-window"><figcaption><strong>Home window</strong><div class="viewer-actions"><label class="zoom-control"><input type="checkbox"><span>Actual size</span></label><a href="HOME_IMAGE">Open original <svg class="icon" aria-hidden="true"><use href="#expand"/></svg></a></div></figcaption><div class="stage"><div class="pan-window" tabindex="0" role="region" aria-label="Screenshot viewport; use arrow keys to pan at actual size"><div class="screen"><img src="HOME_IMAGE" width="1280" height="800" alt="Home for atlas-api on legion-pc. Zero waiting records, one conflict, zero blocked records."><span class="focus-rect" aria-hidden="true"></span></div></div></div><p class="pan-help"><span class="fit-help">Full window · 1280 × 800</span><span class="zoom-help">↔ Pan with a swipe, scroll or arrow keys</span></p></figure>
+<figure class="window project-window"><figcaption><strong>Project overview</strong><div class="viewer-actions"><label class="zoom-control"><input type="checkbox"><span>Actual size</span></label><a href="PROJECT_IMAGE">Open original <svg class="icon" aria-hidden="true"><use href="#expand"/></svg></a></div></figcaption><div class="stage"><div class="pan-window" tabindex="0" role="region" aria-label="Screenshot viewport; use arrow keys to pan at actual size"><div class="screen"><img src="PROJECT_IMAGE" width="1280" height="800" alt="Project overview for atlas-api showing the selected checkout on legion-pc and its staging Profile."><span class="focus-rect" aria-hidden="true"></span></div></div></div><p class="pan-help"><span class="fit-help">Full window · 1280 × 800</span><span class="zoom-help">↔ Pan with a swipe, scroll or arrow keys</span></p></figure>
+<div class="inspector">
+
+<section class="inspection conflict-view"><h3>Review a conflicted note</h3><p>In <strong>Sync → Queue</strong>, select <strong>Deployment runbook</strong>. Open its comparison to review the conflicting revisions.</p>
+
+<p class="scale">Screenshot detail</p><div class="crop"><svg width="340" height="139" viewBox="916 252 340 139" role="img" aria-label="Selected Deployment runbook record in atlas-api, marked Conflict."><image width="1280" height="800" href="QUEUE_IMAGE"/></svg></div><a class="guide-action text-link" href="/CtxFerry/docs/desktop/#review-the-queue">Read the queue guide <svg class="icon" aria-hidden="true"><use href="#arrow"/></svg></a></section>
+<section class="inspection project-view"><h3>Find the bound Checkout</h3><p>The <strong>atlas-api</strong> Project overview shows which Checkout uses the <strong>staging</strong> Profile.</p>
+<dl class="reading"><dt>Selected Checkout</dt><dd><code>/tmp/<wbr>ctxferry-redesign-93bc2d0/<wbr>checkout-b</code></dd></dl>
+<p class="scale">Screenshot detail</p><div class="crop"><svg width="500" height="152" viewBox="272 300 500 152" role="img" aria-label="Selected checkout row and its saved staging Profile."><image width="1280" height="800" href="PROJECT_IMAGE"/></svg></div><a class="guide-action text-link" href="/CtxFerry/docs/desktop/#projects-and-configuration">Read the Projects guide <svg class="icon" aria-hidden="true"><use href="#arrow"/></svg></a></section>
+<section class="inspection device-view"><h3>Check local sync evidence</h3><p>On <strong>legion-pc</strong>, the sync service is unavailable. Home still shows the most recent commit this device confirmed.</p>
+<dl class="reading"><dt>Last confirmed commit</dt><dd><code>cd2813d</code></dd></dl>
+<p class="scale">Screenshot detail</p><div class="crop"><svg width="324" height="96" viewBox="832 508 324 96" role="img" aria-label="Last local read, sync service and last confirmed commit rows on legion-pc. Sync service unavailable, last confirmed commit cd2813d."><image width="1280" height="800" href="HOME_IMAGE"/></svg></div><a class="guide-action text-link" href="/CtxFerry/docs/diagnostics/">Read the diagnostics guide <svg class="icon" aria-hidden="true"><use href="#arrow"/></svg></a></section>
+
+</div></div></section>
+<section class="wrap guides" aria-labelledby="guide-title"><div class="section-head"><h2 id="guide-title">Workspace guides</h2><a class="text-link" href="/CtxFerry/docs/">All guides <svg class="icon" aria-hidden="true"><use href="#arrow"/></svg></a></div>
+<div class="cards">
+<a class="card" href="/CtxFerry/docs/desktop/#projects-and-configuration"><span class="pict"><svg class="icon" aria-hidden="true"><use href="#folder"/></svg></span><h3>Projects</h3><p>Trace a setting to its source, read project notes and find tasks for a checkout.</p><span class="card-link">Explore Projects <svg class="icon" aria-hidden="true"><use href="#arrow"/></svg></span></a>
+<a class="card" href="/CtxFerry/docs/desktop/#catalog"><span class="pict"><svg class="icon" aria-hidden="true"><use href="#catalog"/></svg></span><h3>Catalog</h3><p>Check resource routes, map credentials and inspect installed skills.</p><span class="card-link">Explore Catalog <svg class="icon" aria-hidden="true"><use href="#arrow"/></svg></span></a>
+<a class="card" href="/CtxFerry/docs/desktop/#sync-and-publication-recovery"><span class="pict"><svg class="icon" aria-hidden="true"><use href="#sync"/></svg></span><h3>Sync</h3><p>Compare conflicting records and review what will enter private Git history.</p><span class="card-link">Review Sync <svg class="icon" aria-hidden="true"><use href="#arrow"/></svg></span></a>
+</div></section></main>
+<footer><div class="wrap row"><a class="brand" href="/CtxFerry/"><span class="mark"><svg aria-hidden="true"><use href="#ferry"/></svg></span>CtxFerry</a><a href="/CtxFerry/docs/context/#write-a-note">How notes are shared <svg class="icon" aria-hidden="true"><use href="#arrow"/></svg></a></div></footer>
+<script>
+const explorer = document.querySelector(".explorer");
+explorer.addEventListener("change", (event) => {
+  const control = event.target;
+  if (control.name === "detail") {
+    for (const zoom of explorer.querySelectorAll(".zoom-control input")) zoom.checked = false;
+  } else if (control.checked) {
+    const figure = control.closest("figure");
+    const viewport = figure.querySelector(".pan-window");
+    const selection = figure.querySelector(".focus-rect");
+    const centerX = selection.offsetLeft + selection.offsetWidth / 2;
+    const centerY = selection.offsetTop + selection.offsetHeight / 2;
+    viewport.scrollLeft = centerX - viewport.clientWidth / 2;
+    viewport.scrollTop = centerY - viewport.clientHeight / 2;
+  }
+});
+</script></body></html>

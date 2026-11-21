@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="symbols" aria-hidden="true">
+  <symbol viewBox="0 0 32 32" id="ferry"><path fill="currentColor" d="M3 17h26l-5.5 8h-15zM7 15l2-7h11l3 7z"/><path fill="var(--paper)" d="M10.8 10.2h3.1v2.6h-3.8zm5.1 0h3l1.2 2.6h-4.2z"/><path fill="var(--orange)" d="M13 4h5v3h-5z"/><path fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" d="M3 27q3.3 2.7 6.5 0 3.2 2.7 6.5 0 3.2 2.7 6.5 0 3.2 2.7 6.5 0"/></symbol>
+  <symbol viewBox="0 0 24 24" id="arrow"><path d="M4 12h15m-6-6 6 6-6 6"/></symbol>
+  <symbol viewBox="0 0 24 24" id="out"><path d="M6 18 18 6M7 6h11v11"/></symbol>
+  <symbol viewBox="0 0 24 24" id="terminal"><rect x="2.5" y="4.5" width="19" height="15" rx="2"/><path d="m6 9 3 3-3 3m6 0h5"/></symbol>
+  <symbol viewBox="0 0 24 24" id="folder"><path d="M2.5 8V5a1 1 0 0 1 1-1h6l2.5 3h8.5a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1h-17a1 1 0 0 1-1-1V8h18.5"/></symbol>
+  <symbol viewBox="0 0 24 24" id="summary"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h6M8 16h4"/></symbol>
+  <symbol viewBox="0 0 24 24" id="publish"><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4M12 15V3m-5 5 5-5 5 5"/></symbol>
+  <symbol viewBox="0 0 24 24" id="catalog"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+  <symbol viewBox="0 0 24 24" id="sync"><path d="M3 10a9 9 0 0 1 15-5l2 2M20 3v5h-5M21 14a9 9 0 0 1-15 5l-2-2M4 21v-5h5"/></symbol>
+  <symbol viewBox="0 0 24 24" id="monitor"><rect x="2.5" y="3.5" width="19" height="13" rx="2"/><path d="M12 17v3m-4 1h8"/></symbol>
+  <symbol viewBox="0 0 24 24" id="expand"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></symbol>
+  <symbol viewBox="0 0 24 24" id="zoom"><circle cx="10" cy="10" r="6.5"/><path d="m15 15 6 6M7 10h6m-3-3v6"/></symbol>
+</svg>

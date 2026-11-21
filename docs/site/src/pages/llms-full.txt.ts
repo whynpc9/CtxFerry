@@ -1,3 +1,5 @@
 import { llmsFullRoute } from "@cloudflare/nimbus-docs/agent-endpoints";
+import { withImageUrls } from "../markdown-images";
 
-export const { GET } = llmsFullRoute();
+const route = llmsFullRoute();
+export const GET = withImageUrls(route.GET);

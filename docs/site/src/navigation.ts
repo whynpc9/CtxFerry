@@ -1,5 +1,5 @@
 export const guideGroups = [
-  { label: "Start here", pages: ["docs", "docs/getting-started"] },
+  { label: "Start here", pages: ["docs", "docs/getting-started", "docs/desktop"] },
   {
     label: "Work in a project",
     pages: [
@@ -10,6 +10,5 @@ export const guideGroups = [
     ],
   },
   { label: "Work across devices", pages: ["docs/sync", "docs/recovery"] },
-  { label: "Desktop preview", pages: ["docs/desktop"] },
   { label: "Troubleshooting", pages: ["docs/diagnostics"] },
 ];

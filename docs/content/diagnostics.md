@@ -126,6 +126,6 @@ GitHub metadata access; do not initialize over an unverified destination.
 | `history-rewritten` | The remote head no longer extends confirmed history | Stop automatic publication, preserve local work, and inspect remote history; do not force publication or assume a restore can bypass the ancestry check |
 | `store-busy` or `sync-busy` | Another local writer or sync owner is active | Retry, or use explicit `sync` to wait for the existing driver; do not run a second service for the same store |
 
-The [desktop preview](desktop.md) also shows local evidence. Use **检查远端** on the Sync page for an explicit remote check.
+The [native desktop](desktop.md) shows local evidence on Home. Choose **Sync → Repository → Check remote** to check Git reachability and repository privacy.
 Its refresh button does not perform any of the active checks above. When its
 snapshot is unavailable, `doctor` is the next local diagnostic.

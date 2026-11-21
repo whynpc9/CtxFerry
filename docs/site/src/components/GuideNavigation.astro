@@ -1,0 +1,30 @@
+---
+import { guideGroups } from "../navigation";
+interface Props {
+  current: string;
+  titles: Map<string, string>;
+}
+const { current, titles } = Astro.props;
+---
+
+<nav aria-label="Documentation">
+  {
+    guideGroups.map((group) => (
+      <section>
+        <h2>{group.label}</h2>
+        <ul>
+          {group.pages.map((id) => (
+            <li>
+              <a
+                href={import.meta.env.BASE_URL + id + "/"}
+                aria-current={id === current ? "page" : undefined}
+              >
+                {titles.get(id)}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </section>
+    ))
+  }
+</nav>

@@ -42,6 +42,10 @@ Home separates **Waiting**, **Conflicts**, and **Blocked** counts. A conflict is
 
 The Bound Projects card shows real local directories and flags unavailable paths. This device shows catalog compatibility, local read time, sync service state and the last confirmed commit separately from provider or publication claims. An empty Workspace includes a real `ctxferry project bind` handoff.
 
+![Native Home with one conflict and the bound atlas-api Project](assets/desktop-home.png)
+
+*Home in the example workspace. The Conflicts tile opens the queue filtered to the one record that needs a decision.*
+
 ## Projects and Configuration
 
 Projects are grouped by subscription and then name. An unsubscribed Project retains its identity and offers `ctxferry project subscribe`; the app never substitutes another writable target.
@@ -61,6 +65,10 @@ The first three layers are shared. Device and Checkout layers stay on each devic
 
 Context keeps the same Checkout and resolved Profile for listing, opening and pagination. Tasks resolve Resource slots through that Profile. A Task shows the mapped Resource, exact TCP target and latest target-specific observation time separately from provider authentication and execution trust. Task → Resource and Task → Credential links preserve the calling scope, and Back restores it.
 
+![Configuration preview for removing the Device override on atlas-api](assets/desktop-configuration-preview.png)
+
+*Removing the Device override is still a preview here. Review the affected Checkout and the value it would inherit before confirming.*
+
 ## Catalog
 
 Catalog links four tools with an explicit subscribed-Project scope:
@@ -71,6 +79,10 @@ Catalog links four tools with an explicit subscribed-Project scope:
 - **Run artifacts:** run/source/content filters, provenance, full digests, content availability and metadata-only explanations. Available bytes can be verified and exported to a new file.
 
 The device-wide Skill catalog remains available without a Project. Related links from a Project supply its ID automatically, and Back restores the originating Project section and selection.
+
+![Catalog showing Resources and environments, Credential bindings, Skills and Run artifacts for atlas-api](assets/desktop-catalog.png)
+
+*With atlas-api selected, Catalog opens each tool in that Project’s scope.*
 
 ## Sync and publication recovery
 
@@ -84,7 +96,15 @@ Before first publication, check that the remote is reachable and private, then c
 
 If first publication loses its acknowledgement, Repository reuses the original preview ID. For an uncertain routine push, it offers one-shot reconciliation with `ctxferry sync`. Backup and Conflict stay locked until Refresh confirms the journal cleared and rereads the confirmed commit.
 
+### Review the queue
+
+From Home, choose **Queue · Conflicts** to open the filtered list. Select the record to inspect its revision evidence and compare the change.
+
 Conflict resolution compares base, local and remote evidence. Keep a whole side, apply a deletion, or replace eligible Context content. Confirmation names the consequence and checks the current conflict token. A stale comparison must be reloaded and chosen again. The receipt identifies the new local revision, not a published result.
+
+![Native Sync queue showing waiting and conflicting records in the isolated workspace](assets/desktop-queue.png)
+
+*In Queue, select a conflicted record to inspect its revisions before choosing a resolution.*
 
 ## Backup contents and recovery
 
@@ -111,4 +131,4 @@ The native capture scenario creates isolated data through real CLI/core operatio
 python3 capture_redesign.py /tmp/ctxferry-redesign-<revision> --revision <full-sha>
 ```
 
-The final implementation review, data state, 22 production frames and independent K3.1 Pro findings are recorded in [Native desktop redesign implementation review](../development/desktop/review-native-redesign.md).
+The final implementation review, data state, 22 production frames and independent K3.1 Pro findings are recorded in [Native desktop redesign implementation review](https://github.com/whynpc9/CtxFerry/blob/2b43bdd/docs/development/desktop/review-native-redesign.md).
