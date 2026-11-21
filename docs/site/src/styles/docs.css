@@ -14,10 +14,30 @@
     100%/1.65 DM,
     system-ui,
     sans-serif;
-  color: #182b34;
-  background: #fafbfc;
-  --accent: #006978;
-  --line: #d4dfe2;
+  color-scheme: light dark;
+  --text: light-dark(#182b34, #dce7ea);
+  --bg: light-dark(#fafbfc, #0e171b);
+  --surface: light-dark(#ffffff, #141f24);
+  --accent: light-dark(#006978, #67c8d5);
+  --line: light-dark(#d4dfe2, #27373e);
+  --muted: light-dark(#45606a, #9db1b9);
+  --nav: light-dark(#334b56, #c3d2d8);
+  --hover: light-dark(#e9eff1, #1a282e);
+  --current: light-dark(#005c6a, #93e2ec);
+  --current-bg: light-dark(#deeeee, #11343a);
+  --img-line: light-dark(#bdcdd2, #32454d);
+  --code-bg: light-dark(#eaf0f1, #1a2a30);
+  --pre-bg: light-dark(#f0f4f5, #121e23);
+  --th-bg: light-dark(#eaf2f3, #15252b);
+  --focus: light-dark(#ab4b02, #f0904a);
+  color: var(--text);
+  background: var(--bg);
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
 }
 * {
   box-sizing: border-box;
@@ -30,7 +50,7 @@ a {
   text-underline-offset: 0.18em;
 }
 :focus-visible {
-  outline: 3px solid #ab4b02;
+  outline: 3px solid var(--focus);
   outline-offset: 3px;
 }
 .symbols {
@@ -43,7 +63,7 @@ a {
   position: fixed;
   top: -10rem;
   left: 1rem;
-  background: white;
+  background: var(--surface);
   padding: 0.5rem 1rem;
   z-index: 2;
 }
@@ -51,7 +71,7 @@ a {
   top: 0.5rem;
 }
 .mast {
-  background: white;
+  background: var(--surface);
   border-bottom: 1px solid var(--line);
 }
 .bar,
@@ -99,10 +119,43 @@ a {
 .brand + a {
   padding-left: 1rem;
   border-left: 1px solid var(--line);
-  color: #46606b;
+  color: var(--muted);
 }
 .repository {
   margin-left: auto;
+}
+.theme-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.theme-toggle:hover {
+  background: var(--hover);
+}
+.theme-toggle .icon {
+  grid-area: 1 / 1;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+:root:not([data-theme]) .theme-toggle,
+:root[data-theme="dark"] .theme-icon-dark,
+:root[data-theme="light"] .theme-icon-light {
+  display: none;
+}
+:root[data-theme="dark"] article img {
+  filter: brightness(0.92);
 }
 .guide-layout {
   display: grid;
@@ -123,7 +176,7 @@ nav section + section {
 nav h2 {
   margin: 0.6rem 0.7rem 0.35rem;
   font-size: 0.81rem;
-  color: #455d68;
+  color: var(--muted);
   font-weight: 700;
 }
 nav ul {
@@ -135,17 +188,17 @@ nav a {
   display: block;
   padding: 0.36rem 0.7rem;
   font-size: 0.95rem;
-  color: #334b56;
+  color: var(--nav);
   text-decoration: none;
   border-inline-start: 3px solid transparent;
   border-radius: 4px;
 }
 nav a:hover {
-  background: #e9eff1;
+  background: var(--hover);
 }
 nav a[aria-current] {
-  background: #deeeee;
-  color: #005c6a;
+  background: var(--current-bg);
+  color: var(--current);
   border-color: var(--accent);
   font-weight: 700;
 }
@@ -169,7 +222,7 @@ article h1 {
   font-size: clamp(2.2rem, 4vw, 3.6rem);
 }
 article h1 + p {
-  color: #435a65;
+  color: var(--muted);
   font-size: 1.12rem;
 }
 article h2 {
@@ -183,12 +236,12 @@ article img {
   max-width: 100%;
   height: auto;
   border-radius: 7px;
-  border: 1px solid #bdcdd2;
+  border: 1px solid var(--img-line);
 }
 article p:has(> img) + p:has(> em:only-child) {
   margin-top: -0.45rem;
   font-size: 0.92rem;
-  color: #45606a;
+  color: var(--muted);
 }
 code {
   font:
@@ -199,7 +252,7 @@ code {
 p code,
 li code,
 td code {
-  background: #eaf0f1;
+  background: var(--code-bg);
   padding: 0.08em 0.26em;
   border-radius: 3px;
 }
@@ -211,7 +264,7 @@ article pre {
   padding: 1rem;
   border-radius: 7px;
   border: 1px solid var(--line);
-  background: #f0f4f5;
+  background: var(--pre-bg);
 }
 article table {
   display: block;
@@ -226,7 +279,7 @@ article th {
   vertical-align: top;
 }
 article th {
-  background: #eaf2f3;
+  background: var(--th-bg);
 }
 @media (max-width: 48rem) {
   .guide-layout {
@@ -240,7 +293,7 @@ article th {
     margin-top: 1rem;
     border: 1px solid var(--line);
     border-radius: 7px;
-    background: white;
+    background: var(--surface);
   }
   .mobile-nav summary {
     cursor: pointer;

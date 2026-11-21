@@ -1,0 +1,47 @@
+---
+interface Props {
+  docsUrl: string;
+}
+const { docsUrl } = Astro.props;
+const groups = [
+  {
+    label: "Start here",
+    links: [
+      ["getting-started", "Install and bind a checkout"],
+      ["desktop", "Open the native desktop"],
+    ],
+  },
+  {
+    label: "Work in a project",
+    links: [
+      ["context", "Write and retrieve Context"],
+      ["tasks-and-resources", "Describe Resources and run Tasks"],
+      ["credentials", "Use credential references"],
+      ["skills-and-artifacts", "Install Skills and file Artifacts"],
+    ],
+  },
+  {
+    label: "Work across devices",
+    links: [
+      ["sync", "Publish and join private sync"],
+      ["recovery", "Resolve conflicts and recover data"],
+    ],
+  },
+  {
+    label: "Troubleshooting",
+    links: [["diagnostics", "Diagnose local and sync state"]],
+  },
+];
+---
+<div class="guide-index">
+  {groups.map((group, i) => (
+    <section aria-labelledby={`guide-group-${i}`}>
+      <h3 id={`guide-group-${i}`}><span>{String(i + 1).padStart(2, "0")}</span>{group.label}</h3>
+      <ul>
+        {group.links.map(([slug, title]) => (
+          <li><a href={`${docsUrl}${slug}/`}>{title}<svg class="icon" aria-hidden="true"><use href="#arrow"/></svg></a></li>
+        ))}
+      </ul>
+    </section>
+  ))}
+</div>
