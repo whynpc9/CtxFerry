@@ -218,7 +218,7 @@ func RunWithServices(ctx context.Context, args []string, stdout, stderr io.Write
 					truncated = executionError.truncated
 				}
 				if len(f.Message) > 1024 {
-					f.Message = compactText(f.Message)
+					f.Message = app.CompactText(f.Message)
 				}
 				event := taskEvent{Type: "result", Origin: f.Origin, Truncated: &truncated, Error: &f}
 				if wire, _ := json.Marshal(event); len(wire)+1 > taskEventLimit {
