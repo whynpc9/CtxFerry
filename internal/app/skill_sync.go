@@ -176,18 +176,12 @@ func (a App) writeSkillCatalog(ctx context.Context, write func(*sql.Conn, string
 		return err
 	}
 	defer db.Close()
-	if err := a.prepareBaseline(ctx, db); err != nil {
-		return err
-	}
-	return store.Write(ctx, db, func(c *sql.Conn) error {
+	return a.mutateCatalog(ctx, db, func(c *sql.Conn) (bool, error) {
 		var workspace string
 		if err := c.QueryRowContext(ctx, "SELECT id FROM workspace").Scan(&workspace); err != nil {
-			return err
+			return false, err
 		}
-		if err := write(c, workspace); err != nil {
-			return err
-		}
-		return queueChanges(ctx, c)
+		return true, write(c, workspace)
 	})
 }
 

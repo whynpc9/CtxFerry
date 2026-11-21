@@ -6,7 +6,6 @@ import (
 	"slices"
 
 	"github.com/google/uuid"
-	"github.com/whynpc9/CtxFerry/internal/store"
 )
 
 type ResourceMapping struct {
@@ -61,44 +60,41 @@ func (a App) MapTaskResource(ctx context.Context, selector, cwd, profile, taskNa
 		return out, err
 	}
 	defer db.Close()
-	if err := a.prepareBaseline(ctx, db); err != nil {
-		return out, err
-	}
-	err = store.Write(ctx, db, func(c *sql.Conn) error {
+	err = a.mutateCatalog(ctx, db, func(c *sql.Conn) (bool, error) {
 		var workspace string
 		if err := c.QueryRowContext(ctx, "SELECT id FROM workspace").Scan(&workspace); err != nil {
-			return err
+			return false, err
 		}
 		scope := Scope{"project", project.ID}
 		id := configID(workspace, scope, profile)
 		if err := requireNoConflict(ctx, c, id); err != nil {
-			return err
+			return false, err
 		}
 		cfg, exists, err := readConfiguration(c.QueryRowContext(ctx, "SELECT payload FROM configurations WHERE id=?", id), false)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if !exists {
-			return Fail("profile-not-found", "Profile was not found in this Project")
+			return false, Fail("profile-not-found", "Profile was not found in this Project")
 		}
 		task, err := loadTask(ctx, c, project.ID, taskName)
 		if err != nil {
-			return err
+			return false, err
 		}
 		resource, err := loadMappedResource(ctx, c, resourceID)
 		if err != nil {
-			return err
+			return false, err
 		}
 		for _, target := range []string{project.ID, task.ID, resource.ID, resource.Scope.ID} {
 			if err := requireNoConflict(ctx, c, target); err != nil {
-				return err
+				return false, err
 			}
 		}
 		if task.Policy.Storage != "shared" || resource.Policy.Storage != "shared" {
-			return Fail("invalid-reference", "a shared Profile mapping requires a shared Task and Resource")
+			return false, Fail("invalid-reference", "a shared Profile mapping requires a shared Task and Resource")
 		}
 		if !compatibleResource(task.TaskSpec, slot, resource.ResourceSpec) {
-			return Fail("incompatible", "the Task slot must exist and match the Resource kind and stage")
+			return false, Fail("incompatible", "the Task slot must exist and match the Resource kind and stage")
 		}
 		for _, m := range cfg.SecretMappings {
 			if m.TaskID != task.ID {
@@ -109,14 +105,14 @@ func (a App) MapTaskResource(ctx context.Context, selector, cwd, profile, taskNa
 				continue
 			}
 			if err := requireNoBindingConflict(ctx, c, m.BindingID); err != nil {
-				return err
+				return false, err
 			}
 			binding, err := loadSecretBinding(ctx, c, m.BindingID)
 			if err != nil {
-				return err
+				return false, err
 			}
 			if !compatibleSecret(req, resource.ID, binding.SecretBindingSpec) {
-				return Fail("incompatible", "Resource change would invalidate an existing SecretBinding mapping")
+				return false, Fail("incompatible", "Resource change would invalidate an existing SecretBinding mapping")
 			}
 		}
 		out.TaskID = task.ID
@@ -124,18 +120,15 @@ func (a App) MapTaskResource(ctx context.Context, selector, cwd, profile, taskNa
 		if i < 0 {
 			cfg.ResourceMappings = append(cfg.ResourceMappings, out)
 		} else if cfg.ResourceMappings[i] == out {
-			return nil
+			return false, nil
 		} else {
 			cfg.ResourceMappings[i] = out
 		}
 		if len(cfg.ResourceMappings) > 512 {
-			return Fail("size-limit", "a Profile supports at most 512 Resource mappings")
+			return false, Fail("size-limit", "a Profile supports at most 512 Resource mappings")
 		}
 		cfg.UpdatedAt, cfg.Revision = now(), uuid.NewString()
-		if err := saveConfiguration(ctx, c, id, scope, cfg); err != nil {
-			return err
-		}
-		return queueChanges(ctx, c)
+		return true, saveConfiguration(ctx, c, id, scope, cfg)
 	})
 	return out, err
 }

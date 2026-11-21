@@ -279,22 +279,16 @@ func (a App) AddRemote(ctx context.Context, repository, raw string) (map[string]
 		return nil, e
 	}
 	defer db.Close()
-	if e = a.prepareBaseline(ctx, db); e != nil {
-		return nil, e
-	}
-	e = store.Write(ctx, db, func(c *sql.Conn) error {
+	e = a.mutateCatalog(ctx, db, func(c *sql.Conn) (bool, error) {
 		var id string
 		if e := c.QueryRowContext(ctx, "SELECT id FROM repositories WHERE id=?", repository).Scan(&id); e != nil {
 			if errors.Is(e, sql.ErrNoRows) {
-				return Fail("repository-not-found", "Repository was not found")
+				return false, Fail("repository-not-found", "Repository was not found")
 			}
-			return e
+			return false, e
 		}
 		_, e := c.ExecContext(ctx, "INSERT OR IGNORE INTO repository_aliases VALUES(?,?)", repository, remote)
-		if e != nil {
-			return e
-		}
-		return queueChanges(ctx, c)
+		return true, e
 	})
 	return map[string]string{"repositoryId": repository, "remote": remote}, e
 }

@@ -207,106 +207,106 @@ func (a App) changeSecretMapping(ctx context.Context, selector, cwd string, chan
 	if err != nil {
 		return out, err
 	}
-	if err := a.prepareBaseline(ctx, db); err != nil {
-		return out, err
-	}
-	err = store.Write(ctx, db, func(c *sql.Conn) error {
+	var queueCheck []string
+	err = a.mutateCatalog(ctx, db, func(c *sql.Conn) (bool, error) {
+		inserted := false
 		p, cfg, err := secretProfile(ctx, c, loc, change.Profile)
 		if err != nil {
-			return err
+			return false, err
 		}
 		task, err := loadTask(ctx, c, loc.project.ID, change.Task)
 		if err != nil {
-			return err
+			return false, err
 		}
 		req, ok := task.requirement(change.Requirement)
 		if !ok {
-			return Fail("incompatible", "Task has no credential requirement with that name")
+			return false, Fail("incompatible", "Task has no credential requirement with that name")
 		}
 		if err := requireNoBindingConflict(ctx, c, task.ID); err != nil {
-			return err
+			return false, err
 		}
 		scope := Scope{"project", loc.project.ID}
 		i := slices.IndexFunc(cfg.SecretMappings, func(m SecretMapping) bool { return m.TaskID == task.ID && m.Requirement == req.Name })
 		if unmap {
 			if i < 0 {
-				return Fail("binding-missing", "Profile has no SecretBinding mapping for Task "+task.Name+" requirement "+req.Name)
+				return false, Fail("binding-missing", "Profile has no SecretBinding mapping for Task "+task.Name+" requirement "+req.Name)
 			}
 			out = SecretBindResult{Profile: p.Name, Mapping: cfg.SecretMappings[i]}
 			cfg.SecretMappings = slices.Delete(cfg.SecretMappings, i, i+1)
-			return saveSecretMappings(ctx, c, p.ID, scope, cfg)
+			return true, saveSecretMappings(ctx, c, p.ID, scope, cfg)
 		}
 
 		resource, err := secretResource(ctx, c, cfg, task, req)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if expected != nil && (expected.workspace != loc.workspace || expected.Status.DeviceID != loc.device ||
 			expected.profileRevision != cfg.Revision || expected.taskRevision != task.Revision ||
 			expected.Resource.ID != resource.ID || expected.Resource.Revision != resource.Revision) {
-			return Fail("selection-changed", "the shared mapping scope changed; refresh and confirm again")
+			return false, Fail("selection-changed", "the shared mapping scope changed; refresh and confirm again")
 		}
 		if expected != nil && expected.Status.Binding != nil {
 			previous := expected.Status.Binding
 			if i < 0 || cfg.SecretMappings[i].BindingID != previous.ID {
-				return Fail("selection-changed", "the previous binding changed; refresh and confirm again")
+				return false, Fail("selection-changed", "the previous binding changed; refresh and confirm again")
 			}
 			if err := requireNoBindingConflict(ctx, c, previous.ID, previous.Scope.ID); err != nil {
-				return err
+				return false, err
 			}
 			current, err := loadSecretBinding(ctx, c, previous.ID)
 			if err != nil {
-				return err
+				return false, err
 			}
 			if current.Revision != previous.Revision {
-				return Fail("selection-changed", "the previous binding changed; refresh and confirm again")
+				return false, Fail("selection-changed", "the previous binding changed; refresh and confirm again")
 			}
 		}
 		var binding SecretBinding
 		if reuse {
 			if err := requireNoBindingConflict(ctx, c, change.BindingID); err != nil {
-				return err
+				return false, err
 			}
 			binding, err = loadSecretBinding(ctx, c, change.BindingID)
 			if err != nil {
-				return err
+				return false, err
 			}
 			if err := requireNoBindingConflict(ctx, c, binding.Scope.ID); err != nil {
-				return err
+				return false, err
 			}
 			if expected != nil && !slices.ContainsFunc(expected.Reusable, func(b SecretBinding) bool {
 				return b.ID == binding.ID && b.Revision == binding.Revision
 			}) {
-				return Fail("selection-changed", "the reusable binding changed; refresh and confirm again")
+				return false, Fail("selection-changed", "the reusable binding changed; refresh and confirm again")
 			}
 			if !compatibleSecret(req, resource.ID, binding.SecretBindingSpec) {
-				return Fail("incompatible", "SecretBinding does not match the requirement purpose, type and selected Resource")
+				return false, Fail("incompatible", "SecretBinding does not match the requirement purpose, type and selected Resource")
 			}
 		} else {
 			spec := SecretBindingSpec{change.Alias, resource.ID, req.Purpose, req.Type, change.ProviderProfile, change.Locator}
 			if err := validateSecretBinding(spec); err != nil {
-				return err
+				return false, err
 			}
 			if spec.ProviderProfile.Provider == bitwarden.Name && !bitwarden.ValidLocator(spec.Locator) {
-				return Fail("invalid-secret-binding", "Bitwarden requires an exact item UUID in --entry-id")
+				return false, Fail("invalid-secret-binding", "Bitwarden requires an exact item UUID in --entry-id")
 			}
 			if i >= 0 {
 				current, err := loadSecretBinding(ctx, c, cfg.SecretMappings[i].BindingID)
 				if err != nil && Classify(err).Code != "binding-missing" {
-					return err
+					return false, err
 				}
 				if err == nil && current.Scope == scope && current.SecretBindingSpec == spec {
 					if err := requireNoBindingConflict(ctx, c, current.ID); err != nil {
-						return err
+						return false, err
 					}
 					out = SecretBindResult{Profile: p.Name, Binding: &current, Mapping: cfg.SecretMappings[i]}
-					return nil
+					return false, nil
 				}
 			}
 			binding, err = insertSecretBinding(ctx, c, loc, spec)
 			if err != nil {
-				return err
+				return false, err
 			}
+			inserted = true
 		}
 
 		mapping := SecretMapping{task.ID, req.Name, binding.ID}
@@ -314,28 +314,29 @@ func (a App) changeSecretMapping(ctx context.Context, selector, cwd string, chan
 		if i < 0 {
 			cfg.SecretMappings = append(cfg.SecretMappings, mapping)
 		} else if cfg.SecretMappings[i] == mapping {
-			return nil
+			return inserted, nil
 		} else {
 			cfg.SecretMappings[i] = mapping
 		}
 		if len(cfg.SecretMappings) > 512 {
-			return Fail("size-limit", "a Profile supports at most 512 credential mappings")
-		}
-		if err := saveSecretMappings(ctx, c, p.ID, scope, cfg); err != nil {
-			return err
+			return false, Fail("size-limit", "a Profile supports at most 512 credential mappings")
 		}
 		if expected != nil {
-			var queued bool
-			if err := c.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM sync_outbox WHERE id IN (?,?))", p.ID, binding.ID).Scan(&queued); err != nil {
-				return err
-			}
-			out.desktopWrite = "local"
-			if queued {
-				out.desktopWrite = "queued"
-			}
+			queueCheck = []string{p.ID, binding.ID}
 		}
-		return nil
+		return true, saveSecretMappings(ctx, c, p.ID, scope, cfg)
 	})
+	if err == nil && queueCheck != nil {
+		// The desktop reports whether the confirmed mapping reached the sync outbox.
+		var queued bool
+		if err = db.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM sync_outbox WHERE id IN (?,?))", queueCheck[0], queueCheck[1]).Scan(&queued); err != nil {
+			return out, err
+		}
+		out.desktopWrite = "local"
+		if queued {
+			out.desktopWrite = "queued"
+		}
+	}
 	return out, err
 }
 
@@ -357,10 +358,7 @@ func insertSecretBinding(ctx context.Context, c *sql.Conn, loc configurationLoca
 
 func saveSecretMappings(ctx context.Context, c *sql.Conn, profileID string, scope Scope, cfg configuration) error {
 	cfg.UpdatedAt, cfg.Revision = now(), uuid.NewString()
-	if err := saveConfiguration(ctx, c, profileID, scope, cfg); err != nil {
-		return err
-	}
-	return queueChanges(ctx, c)
+	return saveConfiguration(ctx, c, profileID, scope, cfg)
 }
 
 func exactSecretFields(raw []byte, allowed ...string) error {

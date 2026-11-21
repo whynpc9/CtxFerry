@@ -155,23 +155,18 @@ func (a App) ImportOnboardingNote(ctx context.Context, path string, in NoteImpor
 		return receipt, err
 	}
 	fingerprint := digest(wire)
-	if in.Policy.Storage == "shared" {
-		if err = a.prepareBaseline(ctx, db); err != nil {
-			return receipt, err
-		}
-	}
-	err = store.Write(ctx, db, func(c *sql.Conn) error {
+	err = a.mutateCatalog(ctx, db, func(c *sql.Conn) (bool, error) {
 		var previous string
 		err := c.QueryRowContext(ctx, "SELECT fingerprint,document_id FROM onboarding_notes WHERE path=?", path).
 			Scan(&previous, &receipt.DocumentID)
 		if err == nil {
 			if previous != fingerprint {
-				return Fail("note-already-imported", "this note is already imported; edit its context document to change its content or policy")
+				return false, Fail("note-already-imported", "this note is already imported; edit its context document to change its content or policy")
 			}
-			return nil
+			return false, nil
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
-			return err
+			return false, err
 		}
 		input := PutContext{
 			Title: in.Title, Summary: in.Summary, Body: body, Purpose: "note", Source: "onboarding-import",
@@ -179,16 +174,11 @@ func (a App) ImportOnboardingNote(ctx context.Context, path string, in NoteImpor
 		}
 		var document ContextDoc
 		if err = writeContext(ctx, c, state.ProjectID, input, &document); err != nil {
-			return err
-		}
-		if in.Policy.Storage == "shared" {
-			if err = queueChanges(ctx, c); err != nil {
-				return err
-			}
+			return false, err
 		}
 		receipt.DocumentID = document.ID
 		_, err = c.ExecContext(ctx, "INSERT INTO onboarding_notes(path,fingerprint,document_id) VALUES(?,?,?)", path, fingerprint, document.ID)
-		return err
+		return in.Policy.Storage == "shared", err
 	})
 	return receipt, err
 }

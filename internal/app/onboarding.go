@@ -252,16 +252,13 @@ func (a App) ConfirmOnboardingBinding(ctx context.Context, selection OnboardingS
 		return state, err
 	}
 	git := discoverGit(ctx, path)
-	if err = a.prepareBaseline(ctx, db); err != nil {
-		return state, err
-	}
-	err = store.Write(ctx, db, func(c *sql.Conn) error {
+	err = a.mutateCatalog(ctx, db, func(c *sql.Conn) (bool, error) {
 		preview, err := previewOnboarding(ctx, c, path, selection, git)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if preview.ID != previewID {
-			return Fail("preview-changed", "project preview changed or is ambiguous; run onboard status")
+			return false, Fail("preview-changed", "project preview changed or is ambiguous; run onboard status")
 		}
 		projectID := ""
 		if preview.Project != nil {
@@ -269,16 +266,13 @@ func (a App) ConfirmOnboardingBinding(ctx context.Context, selection OnboardingS
 		}
 		var bound BindResult
 		if err = bindProject(ctx, c, &bound, path, preview.NewSlug, projectID, preview.RepositoryID, git, nil); err != nil {
-			return err
-		}
-		if err = queueChanges(ctx, c); err != nil {
-			return err
+			return false, err
 		}
 		if _, err = c.ExecContext(ctx, "UPDATE onboarding SET project_id=? WHERE singleton=1", bound.Project.ID); err != nil {
-			return err
+			return false, err
 		}
 		state.Step, state.ProjectID = "notes", bound.Project.ID
-		return nil
+		return true, nil
 	})
 	return state, err
 }

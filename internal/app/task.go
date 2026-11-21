@@ -12,7 +12,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
-	"github.com/whynpc9/CtxFerry/internal/store"
 )
 
 type TaskSpec struct {
@@ -166,31 +165,28 @@ func (a App) AddTask(ctx context.Context, selector, cwd, storage string, spec Ta
 			return out, err
 		}
 	}
-	err = store.Write(ctx, db, func(c *sql.Conn) error {
+	err = a.mutateCatalog(ctx, db, func(c *sql.Conn) (bool, error) {
 		if _, _, err := taskMembership(ctx, c, project.ID, spec.MembershipID); err != nil {
-			return err
+			return false, err
 		}
 		env := publishedEnvelope{SchemaVersion: 1, ID: uuid.NewString(), Kind: "task", Scope: Scope{"project", project.ID},
 			Policy: Policy{storage, "full"}, Revision: uuid.NewString(), OperationID: uuid.NewString(), Payload: spec}
 		env.Provenance.UpdatedAt = now()
 		if err := c.QueryRowContext(ctx, "SELECT workspace.id, device.id FROM workspace CROSS JOIN device").Scan(&env.WorkspaceID, &env.Provenance.DeviceID); err != nil {
-			return err
+			return false, err
 		}
 		raw, err := json.Marshal(env)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if len(raw)+1 > MetadataLimit {
-			return Fail("size-limit", "Task record envelope exceeds 256 KiB")
+			return false, Fail("size-limit", "Task record envelope exceeds 256 KiB")
 		}
 		if _, err = c.ExecContext(ctx, "INSERT INTO records VALUES(?,?,'task',?)", env.ID, project.ID, string(raw)); err != nil {
-			return err
+			return false, err
 		}
 		out = taskFromRecord(remoteRecord{publishedEnvelope: env, Task: spec})
-		if shared {
-			return queueChanges(ctx, c)
-		}
-		return nil
+		return shared, nil
 	})
 	return out, err
 }
@@ -354,51 +350,45 @@ func (a App) UpdateTask(ctx context.Context, selector, cwd, name string, change 
 		return out, err
 	}
 	defer db.Close()
-	if err := a.prepareBaseline(ctx, db); err != nil {
-		return out, err
-	}
-	err = store.Write(ctx, db, func(c *sql.Conn) error {
+	err = a.mutateCatalog(ctx, db, func(c *sql.Conn) (bool, error) {
 		old, err := loadTask(ctx, c, project.ID, name)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if err := requireNoConflict(ctx, c, old.ID); err != nil {
-			return err
+			return false, err
 		}
 		if old.Revision != change.IfRevision {
-			return Fail("revision-conflict", "Task changed; read its current revision before updating")
+			return false, Fail("revision-conflict", "Task changed; read its current revision before updating")
 		}
 		spec := change.apply(old.TaskSpec)
 		if err := validateTask(spec); err != nil {
-			return err
+			return false, err
 		}
 		if _, _, err := taskMembership(ctx, c, project.ID, spec.MembershipID); err != nil {
-			return err
+			return false, err
 		}
 		if err := requireMappableTask(ctx, c, old.ID, old.TaskSpec, spec); err != nil {
-			return err
+			return false, err
 		}
 		env := publishedEnvelope{SchemaVersion: 1, ID: old.ID, Kind: "task", Scope: old.Scope, Policy: old.Policy,
 			Revision: uuid.NewString(), PreviousRevision: old.Revision, OperationID: uuid.NewString(), Payload: spec}
 		env.Provenance.UpdatedAt = now()
 		if err := c.QueryRowContext(ctx, "SELECT workspace.id, device.id FROM workspace CROSS JOIN device").Scan(&env.WorkspaceID, &env.Provenance.DeviceID); err != nil {
-			return err
+			return false, err
 		}
 		raw, err := json.Marshal(env)
 		if err != nil {
-			return err
+			return false, err
 		}
 		if len(raw)+1 > MetadataLimit {
-			return Fail("size-limit", "Task record envelope exceeds 256 KiB")
+			return false, Fail("size-limit", "Task record envelope exceeds 256 KiB")
 		}
 		if _, err = c.ExecContext(ctx, "UPDATE records SET metadata=? WHERE id=? AND kind='task'", string(raw), old.ID); err != nil {
-			return err
+			return false, err
 		}
 		out = taskFromRecord(remoteRecord{publishedEnvelope: env, Task: spec})
-		if old.Policy.Storage == "shared" {
-			return queueChanges(ctx, c)
-		}
-		return nil
+		return old.Policy.Storage == "shared", nil
 	})
 	return out, err
 }

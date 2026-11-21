@@ -255,14 +255,8 @@ func (a App) BindProjectWith(ctx context.Context, path, slug, selector, reposito
 		return r, e
 	}
 	defer db.Close()
-	if e = a.prepareBaseline(ctx, db); e != nil {
-		return r, e
-	}
-	e = store.Write(ctx, db, func(c *sql.Conn) error {
-		if err := bindProject(ctx, c, &r, path, slug, selector, repository, git, aliases); err != nil {
-			return err
-		}
-		return queueChanges(ctx, c)
+	e = a.mutateCatalog(ctx, db, func(c *sql.Conn) (bool, error) {
+		return true, bindProject(ctx, c, &r, path, slug, selector, repository, git, aliases)
 	})
 	return r, e
 }
