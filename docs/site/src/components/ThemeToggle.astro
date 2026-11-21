@@ -1,0 +1,29 @@
+<button class="theme-toggle" type="button" aria-label="Use dark theme" title="Use dark theme">
+  <svg class="icon theme-icon-dark" aria-hidden="true"><use href="#moon"></use></svg>
+  <svg class="icon theme-icon-light" aria-hidden="true"><use href="#sun"></use></svg>
+</button>
+<script is:inline>
+  (() => {
+    const root = document.documentElement;
+    const buttons = document.querySelectorAll(".theme-toggle");
+    const label = () => {
+      const text =
+        root.dataset.theme === "dark" ? "Use light theme" : "Use dark theme";
+      buttons.forEach((button) => {
+        button.setAttribute("aria-label", text);
+        button.title = text;
+      });
+    };
+    buttons.forEach((button) =>
+      button.addEventListener("click", () => {
+        window.ctxferryTheme?.toggle();
+        label();
+      }),
+    );
+    new MutationObserver(label).observe(root, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+    label();
+  })();
+</script>

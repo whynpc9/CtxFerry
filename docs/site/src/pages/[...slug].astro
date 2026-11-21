@@ -6,6 +6,8 @@ import {
 } from "@cloudflare/nimbus-docs/runtime";
 import GuideNavigation from "../components/GuideNavigation.astro";
 import FerrySymbols from "../components/FerrySymbols.astro";
+import ThemeInit from "../components/ThemeInit.astro";
+import ThemeToggle from "../components/ThemeToggle.astro";
 import "../styles/docs.css";
 
 export const getStaticPaths = getDocsStaticPaths;
@@ -24,6 +26,7 @@ const titles = new Map(
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{entry.data.title} · CtxFerry</title>
+    <ThemeInit />
     <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
   </head>
   <body>
@@ -40,6 +43,7 @@ const titles = new Map(
         <a class="repository" href="https://github.com/whynpc9/CtxFerry"
           >GitHub ↗</a
         >
+        <ThemeToggle />
       </div>
     </header>
     <main class="guide-layout">
