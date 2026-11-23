@@ -17,6 +17,10 @@ export const guideGroups = [
     pages: ["docs/sync", "docs/recovery"],
   },
   {
+    label: { en: "Reference", "zh-CN": "参考" },
+    pages: ["docs/cli-reference"],
+  },
+  {
     label: { en: "Troubleshooting", "zh-CN": "故障排查" },
     pages: ["docs/diagnostics"],
   },

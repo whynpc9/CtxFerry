@@ -40,6 +40,11 @@ optional until you want the same shared context on another device.
   restore one document, recover a local device, or restore shared history under
   a new epoch.
 
+### Reference
+
+- [CLI reference](cli-reference.md): look up global flags, output contracts,
+  command syntax, and command-specific options.
+
 ### Troubleshooting
 
 - [Diagnose local and sync state](diagnostics.md): interpret `doctor`, sync

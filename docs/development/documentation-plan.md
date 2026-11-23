@@ -16,6 +16,7 @@ device. A coding agent can follow the same examples and use the JSON output.
 | Work in a project | [skills-and-artifacts.md](../content/skills-and-artifacts.md) | Preview a Skill installation and register or retrieve an artifact. |
 | Work across devices | [sync.md](../content/sync.md) | Review plaintext scope, publish to a private repository and join from a second device. |
 | Work across devices | [recovery.md](../content/recovery.md) | Inspect a conflict, choose a resolution and distinguish local recovery from shared restore. |
+| Reference | [cli-reference.md](../content/cli-reference.md) | Look up global flags, output contracts, command syntax and command-specific options. |
 | Troubleshooting | [diagnostics.md](../content/diagnostics.md) | Interpret doctor and sync status, then choose a specific next check. |
 
 Keep prerequisites next to the first command that needs them. Give examples an
@@ -49,7 +50,7 @@ workspace state and revision that produced them.
 Mount these Markdown files under the collection's `docs/` directory and set
 Astro's base to `/CtxFerry`. Then `index.md` becomes `/CtxFerry/docs/` and
 `sync.md` becomes `/CtxFerry/docs/sync/`. Keep the product landing page at
-the collection root. Register the four groups in the table above in sidebar order.
+the collection root. Register the five groups in the table above in sidebar order.
 
 Use relative Markdown filenames in authored links so they open in a repository
 checkout. In the site build, map links between sibling guide pages to their
