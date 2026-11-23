@@ -2,6 +2,8 @@
 title: Install and bind your first checkout
 ---
 
+English · [简体中文](zh-CN/getting-started.md)
+
 This guide creates a usable local workspace with no account, network
 connection, desktop application, or credential provider. Git is optional for a
 directory binding; it is needed for Repository discovery, Tasks tied to a

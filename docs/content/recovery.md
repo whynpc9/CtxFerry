@@ -2,6 +2,8 @@
 title: Conflict resolution and recovery
 ---
 
+English · [简体中文](zh-CN/recovery.md)
+
 Recovery preserves local work and append-only shared history. Choose the
 operation that matches the scope of the problem; do not copy an active SQLite
 catalog between devices or reset the sync branch.

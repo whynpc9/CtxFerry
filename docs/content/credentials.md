@@ -2,6 +2,8 @@
 title: Credential references and execution trust
 ---
 
+English · [简体中文](zh-CN/credentials.md)
+
 CtxFerry stores and synchronizes credential **references**, not credential
 values. Each device authenticates to its own provider profile, and each device
 and checkout approves the execution definition before a Task receives values.

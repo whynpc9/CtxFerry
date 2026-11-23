@@ -548,6 +548,11 @@ main > .band:last-child {
   }
   .mast {
     min-height: 64px;
+    flex-wrap: wrap;
+  }
+  .mast nav {
+    flex-wrap: wrap;
+    gap: 8px 16px;
   }
   .brand {
     gap: 6px;

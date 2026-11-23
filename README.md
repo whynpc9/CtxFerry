@@ -1,5 +1,7 @@
 # CtxFerry
 
+[English](README.md) · [简体中文](README.zh-CN.md)
+
 Local-first development context. This first slice supports local workspaces and Project bindings without any login, network connection, GUI, DBus or WebKitGTK.
 
 [User guides](docs/content/index.md) · [Developer documentation](docs/README.md)

@@ -2,6 +2,8 @@
 title: CtxFerry user guide
 ---
 
+English · [简体中文](zh-CN/index.md)
+
 CtxFerry keeps development context for a logical Project on your device. Start
 with one checkout and no login, then add shared resources, Tasks, credential
 references, Skills and artifacts as you need them. A private Git repository is

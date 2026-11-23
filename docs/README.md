@@ -1,6 +1,8 @@
 # Documentation
 
-[User guides](content/index.md) cover native desktop and CLI workflows available in the current source tree. Use `docs/content/` as the content source for the Nimbus documentation site. Add reader-facing guides and their assets there.
+[English](README.md) · [简体中文](README.zh-CN.md)
+
+[User guides](content/index.md) cover native desktop and CLI workflows available in the current source tree. Use `docs/content/` as the content source for the Nimbus documentation site. English is the default at the existing URLs; Simplified Chinese sources live in `docs/content/zh-CN/` and are served under `/zh-CN/`. Add each reader-facing guide in both language directories. Shared images remain in `docs/content/assets/`; Chinese pages reference them as `../assets/`.
 
 ## Local development
 
@@ -25,8 +27,10 @@ npm run build
 npm run preview
 ```
 
-Open `/CtxFerry/` on the preview server for the landing page, or `/CtxFerry/docs/`
-for the user guide. Edit guide pages in `docs/content/`; the site reads them
+Open `/CtxFerry/` on the preview server for the English landing page, or
+`/CtxFerry/docs/` for the English user guide. The Chinese equivalents are
+`/CtxFerry/zh-CN/` and `/CtxFerry/zh-CN/docs/`. Edit English guide pages in
+`docs/content/` and Chinese pages in `docs/content/zh-CN/`; the site reads them
 directly and resolves their Markdown links at build time.
 
 ## Deploy to GitHub Pages

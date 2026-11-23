@@ -1,0 +1,98 @@
+---
+import { landingCopy, localeUrl, otherLocale, ui, type Locale } from "../i18n";
+import FerrySymbols from "./FerrySymbols.astro";
+import FirstRun from "./FirstRun.astro";
+import GuideIndex from "./GuideIndex.astro";
+import LanguageSwitcher from "./LanguageSwitcher.astro";
+import NotePolicy from "./NotePolicy.astro";
+import ThemeInit from "./ThemeInit.astro";
+import ThemeToggle from "./ThemeToggle.astro";
+import "../styles/landing.css";
+
+interface Props {
+  locale: Locale;
+}
+const { locale } = Astro.props;
+const copy = landingCopy[locale];
+const text = ui[locale];
+const base = import.meta.env.BASE_URL;
+const homeUrl = localeUrl(base, locale);
+const docsUrl = localeUrl(base, locale, "docs/");
+const alternateUrl = localeUrl(base, otherLocale(locale));
+const englishUrl = localeUrl(base, "en");
+const chineseUrl = localeUrl(base, "zh-CN");
+const githubUrl = "https://github.com/whynpc9/CtxFerry";
+---
+
+<!doctype html>
+<html lang={locale}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{copy.title}</title>
+    <ThemeInit />
+    <meta name="description" content={copy.description} />
+    <link rel="canonical" href={new URL(homeUrl, Astro.site)} />
+    <link rel="alternate" hreflang="en" href={new URL(englishUrl, Astro.site)} />
+    <link rel="alternate" hreflang="zh-CN" href={new URL(chineseUrl, Astro.site)} />
+    <link rel="alternate" hreflang="x-default" href={new URL(englishUrl, Astro.site)} />
+  </head>
+  <body>
+    <FerrySymbols />
+    <header class="wrap mast">
+      <a href={homeUrl} class="brand" aria-label={text.homeLabel}>
+        <svg aria-hidden="true"><use href="#ferry"></use></svg>CtxFerry
+      </a>
+      <nav aria-label={text.mainNavigation}>
+        <a href={docsUrl}>{text.docs}</a>
+        <a href={githubUrl}>GitHub <svg class="icon" aria-hidden="true"><use href="#out"></use></svg></a>
+        <LanguageSwitcher locale={locale} href={alternateUrl} />
+        <ThemeToggle
+          darkLabel={text.useDarkTheme}
+          lightLabel={text.useLightTheme}
+        />
+      </nav>
+    </header>
+    <main id="top">
+      <section class="wrap hero" aria-labelledby="hero-title">
+        <div class="intro">
+          <p class="eyebrow">{copy.eyebrow}</p>
+          <h1 id="hero-title">{copy.heroTitle}<br /><em>{copy.heroAccent}</em></h1>
+          <p class="lead">{copy.lead}</p>
+          <div class="actions">
+            <a class="cta" href={docsUrl + "getting-started/"}>
+              {copy.getStarted} <svg class="icon" aria-hidden="true"><use href="#arrow"></use></svg>
+            </a>
+            <a class="text-link" href={docsUrl}>{copy.browseGuides}</a>
+          </div>
+        </div>
+        <FirstRun locale={locale} />
+      </section>
+      <section class="policy" aria-labelledby="note-policy">
+        <div class="wrap band">
+          <div class="section-heading">
+            <h2 id="note-policy">{copy.policyTitle}</h2>
+            <p>{copy.policyDescription}</p>
+          </div>
+          <NotePolicy locale={locale} />
+        </div>
+      </section>
+      <section class="wrap band" aria-labelledby="guides-title">
+        <div class="section-heading">
+          <h2 id="guides-title">{copy.guidesTitle}</h2>
+          <p>{copy.guidesDescription}</p>
+        </div>
+        <GuideIndex locale={locale} docsUrl={docsUrl} />
+      </section>
+    </main>
+    <footer class="wrap">
+      <a href={homeUrl} class="brand" aria-label={text.homeLabel}>
+        <svg aria-hidden="true"><use href="#ferry"></use></svg>CtxFerry
+      </a>
+      <nav aria-label={text.footerNavigation}>
+        <a href={docsUrl}>{text.docs}</a>
+        <a href={githubUrl}>GitHub <svg class="icon" aria-hidden="true"><use href="#out"></use></svg></a>
+      </nav>
+    </footer>
+  </body>
+</html>

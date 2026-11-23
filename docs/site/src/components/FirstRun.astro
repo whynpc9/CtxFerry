@@ -1,14 +1,22 @@
 ---
 import harbor from "../assets/harbor.webp";
+import { landingCopy, type Locale } from "../i18n";
+
+interface Props {
+  locale: Locale;
+}
+const { locale } = Astro.props;
+const copy = landingCopy[locale].firstRun;
 ---
+
 <figure class="field-guide">
-  <img class="art" src={harbor.src} width="1536" height="1024" alt="A ferry carries three file folders across a teal harbor toward a lighthouse.">
+  <img class="art" src={harbor.src} width="1536" height="1024" alt={copy.imageAlt} />
   <figcaption class="shell">
-    <h2 class="shell-title"><svg class="icon" aria-hidden="true"><use href="#terminal"/></svg>First run</h2>
-    <p class="shell-note">Run the installed CLI in your project folder.</p>
-    <pre aria-label="Shell commands"><code><span>$</span> ctxferry init
+    <h2 class="shell-title"><svg class="icon" aria-hidden="true"><use href="#terminal"/></svg>{copy.title}</h2>
+    <p class="shell-note">{copy.note}</p>
+    <pre aria-label={copy.commandsLabel}><code><span>$</span> ctxferry init
 <span>$</span> ctxferry project bind <b>.</b>
 <span>$</span> ctxferry context show</code></pre>
-    <p class="shell-result"><strong>Expected result</strong> Folder bound. Your new project lists zero documents.</p>
+    <p class="shell-result"><strong>{copy.resultLabel}</strong>{copy.result}</p>
   </figcaption>
 </figure>

@@ -2,6 +2,8 @@
 title: Resources and local Tasks
 ---
 
+English · [简体中文](zh-CN/tasks-and-resources.md)
+
 A Resource describes a service and its non-secret connection intent. A Task
 defines an executable entry point, its working directory, arguments, Resource
 slots, and optional credential requirements. Reading either one does not fetch a

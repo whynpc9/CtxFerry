@@ -6,55 +6,70 @@ import {
 } from "@cloudflare/nimbus-docs/runtime";
 import GuideNavigation from "../components/GuideNavigation.astro";
 import FerrySymbols from "../components/FerrySymbols.astro";
+import LanguageSwitcher from "../components/LanguageSwitcher.astro";
 import ThemeInit from "../components/ThemeInit.astro";
 import ThemeToggle from "../components/ThemeToggle.astro";
+import {
+  docUrl,
+  localeFromDocId,
+  localeUrl,
+  localizedDocId,
+  otherLocale,
+  ui,
+} from "../i18n";
 import "../styles/docs.css";
 
 export const getStaticPaths = getDocsStaticPaths;
 const page = await getDocsPage(Astro);
 if (page instanceof Response) return page;
 const { entry, Content } = page;
-const home = import.meta.env.BASE_URL;
+const locale = localeFromDocId(entry.id);
+const text = ui[locale];
+const base = import.meta.env.BASE_URL;
+const home = localeUrl(base, locale);
+const docsHome = localeUrl(base, locale, "docs/");
+const alternateId = localizedDocId(entry.id, otherLocale(locale));
+const alternateUrl = docUrl(base, alternateId);
+const englishUrl = docUrl(base, localizedDocId(entry.id, "en"));
+const chineseUrl = docUrl(base, localizedDocId(entry.id, "zh-CN"));
 const titles = new Map(
   (await getCollection("docs")).map((doc) => [doc.id, doc.data.title]),
 );
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang={locale}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{entry.data.title} · CtxFerry</title>
     <ThemeInit />
     <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
+    <link rel="alternate" hreflang="en" href={new URL(englishUrl, Astro.site)} />
+    <link rel="alternate" hreflang="zh-CN" href={new URL(chineseUrl, Astro.site)} />
+    <link rel="alternate" hreflang="x-default" href={new URL(englishUrl, Astro.site)} />
   </head>
   <body>
     <FerrySymbols />
-    <a class="skip" href="#article">Skip to guide</a>
+    <a class="skip" href="#article">{text.skipToGuide}</a>
     <header class="mast">
       <div class="bar">
-        <a class="brand" href={home}
-          ><span class="mark"
-            ><svg aria-hidden="true"><use href="#ferry"></use></svg></span
-          >CtxFerry</a
-        >
-        <a href={home + "docs/"}>Docs</a>
-        <a class="repository" href="https://github.com/whynpc9/CtxFerry"
-          >GitHub ↗</a
-        >
-        <ThemeToggle />
+        <a class="brand" href={home} aria-label={text.homeLabel}>
+          <span class="mark"><svg aria-hidden="true"><use href="#ferry"></use></svg></span>CtxFerry
+        </a>
+        <a href={docsHome}>{text.docs}</a>
+        <a class="repository" href="https://github.com/whynpc9/CtxFerry">GitHub ↗</a>
+        <LanguageSwitcher locale={locale} href={alternateUrl} />
+        <ThemeToggle darkLabel={text.useDarkTheme} lightLabel={text.useLightTheme} />
       </div>
     </header>
     <main class="guide-layout">
       <aside class="sidebar">
-        <GuideNavigation current={entry.id} titles={titles} />
+        <GuideNavigation current={entry.id} titles={titles} locale={locale} />
       </aside>
       <details class="mobile-nav">
-        <summary>Browse guides</summary><GuideNavigation
-          current={entry.id}
-          titles={titles}
-        />
+        <summary>{text.browseGuides}</summary>
+        <GuideNavigation current={entry.id} titles={titles} locale={locale} />
       </details>
       <article id="article" data-pagefind-body>
         <h1>{entry.data.title}</h1><Content />

@@ -2,6 +2,8 @@
 title: Skills and run Artifacts
 ---
 
+English · [简体中文](zh-CN/skills-and-artifacts.md)
+
 Skills are pinned packages projected into an agent's user-level directory.
 Artifacts are immutable files associated with a Project and run. Both require
 explicit selection; neither one recursively watches a source directory.

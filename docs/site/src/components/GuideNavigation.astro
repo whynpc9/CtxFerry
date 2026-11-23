@@ -1,28 +1,34 @@
 ---
+import { docUrl, localizedDocId, ui, type Locale } from "../i18n";
 import { guideGroups } from "../navigation";
+
 interface Props {
   current: string;
   titles: Map<string, string>;
+  locale: Locale;
 }
-const { current, titles } = Astro.props;
+const { current, titles, locale } = Astro.props;
 ---
 
-<nav aria-label="Documentation">
+<nav aria-label={ui[locale].documentation}>
   {
     guideGroups.map((group) => (
       <section>
-        <h2>{group.label}</h2>
+        <h2>{group.label[locale]}</h2>
         <ul>
-          {group.pages.map((id) => (
-            <li>
-              <a
-                href={import.meta.env.BASE_URL + id + "/"}
-                aria-current={id === current ? "page" : undefined}
-              >
-                {titles.get(id)}
-              </a>
-            </li>
-          ))}
+          {group.pages.map((id) => {
+            const localizedId = localizedDocId(id, locale);
+            return (
+              <li>
+                <a
+                  href={docUrl(import.meta.env.BASE_URL, localizedId)}
+                  aria-current={localizedId === current ? "page" : undefined}
+                >
+                  {titles.get(localizedId)}
+                </a>
+              </li>
+            );
+          })}
         </ul>
       </section>
     ))

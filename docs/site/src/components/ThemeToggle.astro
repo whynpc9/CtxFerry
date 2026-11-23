@@ -1,4 +1,19 @@
-<button class="theme-toggle" type="button" aria-label="Use dark theme" title="Use dark theme">
+---
+interface Props {
+  darkLabel: string;
+  lightLabel: string;
+}
+const { darkLabel, lightLabel } = Astro.props;
+---
+
+<button
+  class="theme-toggle"
+  type="button"
+  aria-label={darkLabel}
+  title={darkLabel}
+  data-dark-label={darkLabel}
+  data-light-label={lightLabel}
+>
   <svg class="icon theme-icon-dark" aria-hidden="true"><use href="#moon"></use></svg>
   <svg class="icon theme-icon-light" aria-hidden="true"><use href="#sun"></use></svg>
 </button>
@@ -7,9 +22,11 @@
     const root = document.documentElement;
     const buttons = document.querySelectorAll(".theme-toggle");
     const label = () => {
-      const text =
-        root.dataset.theme === "dark" ? "Use light theme" : "Use dark theme";
       buttons.forEach((button) => {
+        const text =
+          root.dataset.theme === "dark"
+            ? button.dataset.lightLabel
+            : button.dataset.darkLabel;
         button.setAttribute("aria-label", text);
         button.title = text;
       });

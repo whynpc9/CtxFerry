@@ -2,6 +2,8 @@
 title: Diagnostics and sync status
 ---
 
+English · [简体中文](zh-CN/diagnostics.md)
+
 Start with local evidence, then choose only the network or provider check that
 matches the failed capability. A local record, a successful TCP connection, a
 provider login, and a successful Task are separate facts.

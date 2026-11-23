@@ -2,6 +2,8 @@
 title: 'Tutorial: from one checkout to two devices'
 ---
 
+English · [简体中文](zh-CN/tutorial.md)
+
 This walkthrough builds a complete, typical CtxFerry workflow around a Go
 service named `atlas-api`. You will register Project instructions, run a local
 test Task, connect an integration Task to a database credential, publish the

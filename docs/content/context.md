@@ -2,6 +2,8 @@
 title: Context documents and Profiles
 ---
 
+English · [简体中文](zh-CN/context.md)
+
 Context documents hold Project notes, conventions, and summaries. Reads use the
 local catalog by default, so they work offline and do not require a credential
 provider.

@@ -1,0 +1,21 @@
+---
+import { otherLocale, ui, type Locale } from "../i18n";
+
+interface Props {
+  locale: Locale;
+  href: string;
+}
+const { locale, href } = Astro.props;
+const target = otherLocale(locale);
+const copy = ui[locale];
+---
+
+<a
+  class="language-link"
+  href={href}
+  hreflang={target}
+  lang={target}
+  aria-label={`${copy.languageLabel} — ${copy.languageAriaLabel}`}
+>
+  {copy.languageLabel}
+</a>

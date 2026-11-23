@@ -282,6 +282,17 @@ article th {
   background: var(--th-bg);
 }
 @media (max-width: 48rem) {
+  .bar {
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    padding-block: 0.65rem;
+  }
+  .brand + a {
+    padding-left: 0.65rem;
+  }
+  .repository {
+    margin-left: auto;
+  }
   .guide-layout {
     display: block;
   }

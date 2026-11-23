@@ -1,16 +1,26 @@
+---
+import { landingCopy, type Locale } from "../i18n";
+
+interface Props {
+  locale: Locale;
+}
+const { locale } = Astro.props;
+const copy = landingCopy[locale].notePolicy;
+---
+
 <article class="note-sheet">
-  <header><svg class="feature-icon" aria-hidden="true"><use href="#note"/></svg><div><span>Example note</span><h3>Build instructions</h3></div></header>
+  <header><svg class="feature-icon" aria-hidden="true"><use href="#note"/></svg><div><span>{copy.example}</span><h3>{copy.title}</h3></div></header>
   <div class="choices">
     <section><div class="setting"><svg class="feature-icon" aria-hidden="true"><use href="#summary"/></svg><code>--disclosure summary</code></div>
-      <h4>Agents read the summary</h4>
-      <blockquote>“Build the CLI locally.”</blockquote>
-      <p>The CLI also returns the title and metadata.</p>
+      <h4>{copy.summaryTitle}</h4>
+      <blockquote>{copy.summary}</blockquote>
+      <p>{copy.summaryNote}</p>
     </section>
     <section><div class="setting"><svg class="feature-icon" aria-hidden="true"><use href="#publish"/></svg><code>--storage shared</code></div>
-      <h4>Sync publishes the full note in plaintext</h4>
-      <div class="body-copy">From the repository root, build the CLI.<code>go build ./cmd/ctxferry</code></div>
-      <p>Sync targets your dedicated private GitHub repository.</p>
+      <h4>{copy.sharedTitle}</h4>
+      <div class="body-copy">{copy.body}<code>go build ./cmd/ctxferry</code></div>
+      <p>{copy.sharedNote}</p>
     </section>
   </div>
-  <div class="storage-option"><strong>Keep a note on this device</strong><code>--storage local-only</code><span>Excluded from sync.</span></div>
+  <div class="storage-option"><strong>{copy.localTitle}</strong><code>--storage local-only</code><span>{copy.localNote}</span></div>
 </article>

@@ -2,6 +2,8 @@
 title: Private sync across devices
 ---
 
+English · [简体中文](zh-CN/sync.md)
+
 Local initialization and editing remain offline. Sync is an explicit additional
 step that publishes shared records to a dedicated private GitHub repository in
 plaintext, then retrieves and validates the same catalog on another device.

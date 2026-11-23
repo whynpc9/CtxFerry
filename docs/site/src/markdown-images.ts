@@ -14,7 +14,7 @@ export function withImageUrls(get: APIRoute): APIRoute {
     if (!response.ok) return response;
     const source = await response.text();
     const body = source.replace(
-      /(!\[[^\]\n]*\]\()assets\/([\w-]+\.png)\)/g,
+      /(!\[[^\]\n]*\]\()(?:\.\.\/)?assets\/([\w-]+\.png)\)/g,
       (match, prefix, file) => {
         const url = images["../../content/assets/" + file];
         return url

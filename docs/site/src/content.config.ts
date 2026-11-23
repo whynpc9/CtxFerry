@@ -11,8 +11,14 @@ export const collections = {
       glob({
         base: "../content",
         pattern: "**/*.md",
-        generateId: ({ entry }) =>
-          ("docs/" + entry).replace(/\.md$/, "").replace(/(^|\/)index$/, ""),
+        generateId: ({ entry }) => {
+          const chinese = entry.startsWith("zh-CN/");
+          const page = chinese ? entry.slice("zh-CN/".length) : entry;
+          const prefix = chinese ? "zh-CN/docs/" : "docs/";
+          return (prefix + page)
+            .replace(/\.md$/, "")
+            .replace(/(^|\/)index$/, "");
+        },
       }),
     ),
     schema: defineDocSchema(),

@@ -2,6 +2,8 @@
 title: Native desktop
 ---
 
+English · [简体中文](zh-CN/desktop.md)
+
 CtxFerry desktop opens the same local Workspace as the CLI, using native MyGo widgets only. Home answers what needs attention, Projects explain what a Project uses on this device, Catalog holds cross-Project tools, and Sync shows what can travel to another device.
 
 ## Start the app

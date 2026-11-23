@@ -1,38 +1,14 @@
 ---
+import { landingCopy, type Locale } from "../i18n";
+
 interface Props {
   docsUrl: string;
+  locale: Locale;
 }
-const { docsUrl } = Astro.props;
-const groups = [
-  {
-    label: "Start here",
-    links: [
-      ["getting-started", "Install and bind a checkout"],
-      ["desktop", "Open the native desktop"],
-    ],
-  },
-  {
-    label: "Work in a project",
-    links: [
-      ["context", "Write and retrieve Context"],
-      ["tasks-and-resources", "Describe Resources and run Tasks"],
-      ["credentials", "Use credential references"],
-      ["skills-and-artifacts", "Install Skills and file Artifacts"],
-    ],
-  },
-  {
-    label: "Work across devices",
-    links: [
-      ["sync", "Publish and join private sync"],
-      ["recovery", "Resolve conflicts and recover data"],
-    ],
-  },
-  {
-    label: "Troubleshooting",
-    links: [["diagnostics", "Diagnose local and sync state"]],
-  },
-];
+const { docsUrl, locale } = Astro.props;
+const groups = landingCopy[locale].guideGroups;
 ---
+
 <div class="guide-index">
   {groups.map((group, i) => (
     <section aria-labelledby={`guide-group-${i}`}>
