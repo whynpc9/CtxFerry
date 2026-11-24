@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
 	"unicode/utf8"
 
@@ -18,14 +19,16 @@ import (
 func taskCommand(ctx context.Context, invoke func(func(app.App) (any, error)) func(*cobra.Command, []string) error, project *string) *cobra.Command {
 	group := &cobra.Command{Use: "task", Short: "Register and discover Project Tasks"}
 	var spec app.TaskSpec
-	var resources, credentials []string
+	var resources, credentials, slots, creds []string
 	var storage string
-	add := &cobra.Command{Use: "add <name>", Short: "Register a Task and its execution definition", Args: cobra.ExactArgs(1)}
+	add := &cobra.Command{Use: "add <name> [-- <program> [args...]]", Short: "Register a Task and its execution definition", Long: taskAddHelp, Args: commandArgs}
 	add.Flags().StringVar(&spec.Purpose, "purpose", "", "Task purpose")
 	add.Flags().StringArrayVar(&spec.Inputs, "input", []string{}, "Describe a Task input (repeatable)")
+	add.Flags().StringArrayVar(&slots, "slot", nil, "Resource slot as name:kind:stage (repeatable)")
+	add.Flags().StringArrayVar(&creds, "credential", nil, "Credential requirement as name:slot:purpose:type:ENV (repeatable)")
 	add.Flags().StringArrayVar(&resources, "resource-slot", nil, "JSON object with name, kind and stage (repeatable)")
 	add.Flags().StringArrayVar(&credentials, "credential-requirement", nil, "JSON object with name, resourceSlot, purpose, type and env (repeatable)")
-	add.Flags().StringVar(&spec.MembershipID, "membership", "", "Repository membership UUID")
+	add.Flags().StringVar(&spec.MembershipID, "membership", "", "Repository membership UUID (inferred from the current checkout when unambiguous)")
 	add.Flags().StringVar(&spec.WorkingDirectory, "working-directory", ".", "Directory relative to the membership root")
 	add.Flags().StringVar(&spec.Program, "program", "", "Executable name on PATH or a slash-separated path relative to the working directory")
 	add.Flags().StringArrayVar(&spec.Argv, "arg", []string{}, "One literal argument (repeatable, use --arg=VALUE for leading dashes)")
@@ -39,11 +42,17 @@ func taskCommand(ctx context.Context, invoke func(func(app.App) (any, error)) fu
 				return nil, err
 			}
 			spec.Name = args[0]
-			spec.ResourceSlots, err = slotFlags[app.TaskResourceSlot](resources, "--resource-slot")
+			if program, argv, ok := dashCommand(cmd, args); ok {
+				if cmd.Flags().Changed("program") || cmd.Flags().Changed("arg") {
+					return nil, app.Fail("usage", "pass the command after -- or with --program and --arg, not both")
+				}
+				spec.Program, spec.Argv = program, argv
+			}
+			spec.ResourceSlots, err = taskSlots(resources, slots)
 			if err != nil {
 				return nil, err
 			}
-			spec.CredentialRequirements, err = slotFlags[app.CredentialRequirement](credentials, "--credential-requirement")
+			spec.CredentialRequirements, err = taskCredentials(credentials, creds)
 			if err != nil {
 				return nil, err
 			}
@@ -75,18 +84,21 @@ func taskCommand(ctx context.Context, invoke func(func(app.App) (any, error)) fu
 func taskUpdateCommand(ctx context.Context, invoke func(func(app.App) (any, error)) func(*cobra.Command, []string) error, project *string) *cobra.Command {
 	var change app.TaskChange
 	var purpose, membership, workingDirectory, program string
-	var inputs, resources, credentials, argv, platforms []string
+	var inputs, resources, credentials, slots, creds, argv, platforms []string
 	var allowCustom bool
-	cmd := &cobra.Command{Use: "update <name-or-uuid>", Short: "Replace fields of a Task at its current revision", Long: `Replace the given fields of a Task. Fields not given keep their values.
+	cmd := &cobra.Command{Use: "update <name-or-uuid> [-- <program> [args...]]", Short: "Replace fields of a Task at its current revision", Args: commandArgs, Long: `Replace the given fields of a Task. Fields not given keep their values.
+A command after -- replaces the program and arguments.
 
 A change to the program, arguments, membership, working directory, credential
 requirements or custom-command permission is an execution change: every device,
 including this one, must enable the new definition with task trust preview and
 task trust enable before running it with credentials. A change to the purpose
-or inputs alone keeps the enabled state.`, Args: cobra.ExactArgs(1)}
+or inputs alone keeps the enabled state.`}
 	cmd.Flags().StringVar(&change.IfRevision, "if-revision", "", "Required current Task revision")
 	cmd.Flags().StringVar(&purpose, "purpose", "", "Task purpose")
 	cmd.Flags().StringArrayVar(&inputs, "input", nil, "Describe a Task input (repeatable, replaces all inputs)")
+	cmd.Flags().StringArrayVar(&slots, "slot", nil, "Resource slot as name:kind:stage (repeatable, replaces all slots)")
+	cmd.Flags().StringArrayVar(&creds, "credential", nil, "Credential requirement as name:slot:purpose:type:ENV (repeatable, replaces all requirements)")
 	cmd.Flags().StringArrayVar(&resources, "resource-slot", nil, "JSON Resource slot (repeatable, replaces all slots)")
 	cmd.Flags().StringArrayVar(&credentials, "credential-requirement", nil, "JSON credential requirement (repeatable, replaces all requirements)")
 	cmd.Flags().StringVar(&membership, "membership", "", "Repository membership UUID")
@@ -114,6 +126,13 @@ or inputs alone keeps the enabled state.`, Args: cobra.ExactArgs(1)}
 			if flags.Changed("program") {
 				change.Program = &program
 			}
+			if command, rest, ok := dashCommand(cmd, args); ok {
+				if flags.Changed("program") || flags.Changed("arg") || flags.Changed("no-args") {
+					return nil, app.Fail("usage", "pass the command after -- or with --program and --arg, not both")
+				}
+				program, argv = command, rest
+				change.Program, change.Argv = &program, &argv
+			}
 			noArgs, _ := flags.GetBool("no-args")
 			if noArgs && flags.Changed("arg") {
 				return nil, app.Fail("usage", "--arg and --no-args cannot be combined")
@@ -130,15 +149,15 @@ or inputs alone keeps the enabled state.`, Args: cobra.ExactArgs(1)}
 			if flags.Changed("allow-custom-command") {
 				change.AllowCustomCommand = &allowCustom
 			}
-			if flags.Changed("resource-slot") {
-				slots, err := slotFlags[app.TaskResourceSlot](resources, "--resource-slot")
+			if flags.Changed("resource-slot") || flags.Changed("slot") {
+				parsed, err := taskSlots(resources, slots)
 				if err != nil {
 					return nil, err
 				}
-				change.ResourceSlots = &slots
+				change.ResourceSlots = &parsed
 			}
-			if flags.Changed("credential-requirement") {
-				reqs, err := slotFlags[app.CredentialRequirement](credentials, "--credential-requirement")
+			if flags.Changed("credential-requirement") || flags.Changed("credential") {
+				reqs, err := taskCredentials(credentials, creds)
 				if err != nil {
 					return nil, err
 				}
@@ -212,6 +231,65 @@ func executionFlags(profiles, checkouts []string) (string, string, error) {
 		checkout = checkouts[0]
 	}
 	return profile, checkout, nil
+}
+
+const taskAddHelp = `Register a Task and its execution definition.
+
+Give the command after --, as with exec:
+
+  ctxferry task add integration --purpose "Run integration tests" --storage shared -- go test ./...
+
+--membership defaults to the Repository membership of the current checkout,
+or to the Project's only membership. Declare what the Task needs with
+--slot name:kind:stage and --credential name:slot:purpose:type:ENV; the JSON
+forms --resource-slot and --credential-requirement remain available for
+values that contain colons.`
+
+// commandArgs accepts one name, optionally followed by -- and a command.
+func commandArgs(cmd *cobra.Command, args []string) error {
+	dash := cmd.ArgsLenAtDash()
+	if dash < 0 && len(args) == 1 || dash == 1 && len(args) > 1 {
+		return nil
+	}
+	return app.Fail("usage", "use "+cmd.CommandPath()+" <name> [-- <program> [args...]]")
+}
+
+// dashCommand returns the program and arguments given after --.
+func dashCommand(cmd *cobra.Command, args []string) (string, []string, bool) {
+	if cmd.ArgsLenAtDash() != 1 {
+		return "", nil, false
+	}
+	return args[1], append([]string{}, args[2:]...), true
+}
+
+func taskSlots(json, concise []string) ([]app.TaskResourceSlot, error) {
+	out, err := slotFlags[app.TaskResourceSlot](json, "--resource-slot")
+	if err != nil {
+		return nil, err
+	}
+	for _, value := range concise {
+		parts := strings.Split(value, ":")
+		if len(parts) != 3 {
+			return nil, app.Fail("usage", "--slot requires name:kind:stage")
+		}
+		out = append(out, app.TaskResourceSlot{Name: parts[0], Kind: parts[1], Stage: parts[2]})
+	}
+	return out, nil
+}
+
+func taskCredentials(json, concise []string) ([]app.CredentialRequirement, error) {
+	out, err := slotFlags[app.CredentialRequirement](json, "--credential-requirement")
+	if err != nil {
+		return nil, err
+	}
+	for _, value := range concise {
+		parts := strings.Split(value, ":")
+		if len(parts) != 5 {
+			return nil, app.Fail("usage", "--credential requires name:slot:purpose:type:ENV")
+		}
+		out = append(out, app.CredentialRequirement{Name: parts[0], ResourceSlot: parts[1], Purpose: parts[2], Type: parts[3], Env: parts[4]})
+	}
+	return out, nil
 }
 
 func slotFlags[T any](values []string, flag string) ([]T, error) {

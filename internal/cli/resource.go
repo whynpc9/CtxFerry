@@ -40,16 +40,16 @@ func resourceCommand(ctx context.Context, invoke func(func(app.App) (any, error)
 	list.RunE = func(cmd *cobra.Command, args []string) error {
 		return run(cmd, args, func(a app.App, cwd string) (any, error) { return a.ListResources(ctx, *selector, cwd) })
 	}
-	inspect := &cobra.Command{Use: "inspect <resource-uuid>", Short: "Read service configuration, local route and probe history", Args: cobra.ExactArgs(1)}
+	inspect := &cobra.Command{Use: "inspect <resource-uuid-or-identity>", Short: "Read service configuration, local route and probe history", Args: cobra.ExactArgs(1)}
 	inspect.RunE = func(cmd *cobra.Command, args []string) error {
 		return run(cmd, args, func(a app.App, cwd string) (any, error) { return a.InspectResource(ctx, *selector, cwd, args[0]) })
 	}
-	check := &cobra.Command{Use: "check <resource-uuid>", Short: "Connect to the resolved TCP endpoint and record reachability", Args: cobra.ExactArgs(1)}
+	check := &cobra.Command{Use: "check <resource-uuid-or-identity>", Short: "Connect to the resolved TCP endpoint and record reachability", Args: cobra.ExactArgs(1)}
 	check.RunE = func(cmd *cobra.Command, args []string) error {
 		return run(cmd, args, func(a app.App, cwd string) (any, error) { return a.CheckResource(ctx, *selector, cwd, args[0]) })
 	}
 	var endpoint, proxy, network string
-	route := &cobra.Command{Use: "route <resource-uuid>", Short: "Replace or clear this device's route facts", Args: cobra.ExactArgs(1)}
+	route := &cobra.Command{Use: "route <resource-uuid-or-identity>", Short: "Replace or clear this device's route facts", Args: cobra.ExactArgs(1)}
 	route.Flags().StringVar(&endpoint, "endpoint", "", "Device-local service host:port")
 	route.Flags().StringVar(&proxy, "proxy", "", "Device-local proxy host:port")
 	route.Flags().StringVar(&network, "network", "", "Network label for this device")

@@ -21,7 +21,9 @@ ctxferry resource add --identity dev-db --kind database --stage dev \
   --endpoint db.example.com:5432 --format json
 ```
 
-The result is the Resource under `data`; save `data.id` as `<resource-uuid>`.
+The result is the Resource under `data`. Commands that take `<resource-uuid>`
+also accept the Resource's identity, here `dev-db`, when no other Resource in
+the Project shares it.
 The endpoint is a host and numeric port, not a URL and not a connection string.
 Do not include usernames, passwords, or tokens.
 
@@ -75,15 +77,16 @@ Resource intent.
 
 ## Register a local Task
 
-A Task requires a Repository membership. Use a Git-backed checkout and copy
-`membershipId` from the `project bind` result or from the matching entry in
-`project inspect --format json`. Pass the program and every argument separately;
-CtxFerry does not evaluate a shell command string.
+A Task requires a Repository membership. From a Git-backed checkout bound with
+`project bind`, CtxFerry uses that checkout's membership, or the Project's only
+membership. Elsewhere, or when several memberships could apply, pass
+`--membership` with the `membershipId` from `project inspect --format json`.
+Give the command after `--`. CtxFerry passes the program and each argument
+separately and does not evaluate a shell command string.
 
 ```sh
 ctxferry task add unit-tests --purpose 'Run the Go unit tests' \
-  --membership <membership-uuid> --working-directory . --program go \
-  --arg=test --arg=./... --storage shared --format json
+  --storage shared -- go test ./...
 ctxferry task list --format json
 ctxferry task inspect unit-tests --format json
 ```
@@ -92,7 +95,15 @@ The add result contains the Task's stable `id` and `revision`. Inspection shows
 its purpose, inputs, membership, working directory, program, argument array,
 platform conditions, Resource slots, and credential requirements.
 
-Use `--arg=VALUE` for an argument that begins with a dash. Repeat `--input` to
+The flag form `--program go --arg=test --arg=./...` is equivalent; use
+`--arg=VALUE` for an argument that begins with a dash. `task update <task> --
+<program> [args...]` replaces the command the same way.
+
+Declare a Resource slot with `--slot name:kind:stage` and a credential with
+`--credential name:slot:purpose:type:ENV`, for example
+`--slot db:database:dev --credential login:db:integration-tests:connection-string:DATABASE_URL`.
+The JSON forms `--resource-slot` and `--credential-requirement` remain
+available for values that contain colons. Repeat `--input` to
 describe inputs and `--platform <os>` or `--platform <os/arch>` to restrict
 applicability. Storage is required: `shared` makes the definition eligible for
 sync, while `local-only` keeps it on this device.

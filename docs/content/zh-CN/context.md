@@ -18,6 +18,14 @@ ctxferry context put --title 'Development workflow' --purpose notes \
   --body-file notes.md --storage local-only --disclosure summary --format json
 ```
 
+记录简短笔记时只需要标题和正文。新文档默认使用 `--purpose note`、`--source 'ctxferry CLI'`、`--storage local-only` 和 `--disclosure full`，`--body` 可直接传入 Markdown：
+
+```sh
+ctxferry context put --title 'Release checklist' --body 'Tag from main after CI passes.'
+```
+
+替换已有文档会替换所有字段，因此替换时不使用默认值：需要再次传入用途、来源、存储和披露策略。
+
 成功回执位于 `data.document` 下，包含新文档的 `id` 和 `revision`。它包含元数据，不包含正文。保留 ID 供 `get` 使用，保留修订供后续替换使用。
 
 存储和披露回答的是不同问题：
@@ -37,11 +45,12 @@ ctxferry context put --title 'Development workflow' --purpose notes \
 
 ## 读取、搜索和分页
 
-使用 `put` 返回的 ID：
+使用 `put` 返回的 ID；如果没有其他文档同名，也可以使用文档的完整标题：
 
 ```sh
 ctxferry context show --format json
 ctxferry context get <document-uuid> --format json
+ctxferry context get 'Development workflow' --format json
 ctxferry context search 'build test' --format json
 ```
 

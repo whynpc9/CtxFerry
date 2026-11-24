@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"slices"
+	"strings"
 
 	"github.com/google/uuid"
 )
@@ -47,8 +48,8 @@ func (a App) MapTaskResource(ctx context.Context, selector, cwd, profile, taskNa
 	if !profileName(profile) {
 		return out, Fail("invalid-profile", "specify an existing Profile name")
 	}
-	if !validUUID(resourceID) {
-		return out, Fail("invalid-reference", "specify the Resource UUID")
+	if strings.TrimSpace(resourceID) == "" {
+		return out, Fail("invalid-reference", "specify the Resource UUID or identity")
 	}
 	release, err := a.syncOwner(ctx)
 	if err != nil {
@@ -81,6 +82,10 @@ func (a App) MapTaskResource(ctx context.Context, selector, cwd, profile, taskNa
 		if err != nil {
 			return false, err
 		}
+		if resourceID, err = resourceRef(ctx, c, project.ID, resourceID); err != nil {
+			return false, err
+		}
+		out.ResourceID = resourceID
 		resource, err := loadMappedResource(ctx, c, resourceID)
 		if err != nil {
 			return false, err

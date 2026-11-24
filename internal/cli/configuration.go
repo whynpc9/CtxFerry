@@ -72,7 +72,7 @@ func configurationCommands(ctx context.Context, invoke func(func(app.App) (any, 
 		}
 		profile.AddCommand(cmd)
 	}
-	mapResource := &cobra.Command{Use: "map-resource <profile> <task> <slot> <resource-uuid>", Short: "Set an explicit Profile mapping for a Task's Resource slot", Args: cobra.ExactArgs(4)}
+	mapResource := &cobra.Command{Use: "map-resource <profile> <task> <slot> <resource-uuid-or-identity>", Short: "Set an explicit Profile mapping for a Task's Resource slot", Args: cobra.ExactArgs(4)}
 	mapResource.RunE = func(cmd *cobra.Command, args []string) error {
 		return cwdCall(func(a app.App, cwd string) (any, error) {
 			return a.MapTaskResource(ctx, *selector, cwd, args[0], args[1], args[2], args[3])

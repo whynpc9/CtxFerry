@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/whynpc9/CtxFerry/internal/store"
 )
 
 type TaskSpec struct {
@@ -144,6 +145,13 @@ func (a App) AddTask(ctx context.Context, selector, cwd, storage string, spec Ta
 	if storage != "shared" && storage != "local-only" {
 		return out, Fail("invalid-policy", "choose storage local-only or shared")
 	}
+	if spec.MembershipID == "" {
+		id, err := a.inferMembership(ctx, selector, cwd)
+		if err != nil {
+			return out, err
+		}
+		spec.MembershipID = id
+	}
 	if err := validateTask(spec); err != nil {
 		return out, err
 	}
@@ -270,6 +278,77 @@ func (a App) InspectTask(ctx context.Context, selector, cwd, name string) (Task,
 	}
 	defer db.Close()
 	return loadTask(ctx, db, project.ID, name)
+}
+
+// inferMembership picks the Repository membership a new Task runs from when
+// none is given: the deepest membership binding on this device that contains
+// the current directory, else the one membership that Git evidence selects,
+// else the Project's only live membership. Any other case needs --membership.
+func (a App) inferMembership(ctx context.Context, selector, cwd string) (string, error) {
+	r, err := a.InspectProject(ctx, selector, cwd)
+	if err != nil {
+		return "", err
+	}
+	if res := r.Resolution; res != nil {
+		best, id := "", ""
+		for _, b := range r.Bindings {
+			if b.MembershipID != "" && b.DeviceID == res.Device.ID && contains(b.Path, res.Directory) && len(b.Path) > len(best) {
+				best, id = b.Path, b.MembershipID
+			}
+		}
+		if id != "" {
+			return id, nil
+		}
+		candidates := res.Candidates
+		if res.Source == "explicit" {
+			// An explicit Project skips Git discovery; collect its evidence anyway.
+			db, err := store.Open(ctx, a.DataDir, false)
+			if err != nil {
+				return "", err
+			}
+			found, _ := resolveProject(ctx, db, "", res.Directory)
+			db.Close()
+			candidates = found.Candidates
+		}
+		// Only local Git common-dir evidence identifies a membership; a remote
+		// URL match never establishes identity.
+		evidence := map[string]bool{}
+		for _, c := range candidates {
+			if c.Project.ID == r.Project.ID && c.Evidence == "git-common-dir" {
+				evidence[c.MembershipID] = true
+			}
+		}
+		if len(evidence) == 1 {
+			for id := range evidence {
+				return id, nil
+			}
+		}
+	}
+	db, err := store.Open(ctx, a.DataDir, false)
+	if err != nil {
+		return "", err
+	}
+	defer db.Close()
+	rows, err := db.QueryContext(ctx, "SELECT m.id FROM memberships m WHERE m.project_id=? AND "+live("m.id", "m.repository_id", "m.project_id")+" ORDER BY m.id LIMIT 2", r.Project.ID)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return "", err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+	if len(ids) == 1 {
+		return ids[0], nil
+	}
+	return "", Fail("usage", "cannot infer the Task's Repository membership here; pass --membership with a membership UUID from project inspect")
 }
 
 func taskMembership(ctx context.Context, q rowQuerier, projectID, id string) (repository, subdir string, err error) {

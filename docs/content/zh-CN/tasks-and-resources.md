@@ -16,7 +16,7 @@ ctxferry resource add --identity dev-db --kind database --stage dev \
   --endpoint db.example.com:5432 --format json
 ```
 
-结果是 `data` 下的 Resource；将 `data.id` 保存为 `<resource-uuid>`。端点是主机和数字端口，不是 URL，也不是连接字符串。不要包含用户名、密码或令牌。
+结果是 `data` 下的 Resource。接受 `<resource-uuid>` 的命令也接受 Resource 的 identity（此处为 `dev-db`），前提是 Project 中没有其他 Resource 使用相同 identity。端点是主机和数字端口，不是 URL，也不是连接字符串。不要包含用户名、密码或令牌。
 
 ```sh
 ctxferry resource list --format json
@@ -51,19 +51,20 @@ ctxferry resource inspect <resource-uuid> --format json
 
 ## 注册本地 Task
 
-Task 需要 Repository membership。使用 Git 支持的检出目录，从 `project bind` 结果或 `project inspect --format json` 的匹配条目中复制 `membershipId`。程序和每个参数都需要单独传递；CtxFerry 不会解析 shell 命令字符串。
+Task 需要 Repository membership。在通过 `project bind` 绑定的 Git 检出目录中，CtxFerry 使用该检出目录的 membership，或 Project 唯一的 membership。在其他位置，或有多个 membership 可选时，使用 `project inspect --format json` 中的 `membershipId` 传入 `--membership`。命令写在 `--` 之后。CtxFerry 单独传递程序和每个参数，不会解析 shell 命令字符串。
 
 ```sh
 ctxferry task add unit-tests --purpose 'Run the Go unit tests' \
-  --membership <membership-uuid> --working-directory . --program go \
-  --arg=test --arg=./... --storage shared --format json
+  --storage shared -- go test ./...
 ctxferry task list --format json
 ctxferry task inspect unit-tests --format json
 ```
 
 添加结果包含 Task 的稳定 `id` 和 `revision`。检查结果显示其用途、输入、membership、工作目录、程序、参数数组、平台条件、Resource 槽位和凭据要求。
 
-以短横线开头的参数使用 `--arg=VALUE`。重复 `--input` 描述输入，使用 `--platform <os>` 或 `--platform <os/arch>` 限制适用范围。存储策略是必需的：`shared` 使定义可以参与同步，`local-only` 将其保留在此设备上。
+参数形式 `--program go --arg=test --arg=./...` 与之等价；以短横线开头的参数使用 `--arg=VALUE`。`task update <task> -- <program> [args...]` 以相同方式替换命令。
+
+使用 `--slot name:kind:stage` 声明 Resource 槽位，使用 `--credential name:slot:purpose:type:ENV` 声明凭据，例如 `--slot db:database:dev --credential login:db:integration-tests:connection-string:DATABASE_URL`。值中包含冒号时，仍可使用 JSON 形式的 `--resource-slot` 和 `--credential-requirement`。重复 `--input` 描述输入，使用 `--platform <os>` 或 `--platform <os/arch>` 限制适用范围。存储策略是必需的：`shared` 使定义可以参与同步，`local-only` 将其保留在此设备上。
 
 ## 运行本地 Task
 

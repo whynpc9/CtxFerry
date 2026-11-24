@@ -291,6 +291,11 @@ func (a App) QueryContext(ctx context.Context, selector, cwd, mode, arg, cursor 
 			return r, err
 		}
 	}
+	if mode == "get" && !validUUID(arg) {
+		if arg, e = contextRef(ctx, db, r.Project.ID, arg); e != nil {
+			return r, e
+		}
+	}
 	bodyColumn := "''"
 	if mode == "get" {
 		bodyColumn = "b.body"
@@ -423,6 +428,25 @@ func (a App) QueryContext(ctx context.Context, selector, cwd, mode, arg, cursor 
 	}
 	return r, nil
 }
+
+// contextRef resolves a document title that names exactly one live document.
+func contextRef(ctx context.Context, db rowQuerier, projectID, title string) (string, error) {
+	var id sql.NullString
+	var n int
+	err := db.QueryRowContext(ctx, `SELECT min(r.id),count(*) FROM records r JOIN context_bodies b ON b.record_id=r.id
+		WHERE r.project_id=? AND r.kind='context' AND coalesce(json_extract(r.metadata,'$.deleted'),0)=0
+		AND json_extract(r.metadata,'$.title')=?`, projectID, title).Scan(&id, &n)
+	switch {
+	case err != nil:
+		return "", err
+	case n == 0:
+		return "", Fail("document-not-found", "document not found in this project")
+	case n > 1:
+		return "", Fail("ambiguous-document", "multiple documents have this title; use the UUID from context show")
+	}
+	return id.String, nil
+}
+
 func shortText(s string, n int) string {
 	if len(s) <= n {
 		return s
