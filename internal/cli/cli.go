@@ -329,7 +329,35 @@ func render(w io.Writer, result any) error {
 		_, err = fmt.Fprintln(w, string(b))
 	case app.OnboardingState:
 		return renderOnboarding(w, r)
-	case app.EnvScan, app.EnvImportPlan, app.EnvImportReceipt, app.ArtifactManifest, app.ArtifactList, app.ArtifactFetch, app.ArtifactSharePreview, app.NoteScan, app.NoteImportReceipt, app.ContextResult, app.ConfigurationExplanation, app.ConfigurationReceipt, app.ProfileSelection, app.Resource, app.ResourceList, app.ResourceDetail, app.Observation, app.Task, app.TaskList, app.ResourceMapping, app.SecretList, app.SecretStatus, app.SecretBindResult, app.ProviderLoginResult, app.ExecutionReview:
+	case app.ContextResult:
+		return renderContext(w, r)
+	case app.Task:
+		return renderTask(w, r)
+	case app.TaskList:
+		return renderTaskList(w, r)
+	case app.Resource:
+		var p textPage
+		renderResource(&p, r)
+		return p.flush(w)
+	case app.ResourceList:
+		return renderResourceList(w, r)
+	case app.ResourceDetail:
+		return renderResourceDetail(w, r)
+	case app.Observation:
+		return renderObservation(w, r)
+	case app.ResourceMapping:
+		return renderResourceMapping(w, r)
+	case app.SecretList:
+		return renderSecretList(w, r)
+	case app.SecretStatus:
+		return renderSecretStatus(w, r)
+	case app.SecretBindResult:
+		return renderSecretBind(w, r)
+	case app.ProviderLoginResult:
+		return renderProviderLogin(w, r)
+	case app.ExecutionReview:
+		return renderExecutionReview(w, r)
+	case app.EnvScan, app.EnvImportPlan, app.EnvImportReceipt, app.ArtifactManifest, app.ArtifactList, app.ArtifactFetch, app.ArtifactSharePreview, app.NoteScan, app.NoteImportReceipt, app.ConfigurationExplanation, app.ConfigurationReceipt, app.ProfileSelection:
 		b, e := json.MarshalIndent(r, "", "  ")
 		if e != nil {
 			return e

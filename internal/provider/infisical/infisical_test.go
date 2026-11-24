@@ -228,3 +228,18 @@ func TestInjectedSessionRequiresExactScope(t *testing.T) {
 		}
 	}
 }
+
+func TestMachineCredentialsProfilePin(t *testing.T) {
+	env := map[string]string{"INFISICAL_CLIENT_ID": "id", "INFISICAL_CLIENT_SECRET": "secret"}
+	getenv := func(name string) string { return env[name] }
+	if id, secret := machineCredentials(getenv, "team"); id != "id" || secret != "secret" {
+		t.Fatal("unpinned credentials were refused for an explicit profile")
+	}
+	env["CTXFERRY_INFISICAL_PROFILE"] = "team"
+	if id, _ := machineCredentials(getenv, "team"); id != "id" {
+		t.Fatal("matching pin refused")
+	}
+	if id, secret := machineCredentials(getenv, "other"); id != "" || secret != "" {
+		t.Fatal("credentials pinned to another profile were used")
+	}
+}

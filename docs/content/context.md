@@ -23,6 +23,17 @@ ctxferry context put --title 'Development workflow' --purpose notes \
   --body-file notes.md --storage local-only --disclosure summary --format json
 ```
 
+For a quick note, only a title and a body are required. A new document defaults
+to `--purpose note`, `--source 'ctxferry CLI'`, `--storage local-only` and
+`--disclosure full`, and `--body` takes the Markdown inline:
+
+```sh
+ctxferry context put --title 'Release checklist' --body 'Tag from main after CI passes.'
+```
+
+Replacing an existing document replaces every field, so a replacement takes
+no defaults: pass the purpose, source, storage and disclosure again.
+
 The successful receipt is under `data.document` and includes the new document
 `id` and `revision`. It contains metadata, not the body. Keep the ID for `get`
 and the revision for a later replacement.
@@ -50,11 +61,13 @@ Context is not a secret store.
 
 ## Read, search, and paginate
 
-Use the ID returned by `put`:
+Use the ID returned by `put`, or the document's exact title when no other
+document shares it:
 
 ```sh
 ctxferry context show --format json
 ctxferry context get <document-uuid> --format json
+ctxferry context get 'Development workflow' --format json
 ctxferry context search 'build test' --format json
 ```
 

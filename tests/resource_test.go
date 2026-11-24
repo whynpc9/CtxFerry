@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"regexp"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -299,8 +300,18 @@ func TestContextShowPaginatesDocumentsResourcesAndTasksTogether(t *testing.T) {
 					}
 					raw = env.Data
 				}
-				if err := json.Unmarshal(raw, &data); err != nil {
-					t.Fatal(err)
+				if format == "json" {
+					if err := json.Unmarshal(raw, &data); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					data.Profile.Name, _ = strings.CutSuffix(textField(r.Stdout, "Profile: "), "\n")
+					for _, m := range textIndexRow.FindAllStringSubmatch(r.Stdout, -1) {
+						data.Documents = append(data.Documents, struct{ ID string }{m[1]})
+					}
+					if cursor := textField(r.Stdout, "More entries: --cursor "); cursor != "" {
+						data.Truncated, data.NextCursor = true, strings.TrimSpace(cursor)
+					}
 				}
 				if data.Profile.Name != "development" {
 					t.Fatal("selected Profile missing after schema 7 upgrade", data.Profile)
@@ -336,4 +347,16 @@ func TestContextShowPaginatesDocumentsResourcesAndTasksTogether(t *testing.T) {
 			}
 		})
 	}
+}
+
+var textIndexRow = regexp.MustCompile(`(?m)^  ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})  `)
+
+// textField returns the rest of the first line that starts with prefix.
+func textField(text, prefix string) string {
+	for _, line := range strings.SplitAfter(text, "\n") {
+		if rest, ok := strings.CutPrefix(line, prefix); ok {
+			return rest
+		}
+	}
+	return ""
 }

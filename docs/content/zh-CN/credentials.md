@@ -54,7 +54,7 @@ infisical login
 ctxferry provider login infisical --provider-profile team --method personal
 ```
 
-对于机器身份，通过现有受保护启动器提供 `INFISICAL_CLIENT_ID` 和 `INFISICAL_CLIENT_SECRET`，为该次调用设置 `CTXFERRY_INFISICAL_PROFILE=team`，然后运行：
+对于机器身份，通过现有受保护启动器提供 `INFISICAL_CLIENT_ID` 和 `INFISICAL_CLIENT_SECRET`，然后运行下面的命令。如果启动器同时设置了 `CTXFERRY_INFISICAL_PROFILE`，登录只会将客户端凭据用于该 provider profile：
 
 ```sh
 ctxferry provider login infisical --provider-profile team --method universal-auth

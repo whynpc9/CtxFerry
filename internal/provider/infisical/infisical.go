@@ -51,15 +51,20 @@ func newAdapter(baseURL string) *adapter {
 				return http.ErrUseLastResponse
 			},
 		},
-		personalToken: cliPersonalToken,
-		now:           time.Now,
-		machineCredentials: func(profile string) (string, string) {
-			if os.Getenv("CTXFERRY_INFISICAL_PROFILE") != profile {
-				return "", ""
-			}
-			return os.Getenv("INFISICAL_CLIENT_ID"), os.Getenv("INFISICAL_CLIENT_SECRET")
-		},
+		personalToken:      cliPersonalToken,
+		now:                time.Now,
+		machineCredentials: func(profile string) (string, string) { return machineCredentials(os.Getenv, profile) },
 	}
+}
+
+// machineCredentials reads the launcher-supplied machine identity for an
+// explicitly named login. CTXFERRY_INFISICAL_PROFILE, when set, still pins
+// those credentials to one provider profile.
+func machineCredentials(getenv func(string) string, profile string) (string, string) {
+	if pinned := getenv("CTXFERRY_INFISICAL_PROFILE"); pinned != "" && pinned != profile {
+		return "", ""
+	}
+	return getenv("INFISICAL_CLIENT_ID"), getenv("INFISICAL_CLIENT_SECRET")
 }
 
 var runtimeSession = provider.EnvironmentSession{

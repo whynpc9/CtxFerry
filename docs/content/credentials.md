@@ -77,8 +77,9 @@ ctxferry provider login infisical --provider-profile team --method personal
 ```
 
 For a machine identity, supply `INFISICAL_CLIENT_ID` and
-`INFISICAL_CLIENT_SECRET` through your existing protected launcher, set
-`CTXFERRY_INFISICAL_PROFILE=team` for that invocation, and run:
+`INFISICAL_CLIENT_SECRET` through your existing protected launcher and run the
+command below. If the launcher also sets `CTXFERRY_INFISICAL_PROFILE`, login
+uses the client credentials only for that provider profile:
 
 ```sh
 ctxferry provider login infisical --provider-profile team --method universal-auth

@@ -256,6 +256,26 @@ type resourceReader interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }
 
+// resourceRef resolves a Resource UUID or an identity that names exactly one
+// live Resource in the Project.
+func resourceRef(ctx context.Context, db resourceReader, projectID, ref string) (string, error) {
+	if validUUID(ref) {
+		return ref, nil
+	}
+	var id sql.NullString
+	var n int
+	err := db.QueryRowContext(ctx, "SELECT min(id),count(*)"+liveResources+" AND json_extract(metadata,'$.payload.identity')=?", projectID, ref).Scan(&id, &n)
+	switch {
+	case err != nil:
+		return "", err
+	case n == 0:
+		return "", Fail("resource-not-found", "Resource not found in this Project")
+	case n > 1:
+		return "", Fail("ambiguous-resource", "multiple Resources have this identity; use the UUID from resource list")
+	}
+	return id.String, nil
+}
+
 func loadResource(ctx context.Context, db resourceReader, projectID, id string) (Resource, error) {
 	var raw []byte
 	err := db.QueryRowContext(ctx, "SELECT metadata"+liveResources+" AND id=?", projectID, id).Scan(&raw)
@@ -287,6 +307,10 @@ func (a App) SetResourceRoute(ctx context.Context, selector, cwd, id, endpoint, 
 	}
 	defer db.Close()
 	err = store.Write(ctx, db, func(c *sql.Conn) error {
+		var err error
+		if id, err = resourceRef(ctx, c, project.ID, id); err != nil {
+			return err
+		}
 		if _, err := loadResource(ctx, c, project.ID, id); err != nil {
 			return err
 		}
@@ -294,7 +318,7 @@ func (a App) SetResourceRoute(ctx context.Context, selector, cwd, id, endpoint, 
 			_, err := c.ExecContext(ctx, "DELETE FROM resource_routes WHERE resource_id=? AND device_id=(SELECT id FROM device)", id)
 			return err
 		}
-		_, err := c.ExecContext(ctx, `INSERT INTO resource_routes SELECT ?,id,?,?,? FROM device WHERE true
+		_, err = c.ExecContext(ctx, `INSERT INTO resource_routes SELECT ?,id,?,?,? FROM device WHERE true
 			ON CONFLICT(resource_id,device_id) DO UPDATE SET endpoint=excluded.endpoint,proxy=excluded.proxy,network=excluded.network`, id, endpoint, proxy, network)
 		return err
 	})
@@ -366,6 +390,9 @@ func (a App) InspectResource(ctx context.Context, selector, cwd, id string) (Res
 	var out ResourceDetail
 	err = store.Write(ctx, db, func(c *sql.Conn) error {
 		var err error
+		if id, err = resourceRef(ctx, c, project.ID, id); err != nil {
+			return err
+		}
 		out, err = resourceDetail(ctx, c, project.ID, cwd, id)
 		if err != nil {
 			return err
@@ -404,6 +431,9 @@ func (a App) checkResource(ctx context.Context, selector, cwd, id string, expect
 		return out, err
 	}
 	defer db.Close()
+	if id, err = resourceRef(ctx, db, project.ID, id); err != nil {
+		return out, err
+	}
 	detail, err := resourceDetail(ctx, db, project.ID, cwd, id)
 	if err != nil {
 		return out, err
