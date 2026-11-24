@@ -256,4 +256,15 @@ func TestBatchEnvImport(t *testing.T) {
 	if fake.Entries[at("DB")] != importValue {
 		t.Fatal("slot-attached entry was not created")
 	}
+
+	// Without --profile the checkout's selection wins over default, and a slot
+	// the Profile already maps needs no --resource.
+	h.Run(t, "profile", "create", "staging", "--format=json").Success(t)
+	h.Run(t, "profile", "select", "staging", "--format=json").Success(t)
+	h.Run(t, "profile", "map-resource", "staging", "agent", "db", resourceID, "--format=json").Success(t)
+	mapped := []string{"onboard", "import-env", env, "--project=checkout", "--task=agent", "--field=DATABASE_URL", "--like=openai", "--key=STAGING_DB"}
+	staged := confirm(mapped).Success(t)
+	if string(staged.Data["profile"]) != `"staging"` || importResult(t, staged).Binding.ResourceID != resourceID {
+		t.Fatalf("import ignored the selected Profile or its Resource mapping: %s %s", staged.Data["profile"], staged.Data["imports"])
+	}
 }

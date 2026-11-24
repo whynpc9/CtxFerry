@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/spf13/cobra"
 	"github.com/whynpc9/CtxFerry/internal/app"
@@ -107,7 +108,11 @@ func onboardingCommand(ctx context.Context, invoke func(func(app.App) (any, erro
 			return app.Fail("usage", "pass a nonempty --confirm preview ID")
 		}
 		return invoke(func(a app.App) (any, error) {
-			return a.ImportOnboardingEnv(ctx, *selector, args[0], env)
+			cwd, err := os.Getwd()
+			if err != nil {
+				return nil, err
+			}
+			return a.ImportOnboardingEnv(ctx, *selector, cwd, args[0], env)
 		})(cmd, args)
 	}
 	group.AddCommand(start, status, bind, scan, importNote, scanEnv, importEnv, finish)

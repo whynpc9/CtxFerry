@@ -268,7 +268,7 @@ func envRequirement(task Task, in EnvImport, field string) (CredentialRequiremen
 func envResourceMapping(ctx context.Context, q taskReader, cfg *configuration, task Task, req CredentialRequirement, selected *Resource) (ResourceMapping, Resource, error) {
 	if selected == nil {
 		resource, err := secretResource(ctx, q, *cfg, task, req)
-		if Classify(err).Code == "binding-missing" {
+		if err != nil && Classify(err).Code == "binding-missing" {
 			return ResourceMapping{}, resource, Fail("usage", "choose the Resource for slot "+req.ResourceSlot+" with --resource")
 		}
 		return ResourceMapping{TaskID: task.ID, Slot: req.ResourceSlot, ResourceID: resource.ID}, resource, err
@@ -312,7 +312,9 @@ func (in EnvImport) validate() error {
 	return nil
 }
 
-func (a App) ImportOnboardingEnv(ctx context.Context, selector, path string, in EnvImport) (any, error) {
+// ImportOnboardingEnv resolves the Project from selector and, for the
+// Profile default, the checkout containing cwd, as secret bind does.
+func (a App) ImportOnboardingEnv(ctx context.Context, selector, cwd, path string, in EnvImport) (any, error) {
 	if selector == "" {
 		return nil, Fail("usage", "choose a Project with --project")
 	}
@@ -345,15 +347,13 @@ func (a App) ImportOnboardingEnv(ctx context.Context, selector, path string, in 
 		return nil, err
 	}
 	defer db.Close()
-	resolution, err := resolveProjectAt(ctx, db, selector, Resolution{}, false)
+	// The checkout, when cwd is one of the Project's, supplies its selected
+	// Profile; elsewhere the Profile defaults to default.
+	loc, err := configLocation(ctx, db, selector, cwd)
 	if err != nil {
 		return nil, err
 	}
-	if err := requireSubscription(ctx, db, resolution.Project.ID); err != nil {
-		return nil, err
-	}
-	loc := configurationLocation{project: *resolution.Project, device: resolution.Device.ID}
-	if err := db.QueryRowContext(ctx, "SELECT id FROM workspace").Scan(&loc.workspace); err != nil {
+	if err := requireSubscription(ctx, db, loc.project.ID); err != nil {
 		return nil, err
 	}
 	plan, err := planEnvImport(ctx, db, loc, path, in)
