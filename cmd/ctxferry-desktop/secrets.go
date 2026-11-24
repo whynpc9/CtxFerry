@@ -193,7 +193,7 @@ func (d *desktop) secretConditions(c *ui.Context, requirement app.DesktopCredent
 			{"Shared credential binding", bound, "Current configuration"},
 			{"Provider authentication", authenticationLabel(status), timeLabel(s.authSeen)},
 			{"Entry readable", boolLabel(status.EntryRetrievable, "Readable", "Not readable"), timeLabel(s.entrySeen)},
-			{"Resource reachability", boolLabel(status.ResourceReachable, "TCP reachable", "TCP unreachable"), timeLabel(status.ReachabilitySeenAt)},
+			reachabilityRow(s.slot),
 			{"Task run", "No run evidence", "—"},
 		}
 		ui.Table(c, nil, []ui.TableColumn{{Title: "Condition"}, {Title: "State", Width: 140}, {Title: "Observed", Width: 165}}, len(rows), func(i, col int) {
@@ -217,14 +217,18 @@ func (d *desktop) secretConditions(c *ui.Context, requirement app.DesktopCredent
 		if status.Bound {
 			label = "Change shared binding…"
 		}
-		ui.Button(c, label).Disabled(s.wait || s.slot.Resource.ID == "" || s.slot.Issue == "binding-conflict").OnClick(func() {
+		ui.Button(c, label).Disabled(s.wait || !s.slot.Standalone && s.slot.Resource.ID == "" || s.slot.Issue == "binding-conflict").OnClick(func() {
 			s.draft = newBindingDraft(s.slot)
 		})
 	})
 	if s.draft != nil {
 		d.bindingEditor(c)
 	}
-	if resource := s.slot.Resource; resource.ID != "" {
+	if s.slot.Standalone {
+		card(c).Children(func() {
+			cardHeader(c, icKey, "Standalone credential", "This requirement is not tied to a Resource. No Resource mapping or reachability check applies.", nil)
+		})
+	} else if resource := s.slot.Resource; resource.ID != "" {
 		card(c).Children(func() {
 			cardHeader(c, icServer, "Resource match", "This requirement resolves through its declared Resource slot.", nil)
 			labelValue(c, "Mapped Resource", resource.Identity+" · "+resource.Stage)
@@ -239,6 +243,10 @@ func (d *desktop) secretConditions(c *ui.Context, requirement app.DesktopCredent
 
 func (d *desktop) unmappedSlotHandoff(c *ui.Context, requirement app.DesktopCredentialRequirement) {
 	s := &d.secrets
+	if requirement.ResourceSlot == "" {
+		// A standalone requirement has no slot to resolve.
+		return
+	}
 	card(c).Children(func() {
 		cardHeader(c, icLink, "Resolve the Resource slot first", "A credential mapping must match the Resource mapped to this requirement's slot.", nil)
 		detail(c, "Required slot", s.slot.Status.ResourceSlot)
@@ -331,6 +339,14 @@ func locatorFields(c *ui.Context, locator provider.Locator) {
 	}
 	labelValue(c, "Backend Project · environment", locator.ProjectID+" · "+locator.Environment)
 	labelValue(c, "Path · key", locator.Path+" · "+locator.Key)
+}
+
+func reachabilityRow(slot app.DesktopCredentialSlot) conditionRow {
+	if slot.Standalone {
+		return conditionRow{"Resource reachability", "Not applicable", "—"}
+	}
+	status := slot.Status
+	return conditionRow{"Resource reachability", boolLabel(status.ResourceReachable, "TCP reachable", "TCP unreachable"), timeLabel(status.ReachabilitySeenAt)}
 }
 
 func boolLabel(b *bool, yes, no string) string {

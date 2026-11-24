@@ -149,6 +149,9 @@ func invalidTaskDependencies(r remoteRecord, records map[string]remoteRecord) []
 			invalid = append(invalid, r.Task.MembershipID)
 		}
 	case secretBindingKind:
+		if r.SecretBinding.ResourceID == "" {
+			break
+		}
 		resource := records[r.SecretBinding.ResourceID]
 		if resource.Kind != "resource" || resource.Deleted || resource.Policy.Storage != "shared" {
 			invalid = append(invalid, r.SecretBinding.ResourceID)

@@ -20,3 +20,10 @@ The 8192-byte limit on one agent-facing `context show` page. `FitContextPage` en
 
 **Skill install**
 One Skill target's lifecycle: plan, confirm, stage, verify, publish, finalize, and recovery of an interrupted replacement (`internal/app/skill_install.go`).
+
+**Standalone credential**
+A credential requirement with an empty `resourceSlot`, served only by a SecretBinding with an empty `resourceId`. No Resource backs it, so it has no slot mapping or reachability. See `docs/adr/0001-standalone-credentials.md`.
+_Avoid_: synthetic Resource.
+
+**Default Profile**
+The Project's Profile named `default`. Credential and Resource resolution falls back to it when no Profile is given or selected; `secret bind` and `onboard import-env` create it when the Project has no Profiles.

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/whynpc9/CtxFerry/internal/provider"
@@ -70,48 +71,90 @@ func (a App) ScanOnboardingEnv(ctx context.Context, selector, path string) (EnvS
 	return out, nil
 }
 
+// EnvImport selects one or more fields of an env file to create as provider
+// entries and map, each to the Task requirement it delivers.
 type EnvImport struct {
 	SecretTarget
-	Field           string
-	ResourceID      string
+	// Fields are source variable names. With several fields each one maps to
+	// the requirement whose delivery variable has the same name.
+	Fields     []string
+	ResourceID string
+	// Like, Alias, ProviderProfile and Locator follow secret bind: given
+	// values win, then the Like template, then the requirement's defaults.
+	Like            string
 	Alias           string
 	ProviderProfile provider.Profile
 	Locator         provider.Locator
-	Recover         bool
-	Confirm         string
+	// Recover names fields whose existing provider entry is verified against
+	// the source instead of created; "*" names every field.
+	Recover []string
+	Confirm string
 }
 
-type EnvImportPlan struct {
-	Preview         string                `json:"preview"`
-	ProjectID       string                `json:"projectId"`
-	Profile         string                `json:"profile"`
-	TaskID          string                `json:"taskId"`
-	Task            string                `json:"task"`
+// RecoverAll as the only --recover value selects every imported field.
+const RecoverAll = "*"
+
+type EnvImportItem struct {
 	Field           string                `json:"field"`
 	Requirement     CredentialRequirement `json:"requirement"`
-	ResourcePurpose string                `json:"resourcePurpose"`
+	ResourcePurpose string                `json:"resourcePurpose,omitempty"`
 	Binding         SecretBindingSpec     `json:"binding"`
 	Recover         bool                  `json:"recover"`
 }
 
+type EnvImportPlan struct {
+	Preview   string `json:"preview"`
+	ProjectID string `json:"projectId"`
+	Profile   string `json:"profile"`
+	// CreateProfile reports that confirming creates the default Profile.
+	CreateProfile bool            `json:"createProfile,omitempty"`
+	TaskID        string          `json:"taskId"`
+	Task          string          `json:"task"`
+	Imports       []EnvImportItem `json:"imports"`
+}
+
+type EnvImportResult struct {
+	Field     string           `json:"field"`
+	Resource  *ResourceMapping `json:"resourceMapping,omitempty"`
+	Binding   SecretBinding    `json:"binding"`
+	Mapping   SecretMapping    `json:"mapping"`
+	Recovered bool             `json:"recovered"`
+}
+
 type EnvImportReceipt struct {
-	ProjectID string          `json:"projectId"`
-	Field     string          `json:"field"`
-	Resource  ResourceMapping `json:"resourceMapping"`
-	Recovered bool            `json:"recovered"`
-	SecretBindResult
+	ProjectID string            `json:"projectId"`
+	Profile   string            `json:"profile"`
+	Imports   []EnvImportResult `json:"imports"`
 }
 
 type envImportPlan struct {
 	EnvImportPlan
 	profileID string
 	cfg       configuration
-	resource  ResourceMapping
+	resources map[string]ResourceMapping // by field
+}
+
+func (in EnvImport) recovers(field string) bool {
+	return slices.Contains(in.Recover, RecoverAll) || slices.Contains(in.Recover, field)
+}
+
+// envImportProfile resolves the target Profile like secret bind does: the
+// explicit or selected Profile, then default, else a default Profile that the
+// confirmation creates when the Project has none.
+func envImportProfile(ctx context.Context, q taskReader, loc configurationLocation, name string) (*SelectedProfile, configuration, bool, error) {
+	if name == "" {
+		p, cfg, err := pendingDefaultProfile(ctx, q, loc)
+		if err != nil || p != nil {
+			return p, cfg, p != nil, err
+		}
+	}
+	p, cfg, err := secretProfile(ctx, q, loc, name)
+	return p, cfg, false, err
 }
 
 func planEnvImport(ctx context.Context, q taskReader, loc configurationLocation, path string, in EnvImport) (envImportPlan, error) {
 	var out envImportPlan
-	p, cfg, err := secretProfile(ctx, q, loc, in.Profile)
+	p, cfg, create, err := envImportProfile(ctx, q, loc, in.Profile)
 	if err != nil {
 		return out, err
 	}
@@ -119,72 +162,164 @@ func planEnvImport(ctx context.Context, q taskReader, loc configurationLocation,
 	if err != nil {
 		return out, err
 	}
-	req, ok := task.requirement(in.Requirement)
-	if !ok {
-		return out, Fail("incompatible", "Task has no credential requirement with that name")
-	}
-	resource, err := loadMappedResource(ctx, q, in.ResourceID)
-	if err != nil {
+	if err := requireNoBindingConflict(ctx, q, task.ID); err != nil {
 		return out, err
 	}
-	if err := requireNoBindingConflict(ctx, q, task.ID, resource.ID, resource.Scope.ID); err != nil {
-		return out, err
+	if task.Policy.Storage != "shared" {
+		return out, Fail("incompatible", "a credential mapping requires a shared Task")
 	}
-	if task.Policy.Storage != "shared" || resource.Policy.Storage != "shared" || !compatibleResource(task.TaskSpec, req.ResourceSlot, resource.ResourceSpec) {
-		return out, Fail("incompatible", "Task and Resource must be shared and the Resource must match the slot kind and stage")
+	revisions := []string{path, loc.workspace, loc.device, p.ID, cfg.Revision, task.Revision}
+	if create {
+		// A Profile that does not exist yet has no revision.
+		revisions[4] = "create-default"
 	}
-	mapping := ResourceMapping{TaskID: task.ID, Slot: req.ResourceSlot, ResourceID: resource.ID}
-	i := slices.IndexFunc(cfg.ResourceMappings, func(m ResourceMapping) bool { return m.TaskID == task.ID && m.Slot == req.ResourceSlot })
-	if i < 0 {
-		cfg.ResourceMappings = append(cfg.ResourceMappings, mapping)
-	} else if cfg.ResourceMappings[i] != mapping {
-		return out, Fail("resource-mapping-exists", "this Profile already maps the Task slot to another Resource")
+	var resource *Resource
+	if in.ResourceID != "" {
+		r, err := loadMappedResource(ctx, q, in.ResourceID)
+		if err != nil {
+			return out, err
+		}
+		if err := requireNoBindingConflict(ctx, q, r.ID, r.Scope.ID); err != nil {
+			return out, err
+		}
+		resource = &r
+		revisions = append(revisions, r.Revision)
 	}
-	if slices.ContainsFunc(cfg.SecretMappings, func(m SecretMapping) bool {
-		return m.TaskID == task.ID && m.Requirement == req.Name
-	}) {
-		return out, Fail("secret-mapping-exists", "this requirement already has a SecretBinding; inspect it with secret status")
+	plan := EnvImportPlan{ProjectID: loc.project.ID, Profile: p.Name, CreateProfile: create, TaskID: task.ID, Task: task.Name}
+	resources := map[string]ResourceMapping{}
+	usedResource := false
+	for _, field := range in.Fields {
+		req, err := envRequirement(task, in, field)
+		if err != nil {
+			return out, err
+		}
+		if slices.ContainsFunc(cfg.SecretMappings, func(m SecretMapping) bool {
+			return m.TaskID == task.ID && m.Requirement == req.Name
+		}) {
+			return out, Fail("secret-mapping-exists", "requirement "+req.Name+" already has a SecretBinding; inspect it with secret status")
+		}
+		item := EnvImportItem{Field: field, Requirement: req, Recover: in.recovers(field)}
+		var resourceID string
+		if !req.standalone() {
+			mapping, mapped, err := envResourceMapping(ctx, q, &cfg, task, req, resource)
+			if err != nil {
+				return out, err
+			}
+			usedResource = usedResource || resource != nil
+			if resource == nil {
+				revisions = append(revisions, mapped.Revision)
+			}
+			resources[field], resourceID, item.ResourcePurpose = mapping, mapping.ResourceID, mapped.Purpose
+		}
+		change := SecretBindingChange{Like: in.Like, Alias: in.Alias, ProviderProfile: in.ProviderProfile, Locator: in.Locator}
+		item.Binding, err = newBindingSpec(ctx, q, loc.project, req, resourceID, change)
+		if err != nil {
+			return out, err
+		}
+		if item.Binding.Locator.EntryID != "" {
+			return out, Fail("usage", "env import creates named entries; choose a backend project, environment, path and key")
+		}
+		plan.Imports = append(plan.Imports, item)
 	}
-	if len(cfg.ResourceMappings) > 512 || len(cfg.SecretMappings) >= 512 {
+	if resource != nil && !usedResource {
+		return out, Fail("usage", "--resource applies only to requirements attached to a Resource slot")
+	}
+	if len(cfg.ResourceMappings) > 512 || len(cfg.SecretMappings)+len(plan.Imports) > 512 {
 		return out, Fail("size-limit", "Profile has no capacity for another mapping")
 	}
-	spec := SecretBindingSpec{in.Alias, resource.ID, req.Purpose, req.Type, in.ProviderProfile, in.Locator}
-	if err := validateSecretBinding(spec); err != nil {
-		return out, err
+	for _, item := range plan.Imports[1:] {
+		if item.Binding.ProviderProfile != plan.Imports[0].Binding.ProviderProfile {
+			return out, Fail("usage", "one import uses one provider profile")
+		}
 	}
-	plan := EnvImportPlan{ProjectID: loc.project.ID, Profile: p.Name, TaskID: task.ID, Task: task.Name,
-		Field: in.Field, Requirement: req, ResourcePurpose: resource.Purpose, Binding: spec, Recover: in.Recover}
 	// Bind confirmation to the selected file path, workspace and catalog
 	// revisions. The digest never includes source values.
 	wire, err := json.Marshal(struct {
 		Plan      EnvImportPlan
 		Revisions []string
-	}{plan, []string{path, loc.workspace, loc.device, p.ID, cfg.Revision, task.Revision, resource.Revision}})
+	}{plan, revisions})
 	if err != nil {
 		return out, err
 	}
 	plan.Preview = digest(wire)
-	return envImportPlan{EnvImportPlan: plan, profileID: p.ID, cfg: cfg, resource: mapping}, nil
+	return envImportPlan{EnvImportPlan: plan, profileID: p.ID, cfg: cfg, resources: resources}, nil
+}
+
+// envRequirement selects the requirement a field imports into: the named one
+// for a single field, else the one whose delivery variable is the field.
+func envRequirement(task Task, in EnvImport, field string) (CredentialRequirement, error) {
+	if in.Requirement != "" {
+		req, ok := task.requirement(in.Requirement)
+		if !ok {
+			return req, Fail("incompatible", "Task has no credential requirement with that name")
+		}
+		return req, nil
+	}
+	i := slices.IndexFunc(task.CredentialRequirements, func(r CredentialRequirement) bool { return r.Env == field })
+	if i < 0 {
+		return CredentialRequirement{}, Fail("incompatible", "Task has no credential requirement delivered as "+field+"; pass --requirement for a single field")
+	}
+	return task.CredentialRequirements[i], nil
+}
+
+// envResourceMapping returns the Resource mapping a slot-attached requirement
+// imports with: the selected Resource, added to cfg when the slot is not yet
+// mapped, or the Profile's existing mapping when none is selected.
+func envResourceMapping(ctx context.Context, q taskReader, cfg *configuration, task Task, req CredentialRequirement, selected *Resource) (ResourceMapping, Resource, error) {
+	if selected == nil {
+		resource, err := secretResource(ctx, q, *cfg, task, req)
+		if Classify(err).Code == "binding-missing" {
+			return ResourceMapping{}, resource, Fail("usage", "choose the Resource for slot "+req.ResourceSlot+" with --resource")
+		}
+		return ResourceMapping{TaskID: task.ID, Slot: req.ResourceSlot, ResourceID: resource.ID}, resource, err
+	}
+	if selected.Policy.Storage != "shared" || !compatibleResource(task.TaskSpec, req.ResourceSlot, selected.ResourceSpec) {
+		return ResourceMapping{}, *selected, Fail("incompatible", "Task and Resource must be shared and the Resource must match the slot kind and stage")
+	}
+	mapping := ResourceMapping{TaskID: task.ID, Slot: req.ResourceSlot, ResourceID: selected.ID}
+	i := slices.IndexFunc(cfg.ResourceMappings, func(m ResourceMapping) bool { return m.TaskID == task.ID && m.Slot == req.ResourceSlot })
+	if i < 0 {
+		cfg.ResourceMappings = append(cfg.ResourceMappings, mapping)
+	} else if cfg.ResourceMappings[i] != mapping {
+		return mapping, *selected, Fail("resource-mapping-exists", "this Profile already maps the Task slot to another Resource")
+	}
+	return mapping, *selected, nil
+}
+
+func (in EnvImport) validate() error {
+	if in.Task == "" || len(in.Fields) == 0 || len(in.Fields) > 32 {
+		return Fail("usage", "choose a Project, Task and between 1 and 32 source fields")
+	}
+	if len(in.Fields) > 1 && (in.Requirement != "" || in.Alias != "" || in.Locator.Key != "") {
+		return Fail("usage", "--requirement, --alias and --key apply to a single field; several fields map by variable name")
+	}
+	if in.ResourceID != "" && !validUUID(in.ResourceID) {
+		return Fail("usage", "--resource takes a shared Resource UUID")
+	}
+	if in.Locator.EntryID != "" {
+		return Fail("usage", "env import creates named entries; choose a backend project, environment, path and key")
+	}
+	for i, field := range in.Fields {
+		if !environmentName.MatchString(field) || slices.Contains(in.Fields[:i], field) {
+			return Fail("usage", "source fields must be distinct variable names")
+		}
+	}
+	for _, field := range in.Recover {
+		if field != RecoverAll && !slices.Contains(in.Fields, field) {
+			return Fail("usage", "--recover names a field that is not imported")
+		}
+	}
+	return nil
 }
 
 func (a App) ImportOnboardingEnv(ctx context.Context, selector, path string, in EnvImport) (any, error) {
-	if selector == "" || in.Profile == "" || in.Task == "" || in.Requirement == "" || in.Field == "" || !validUUID(in.ResourceID) {
-		return nil, Fail("usage", "choose a Project, Profile, Task, requirement, source field and Resource UUID")
+	if selector == "" {
+		return nil, Fail("usage", "choose a Project with --project")
 	}
-	if in.Locator.EntryID != "" || !validLocator(in.Locator) || !validProviderProfile(in.ProviderProfile) {
-		return nil, Fail("usage", "choose a provider, provider profile, method and exact backend Project, environment, path and key")
-	}
-	adapter, methods, err := a.providerAdapter(in.ProviderProfile)
-	if err != nil {
+	if err := in.validate(); err != nil {
 		return nil, err
 	}
-	importer, ok := adapter.(provider.Importer)
-	if !ok || !slices.ContainsFunc(methods, func(m provider.MethodCapabilities) bool {
-		return m.Method == in.ProviderProfile.Method && m.CreateImport
-	}) {
-		return nil, Fail("import-unsupported", "the selected provider method does not support create-only import")
-	}
-	path, err = filepath.Abs(path)
+	path, err := filepath.Abs(path)
 	if err != nil {
 		return nil, Fail("invalid-env-file", "could not resolve the selected env file path")
 	}
@@ -193,9 +328,10 @@ func (a App) ImportOnboardingEnv(ctx context.Context, selector, path string, in 
 		return nil, err
 	}
 	defer clear(file.body)
-	value, ok := file.values[in.Field]
-	if !ok {
-		return nil, Fail("env-field-missing", "the selected source field is absent from the env file")
+	for _, field := range in.Fields {
+		if _, ok := file.values[field]; !ok {
+			return nil, Fail("env-field-missing", "the selected source field "+field+" is absent from the env file")
+		}
 	}
 	if in.Confirm != "" {
 		release, err := a.syncOwner(ctx)
@@ -224,6 +360,17 @@ func (a App) ImportOnboardingEnv(ctx context.Context, selector, path string, in 
 	if err != nil {
 		return nil, err
 	}
+	profile := plan.Imports[0].Binding.ProviderProfile
+	adapter, methods, err := a.providerAdapter(profile)
+	if err != nil {
+		return nil, err
+	}
+	importer, ok := adapter.(provider.Importer)
+	if !ok || !slices.ContainsFunc(methods, func(m provider.MethodCapabilities) bool {
+		return m.Method == profile.Method && m.CreateImport
+	}) {
+		return nil, Fail("import-unsupported", "the selected provider method does not support create-only import")
+	}
 	if in.Confirm == "" {
 		return plan.EnvImportPlan, nil
 	}
@@ -241,11 +388,18 @@ func (a App) ImportOnboardingEnv(ctx context.Context, selector, path string, in 
 		return nil, Fail("push-pending", "reconcile the pending push before editing shared catalog")
 	}
 
-	if err := a.transferEnvValue(ctx, loc, adapter, importer, in, value); err != nil {
-		return nil, err
+	var created []string
+	for _, item := range plan.Imports {
+		err := a.transferEnvValue(ctx, loc, adapter, importer, profile, item.Binding.Locator, item.Recover, file.values[item.Field])
+		if err != nil {
+			return nil, partialEnvImport(err, item.Field, created)
+		}
+		if !item.Recover {
+			created = append(created, item.Field)
+		}
 	}
 
-	receipt := EnvImportReceipt{ProjectID: loc.project.ID, Field: in.Field, Resource: plan.resource, Recovered: in.Recover}
+	receipt := EnvImportReceipt{ProjectID: loc.project.ID, Profile: plan.Profile}
 	err = store.Write(ctx, db, func(c *sql.Conn) error {
 		current, err := planEnvImport(ctx, c, loc, path, in)
 		if err != nil {
@@ -254,35 +408,55 @@ func (a App) ImportOnboardingEnv(ctx context.Context, selector, path string, in 
 		if current.Preview != plan.Preview {
 			return Fail("env-preview-changed", "catalog mapping changed during import")
 		}
-		binding, err := insertSecretBinding(ctx, c, loc, current.Binding)
-		if err != nil {
-			return err
+		scope := Scope{"project", loc.project.ID}
+		for _, item := range current.Imports {
+			binding, err := insertSecretBinding(ctx, c, loc, item.Binding)
+			if err != nil {
+				return err
+			}
+			mapping := SecretMapping{TaskID: current.TaskID, Requirement: item.Requirement.Name, BindingID: binding.ID}
+			current.cfg.SecretMappings = append(current.cfg.SecretMappings, mapping)
+			result := EnvImportResult{Field: item.Field, Binding: binding, Mapping: mapping, Recovered: item.Recover}
+			if m, ok := current.resources[item.Field]; ok {
+				result.Resource = &m
+			}
+			receipt.Imports = append(receipt.Imports, result)
 		}
-		mapping := SecretMapping{TaskID: current.TaskID, Requirement: current.Requirement.Name, BindingID: binding.ID}
-		current.cfg.SecretMappings = append(current.cfg.SecretMappings, mapping)
-		if err := saveSecretMappings(ctx, c, current.profileID, binding.Scope, current.cfg); err != nil {
-			return err
-		}
-		receipt.SecretBindResult = SecretBindResult{Profile: current.Profile, Binding: &binding, Mapping: mapping}
-		return nil
+		return saveSecretMappings(ctx, c, current.profileID, scope, current.cfg)
 	})
 	if err != nil {
-		return nil, Fail("env-catalog-commit-failed", "provider entry is present but catalog commit could not be confirmed; check secret status and use a fresh --recover preview if the mapping is missing")
+		return nil, Fail("env-catalog-commit-failed", "provider entries are present but catalog commit could not be confirmed; check secret status and use a fresh --recover preview for any mapping that is missing")
 	}
 	return receipt, nil
 }
 
-func (a App) transferEnvValue(ctx context.Context, loc configurationLocation, adapter provider.Adapter, importer provider.Importer, in EnvImport, value []byte) error {
+// partialEnvImport names the field that failed and the fields whose provider
+// entries an earlier step of the same confirmation already created, so they
+// are mapped with --recover instead of created again.
+func partialEnvImport(err error, field string, created []string) error {
+	failure := *Classify(err)
+	details := map[string]any{"field": field}
+	if len(created) > 0 {
+		details["created"] = created
+		failure.Message += "; provider entries were already created for " + strings.Join(created, ", ") +
+			": preview again with --recover=<field> for each"
+	}
+	failure.Details = details
+	return &failure
+}
+
+func (a App) transferEnvValue(ctx context.Context, loc configurationLocation, adapter provider.Adapter, importer provider.Importer,
+	profile provider.Profile, locator provider.Locator, recover bool, value []byte) error {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	key := provider.SessionKey{WorkspaceID: loc.workspace, DeviceID: loc.device, Profile: in.ProviderProfile}
+	key := provider.SessionKey{WorkspaceID: loc.workspace, DeviceID: loc.device, Profile: profile}
 	session, err := a.loadProviderSession(ctx, key)
 	defer clear(session)
 	if err != nil || len(session) == 0 {
 		return Fail("authentication-required", "sign in with the selected device provider profile")
 	}
-	if in.Recover {
-		existing, err := adapter.Resolve(ctx, in.ProviderProfile, session, in.Locator)
+	if recover {
+		existing, err := adapter.Resolve(ctx, profile, session, locator)
 		defer clear(existing)
 		switch {
 		case errors.Is(err, provider.ErrAuthenticationRequired):
@@ -294,7 +468,7 @@ func (a App) transferEnvValue(ctx context.Context, loc configurationLocation, ad
 		}
 		return nil
 	}
-	err = importer.Import(ctx, in.ProviderProfile, session, in.Locator, value)
+	err = importer.Import(ctx, profile, session, locator, value)
 	switch {
 	case err == nil:
 		return nil

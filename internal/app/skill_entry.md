@@ -36,5 +36,6 @@ Some failures are device-local gates that only the person at this machine may cl
 | `profile-required`, `profile-not-found` | choose a Profile: `ctxferry profile select <name>` |
 | `binding-missing`, `secret-unavailable` | map or fix the credential: `ctxferry secret bind <task> <requirement> ...` |
 | `custom-command-not-allowed` | use `ctxferry run <task>`, or ask whether the Task should allow custom commands |
+| `command-required` | the Task has no command of its own: use `ctxferry exec --task <task> -- <program> [args...]` |
 
 For anything else unexpected, run `ctxferry doctor --format json` and include its failing checks in your report.

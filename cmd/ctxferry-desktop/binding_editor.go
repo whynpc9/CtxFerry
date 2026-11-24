@@ -40,7 +40,11 @@ func (d *desktop) bindingEditor(c *ui.Context) {
 	scope := status.Project.Slug + " / " + status.Profile + " / " + status.Task + " / " + status.Requirement
 	choices := []desktopOption{{newBindingID, "Create a new reference"}}
 	for _, b := range s.slot.Reusable {
-		choices = append(choices, desktopOption{b.ID, b.Alias + " · " + b.ProviderProfile.Provider})
+		label := b.Alias + " · " + b.ProviderProfile.Provider
+		if b.Scope.ID != status.Project.ID {
+			label += " · from " + s.slot.SourceProjects[b.Scope.ID]
+		}
+		choices = append(choices, desktopOption{b.ID, label})
 	}
 	card(c).Children(func() {
 		cardHeader(c, icLink, "Shared requirement mapping", "Reuse a compatible reference or enter locator metadata. Secret values are never placed in drafts or commands.", nil)
@@ -53,6 +57,7 @@ func (d *desktop) bindingEditor(c *ui.Context) {
 		} else {
 			for _, b := range s.slot.Reusable {
 				if b.ID == draft.choice {
+					labelValue(c, "Source Project", s.slot.SourceProjects[b.Scope.ID])
 					labelValue(c, "Provider profile · method", b.ProviderProfile.Name+" · "+b.ProviderProfile.Method)
 					locatorFields(c, b.Locator)
 					break

@@ -64,7 +64,7 @@ onboarding 命令会在所选应用数据根目录中保存进度。先运行 `o
 | `ctxferry onboard scan <note>` | — | 报告所选笔记中疑似凭据的发现。 |
 | `ctxferry onboard import <note>` | `--title <title>`、`--summary <text>`、`--storage <local-only\|shared>`、`--disclosure <full\|summary\|reference\|local-tool>` | 导入一篇显式分类的笔记。标题、存储策略和披露策略为必需项。 |
 | `ctxferry onboard scan-env <file>` | — | 列出 env 字段名及匹配的 Task 凭据要求，不导入值。 |
-| `ctxferry onboard import-env <file>` | `--field <name>`、`--task <name-or-uuid>`、`--requirement <name>`、`--profile <name>`、`--resource <uuid>`、`--alias <alias>`、`--provider <name>`、`--provider-profile <name>`、`--method <method>`、`--backend-project <id>`、`--environment <name>`、`--path <path>`、`--key <key>`、`--recover`、`--confirm <preview-id>` | 预览一个 env 字段的 Provider 导入和 Profile 映射；使用返回的预览 ID 和 `--confirm` 应用变更。`--recover` 会先根据来源验证现有后端条目。 |
+| `ctxferry onboard import-env <file>` | `--field <name>`（可重复）、`--task <name-or-uuid>`、`--requirement <name>`、`--profile <name>`、`--resource <uuid>`、`--like <alias-or-uuid>`、`--alias <alias>`、`--provider <name>`、`--provider-profile <name>`、`--method <method>`、`--backend-project <id>`、`--environment <name>`、`--path <path>`、`--key <key>`、`--recover[=<field>]`（可重复）、`--confirm <preview-id>` | 预览一个或多个 env 字段的 Provider 导入和 Profile 映射；使用返回的预览 ID 和 `--confirm` 应用整批变更。多个字段会映射到交付变量同名的凭据需求；`--requirement`、`--alias` 和 `--key` 仅适用于单个字段。仅当 Profile 尚未映射对应槽位时才需要 `--resource`。默认值和 `--like` 与 `secret bind` 相同。`--recover` 会先根据来源验证现有后端条目：不带值时针对所有字段，带值时针对指定字段。 |
 | `ctxferry onboard finish` | — | 运行 `doctor` 并完成已保存的 onboarding 流程。 |
 
 ## Context 和配置
@@ -119,7 +119,7 @@ onboarding 命令会在所选应用数据根目录中保存进度。先运行 `o
 
 | 命令 | 命令专用参数 | 用途 |
 | --- | --- | --- |
-| `ctxferry task add <name>` | `--purpose <purpose>`、`--input <description>`（可重复）、`--resource-slot <json>`（可重复）、`--credential-requirement <json>`（可重复）、`--membership <uuid>`、`--working-directory <path>`、`--program <executable>`、`--arg <argument>`（可重复）、`--platform <os[/arch]>`（可重复）、`--storage <local-only\|shared>`、`--allow-custom-command` | 注册 Task 及其执行定义。工作目录默认为 `.`；存储策略为必需项。对于以短横线开头的参数，使用 `--arg=VALUE`。 |
+| `ctxferry task add <name>` | `--purpose <purpose>`、`--input <description>`（可重复）、`--slot <name:kind:stage>`（可重复）、`--credential <name:slot:purpose:type:ENV>`（可重复）、`--resource-slot <json>`（可重复）、`--credential-requirement <json>`（可重复）、`--membership <uuid>`、`--working-directory <path>`、`--program <executable>`、`--arg <argument>`（可重复）、`--platform <os[/arch]>`（可重复）、`--storage <local-only\|shared>`、`--allow-custom-command` | 注册 Task 及其执行定义。工作目录默认为 `.`；存储策略为必需项。对于以短横线开头的参数，使用 `--arg=VALUE`。将凭据的槽位留空（`name::purpose:type:ENV`）即声明独立凭据。带 `--allow-custom-command` 的 Task 可以省略命令；此时 `run` 会拒绝它，只能通过 `exec` 使用。 |
 | `ctxferry task list` | — | 列出 Task 及其要求。 |
 | `ctxferry task inspect <name-or-uuid>` | — | 检查一个 Task 及其要求。 |
 | `ctxferry task update <name-or-uuid>` | `--if-revision <revision>`、`--purpose <purpose>`、`--input <description>`（可重复）、`--resource-slot <json>`（可重复）、`--credential-requirement <json>`（可重复）、`--membership <uuid>`、`--working-directory <path>`、`--program <executable>`、`--arg <argument>`（可重复）、`--no-args`、`--platform <os[/arch]>`（可重复）、`--allow-custom-command[=<true\|false>]` | 在必需的当前 revision 上，仅替换提供的字段。重复的列表参数会替换整个列表；`--no-args` 清空参数，且不能与 `--arg` 组合。 |
@@ -141,7 +141,7 @@ Resource 槽位 JSON 包含 `name`、`kind` 和 `stage`。凭据要求 JSON 包�
 
 | 命令 | 命令专用参数 | 用途 |
 | --- | --- | --- |
-| `ctxferry secret bind <task> <requirement>` | `--binding <uuid>`、`--alias <alias>`、`--profile <name>`、`--provider <name>`、`--provider-profile <name>`、`--method <method>`、`--entry-id <id>`、`--backend-project <id>`、`--environment <name>`、`--path <path>`、`--key <key>` | 创建并映射 SecretBinding，或按 UUID 复用现有共享绑定。Profile 默认为当前检出目录选择的 Profile。 |
+| `ctxferry secret bind <task> <requirement>` | `--binding <uuid>`、`--like <alias-or-uuid>`、`--alias <alias>`、`--profile <name>`、`--provider <name>`、`--provider-profile <name>`、`--method <method>`、`--entry-id <id>`、`--backend-project <id>`、`--environment <name>`、`--path <path>`、`--key <key>` | 创建并映射 SecretBinding，或按 UUID 复用现有共享绑定。新绑定的别名默认为需求名称，路径默认为 `/`，键默认为交付变量名；`--like` 从另一个绑定复制 Provider 和后端命名空间。Profile 默认为当前检出目录选择的 Profile，其次为 Project 中名为 `default` 的 Profile；若 Project 尚无任何 Profile，bind 会创建 `default`。 |
 | `ctxferry secret list` | — | 列出 SecretBinding 元数据，不联系 Provider。 |
 | `ctxferry secret status <task> <requirement>` | `--profile <name>` | 检查此 Device 上一个显式映射的凭据，不返回其值。 |
 | `ctxferry secret unmap <task> <requirement>` | `--profile <name>` | 从 Profile 中移除显式凭据映射。 |

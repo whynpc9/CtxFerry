@@ -9,6 +9,23 @@ import (
 	"github.com/whynpc9/CtxFerry/internal/provider"
 )
 
+const secretBindHelp = `Map a Task's credential requirement to a SecretBinding in a Profile.
+
+Reuse an existing binding with --binding <uuid>, or describe a new one. For a
+new binding, --alias defaults to the requirement name, --path to / and --key to
+the requirement's delivery variable. --like <alias-or-uuid> copies the provider,
+provider profile, method, backend project, environment and path from a binding
+the Project can see; flags given explicitly override the copied values.
+
+Without --profile the checkout's selected Profile is used, then the Project's
+Profile named default. When neither exists and the Project has no Profiles,
+bind creates the default Profile.
+
+Examples:
+  ctxferry secret bind agent openai --provider infisical --provider-profile default \
+    --method universal-auth --backend-project <id> --environment dev
+  ctxferry secret bind agent anthropic --like openai`
+
 func secretCommands(ctx context.Context, invoke func(func(app.App) (any, error)) func(*cobra.Command, []string) error, project *string) (*cobra.Command, *cobra.Command) {
 	secret := &cobra.Command{Use: "secret", Short: "Manage credential references and check availability"}
 	list := &cobra.Command{Use: "list", Short: "List the Project's SecretBinding metadata without contacting a provider", Args: cobra.NoArgs}
@@ -38,21 +55,22 @@ func secretCommands(ctx context.Context, invoke func(func(app.App) (any, error))
 		})(cmd, args)
 	}
 
-	bind := &cobra.Command{Use: "bind <task> <requirement>", Short: "Create and map a SecretBinding or reuse one by UUID", Args: cobra.ExactArgs(2)}
+	bind := &cobra.Command{Use: "bind <task> <requirement>", Short: "Create and map a SecretBinding or reuse one by UUID", Long: secretBindHelp, Args: cobra.ExactArgs(2)}
 	var change app.SecretBindingChange
 	var bindProfiles, bindingIDs []string
 	flags := bind.Flags()
 	flags.StringArrayVar(&bindProfiles, "profile", nil, "Profile (defaults to this checkout's selected Profile)")
 	flags.StringArrayVar(&bindingIDs, "binding", nil, "Existing shared SecretBinding UUID")
-	flags.StringVar(&change.Alias, "alias", "", "New binding's logical alias")
+	flags.StringVar(&change.Like, "like", "", "Copy provider and backend namespace from this binding (alias or UUID)")
+	flags.StringVar(&change.Alias, "alias", "", "New binding's logical alias (defaults to the requirement name)")
 	flags.StringVar(&change.ProviderProfile.Provider, "provider", "", "Provider adapter name")
 	flags.StringVar(&change.ProviderProfile.Name, "provider-profile", "", "Provider profile name")
 	flags.StringVar(&change.ProviderProfile.Method, "method", "", "Provider authentication method")
 	flags.StringVar(&change.Locator.EntryID, "entry-id", "", "Exact stable backend entry ID")
 	flags.StringVar(&change.Locator.ProjectID, "backend-project", "", "Backend project ID for a named entry")
 	flags.StringVar(&change.Locator.Environment, "environment", "", "Backend environment for a named entry")
-	flags.StringVar(&change.Locator.Path, "path", "", "Backend path for a named entry")
-	flags.StringVar(&change.Locator.Key, "key", "", "Exact backend key for a named entry")
+	flags.StringVar(&change.Locator.Path, "path", "", "Backend path for a named entry (defaults to /)")
+	flags.StringVar(&change.Locator.Key, "key", "", "Exact backend key for a named entry (defaults to the requirement's variable)")
 	bind.RunE = func(cmd *cobra.Command, args []string) error {
 		return invoke(func(a app.App) (any, error) {
 			profile, err := explicitProfile(bindProfiles)
@@ -64,7 +82,7 @@ func secretCommands(ctx context.Context, invoke func(func(app.App) (any, error))
 				return nil, app.Fail("usage", "pass exactly one nonempty --binding UUID when reusing a binding")
 			}
 			if change.BindingID != "" {
-				for _, name := range []string{"alias", "provider", "provider-profile", "method", "entry-id", "backend-project", "environment", "path", "key"} {
+				for _, name := range []string{"like", "alias", "provider", "provider-profile", "method", "entry-id", "backend-project", "environment", "path", "key"} {
 					if flags.Changed(name) {
 						return nil, app.Fail("usage", "pass either --binding or new binding metadata")
 					}

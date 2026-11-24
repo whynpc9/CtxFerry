@@ -81,12 +81,14 @@ func validateTask(spec TaskSpec) error {
 	if !profileName(spec.Name) || !taskText(spec.Purpose) || !validUUID(spec.MembershipID) {
 		return Fail("invalid-task", "Task requires a slug, a purpose and a Repository membership UUID")
 	}
-	program := strings.TrimPrefix(spec.Program, "./")
-	if !taskPath(spec.WorkingDirectory) || !taskPath(program) || program == "." || strings.TrimSpace(program) == "" {
-		return Fail("invalid-task", "working directory and program must use portable relative paths or a program name")
-	}
 	if spec.Argv == nil {
 		return Fail("invalid-task", "Task argv must be an array")
+	}
+	program := strings.TrimPrefix(spec.Program, "./")
+	// A Task that only lends its credentials to exec may omit its own command.
+	execOnly := spec.Program == "" && spec.AllowCustomCommand && len(spec.Argv) == 0
+	if !taskPath(spec.WorkingDirectory) || !execOnly && (!taskPath(program) || program == "." || strings.TrimSpace(program) == "") {
+		return Fail("invalid-task", "working directory and program must use portable relative paths or a program name; only a Task that allows custom commands may omit its program")
 	}
 	if len(spec.Inputs) > 32 || len(spec.ResourceSlots) > 32 || len(spec.CredentialRequirements) > 32 || len(spec.Platforms) > 32 || len(spec.Argv) > 128 {
 		return Fail("invalid-task", "Task exceeds its input, slot, platform or argument limit")
@@ -111,9 +113,10 @@ func validateTask(spec TaskSpec) error {
 	requirements, variables := map[string]bool{}, map[string]bool{}
 	for _, req := range spec.CredentialRequirements {
 		env := strings.ToUpper(req.Env)
-		if !resourceToken.MatchString(req.Name) || requirements[req.Name] || !slots[req.ResourceSlot] ||
+		// An empty slot makes the requirement standalone: no Resource backs it.
+		if !resourceToken.MatchString(req.Name) || requirements[req.Name] || req.ResourceSlot != "" && !slots[req.ResourceSlot] ||
 			!taskText(req.Purpose) || !taskText(req.Type) || len(req.Env) > 128 || !environmentName.MatchString(req.Env) || variables[env] {
-			return Fail("invalid-task", "credential requirements need distinct names and delivery variables, an existing Resource slot, purpose and type")
+			return Fail("invalid-task", "credential requirements need distinct names and delivery variables, an existing Resource slot or none, purpose and type")
 		}
 		requirements[req.Name], variables[env] = true, true
 	}

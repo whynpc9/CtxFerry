@@ -291,7 +291,11 @@ func (p *projectPage) taskDetail(c *ui.Context, task app.Task) {
 			ui.Row(c).Gap(sp3).Padding(sp2, 0).AlignItems(ui.Center).Children(func() {
 				ui.Column(c).Grow(1).Gap(2).Children(func() {
 					strong(c, requirement.Name)
-					muted(c, requirement.Purpose+" · "+requirement.Type+" · slot "+requirement.ResourceSlot)
+					slot := "slot " + requirement.ResourceSlot
+					if requirement.ResourceSlot == "" {
+						slot = "standalone"
+					}
+					muted(c, requirement.Purpose+" · "+requirement.Type+" · "+slot)
 				})
 				if p.host != nil {
 					linkButton(c, "Open requirement", icArrowR).OnClick(func() {

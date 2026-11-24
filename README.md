@@ -88,15 +88,28 @@ requirement whose delivery variable matches a field in the file. Use `task add`
 or `task update` to declare requirements for Tasks that do not have them yet.
 Each field is a hint. You choose the requirement and its backend key independently.
 
-Choose an existing Profile, shared Task and compatible shared Resource. Log in to
-the selected device provider profile before confirming. Run the following command
-to preview the exact mapping, then repeat it with `--confirm <preview-id>`.
+Choose a shared Task. A requirement attached to a Resource slot also needs a
+compatible shared Resource: the Profile's existing mapping for the slot, or
+`--resource <uuid>`. A standalone requirement, such as an API key, needs none.
+The Profile defaults as for `secret bind`. Log in to the selected device
+provider profile before confirming. Run the following command to preview the
+exact mapping, then repeat it with `--confirm <preview-id>`.
 
 ```sh
 ctxferry onboard import-env ./.env --project api --profile dev --task integration \
   --requirement login --field DATABASE_URL --resource <resource-uuid> --alias db \
   --provider infisical --provider-profile team --method universal-auth \
   --backend-project <infisical-project-id> --environment dev --path /api --key API_DB_URL
+```
+
+Repeat `--field` to import several fields as one batch. Each field maps to the
+requirement whose delivery variable has the same name, and gets its own binding
+with the requirement name as alias and the field name as key. `--like <alias>`
+copies the provider and backend namespace from an existing binding:
+
+```sh
+ctxferry onboard import-env ./.env --project api --task agent \
+  --field OPENAI_API_KEY --field ANTHROPIC_API_KEY --like openai
 ```
 
 The parser accepts UTF-8 single-line `NAME=value` assignments, optional `export`,
@@ -114,16 +127,18 @@ Values with leading or trailing whitespace or Infisical reference syntax are
 rejected because the endpoint could transform them. Other providers and
 authentication methods require an adapter that advertises create import.
 
-Confirm one field at a time. A successful invocation commits the Project's
-SecretBinding and both Profile mappings together. An existing backend key or
-credential mapping blocks normal import. Previously completed fields keep their
-mappings if a later field fails. The catalog, sync records and receipt carry only
-approved metadata and references.
+One preview ID covers the whole batch. Confirmation creates each provider entry
+in order, then commits every SecretBinding and Profile mapping in one catalog
+transaction. An existing backend key or credential mapping blocks normal
+import. If a provider step fails part-way, the error lists in
+`error.details.created` the fields whose entries were already created; preview
+again with `--recover=<field>` for each. The catalog, sync records and receipt
+carry only approved metadata and references.
 
 If the provider result is uncertain, an approval is pending, or the local
 catalog commit fails after creation, check the mapping with `secret status`.
-For a missing mapping, run the same import command with `--recover` to get a
-fresh preview, then confirm it. Recovery requires read-value permission and
+For a missing mapping, run the same import command with `--recover` (every
+field) or `--recover=<field>` (repeatable) to get a fresh preview, then confirm it. Recovery requires read-value permission and
 compares the exact existing entry with the source field in memory before saving
 the mapping. A missing or different entry leaves the catalog untouched. Normal
 import and recovery both leave existing provider entries unchanged.
@@ -213,7 +228,22 @@ Tasks can declare credential requirements; see Credentialed runs below.
 
 ### Credential references
 
-Create a binding after registering a Task requirement and mapping its Resource slot in a Profile. The binding takes its Resource, purpose and type from that selection.
+An API key that is not tied to a service CtxFerry can route to or probe is a **standalone** credential. Declare it with an empty slot and bind it; no Resource, slot mapping or `resource check` is involved:
+
+```sh
+ctxferry task add agent --purpose "Coding agent" --storage shared \
+  --credential openai::model-api:api-key:OPENAI_API_KEY \
+  --credential anthropic::model-api:api-key:ANTHROPIC_API_KEY --allow-custom-command
+ctxferry secret bind agent openai --provider infisical --provider-profile team \
+  --method universal-auth --backend-project <infisical-project-id> --environment dev
+ctxferry secret bind agent anthropic --like openai
+```
+
+For a new binding, `--alias` defaults to the requirement name, `--path` to `/` and `--key` to the requirement's delivery variable. `--like <alias-or-uuid>` copies the provider, provider profile, method, backend project, environment and path from a binding the Project can see; explicit flags override it. Without `--profile`, credential commands use the checkout's selected Profile, then the Project's Profile named `default`. When neither exists and the Project has no Profiles, `secret bind` and `onboard import-env` create `default`. A Task registered with `--allow-custom-command` may omit its command; `run` then refuses it and it only lends its credentials to `exec`.
+
+A standalone requirement accepts only a binding without a Resource, and a slot-attached requirement only a binding for its mapped Resource. `secret status` reports `resourceReachable: null` for a standalone credential. See [ADR 0001](docs/adr/0001-standalone-credentials.md).
+
+For a credential tied to a service, create a binding after registering a Task requirement and mapping its Resource slot in a Profile. The binding takes its Resource, purpose and type from that selection.
 
 ```sh
 ctxferry secret bind integration-check login --profile development \
