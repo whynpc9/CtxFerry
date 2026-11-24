@@ -42,3 +42,22 @@ func TestTrustPreviewShowsEveryReviewedCredentialField(t *testing.T) {
 		}
 	}
 }
+
+func TestTrustPreviewCommandCannotRedrawTheTerminal(t *testing.T) {
+	review := app.ExecutionReview{Task: "check", State: "not-enabled", Definition: &app.ReviewedDefinition{
+		Program: "tools/my tool", Argv: []string{"\rCommand: go test ./...", "\x1b[2K", "plain"}, CheckoutRoot: "/repo\nCommand: x"}}
+	var out strings.Builder
+	if err := render(&out, review); err != nil {
+		t.Fatal(err)
+	}
+	text := out.String()
+	if strings.ContainsAny(text, "\r\x1b") || strings.Count(text, "Command:") != 3 ||
+		!strings.Contains(text, `Command: "tools/my tool" "\rCommand: go test ./..." "\x1b[2K" plain`) {
+		t.Fatalf("%q", text)
+	}
+	var doc strings.Builder
+	body := "line\x1b]0;title\x07"
+	if err := render(&doc, app.ContextResult{Document: &app.ContextDoc{Title: "t", Body: &body}}); err != nil || strings.ContainsAny(doc.String(), "\x1b\x07") {
+		t.Fatalf("%q %v", doc.String(), err)
+	}
+}

@@ -3,8 +3,11 @@ package cli
 import (
 	"fmt"
 	"io"
+	"regexp"
+	"strconv"
 	"strings"
 	"text/tabwriter"
+	"unicode"
 
 	"github.com/whynpc9/CtxFerry/internal/app"
 	"github.com/whynpc9/CtxFerry/internal/provider"
@@ -39,8 +42,18 @@ func (p *textPage) grid(indent string, rows [][]string) {
 	tw.Flush()
 }
 
+// flush escapes control characters other than newline and tab, so stored
+// text such as a document body cannot send terminal escape sequences.
 func (p *textPage) flush(w io.Writer) error {
-	_, err := io.WriteString(w, p.String())
+	var b strings.Builder
+	for _, r := range p.String() {
+		if r != '\n' && r != '\t' && unicode.IsControl(r) {
+			fmt.Fprintf(&b, `\x%02x`, r) // IsControl runes are all below U+00A0.
+			continue
+		}
+		b.WriteRune(r)
+	}
+	_, err := io.WriteString(w, b.String())
 	return err
 }
 
@@ -65,9 +78,9 @@ func flag(v *bool) string {
 func renderContext(w io.Writer, r app.ContextResult) error {
 	var p textPage
 	if d := r.Document; d != nil {
-		p.line("%s (%s)", d.Title, d.ID)
+		p.line("%s (%s)", oneLine(d.Title), d.ID)
 		p.field("Purpose", d.Purpose)
-		p.field("Source", d.Source)
+		p.field("Source", oneLine(d.Source))
 		p.line("Policy: %s, %s disclosure", d.Policy.Storage, d.Policy.AgentDisclosure)
 		p.line("Revision: %s (updated %s, freshness %s)", d.Revision, d.UpdatedAt, d.Freshness)
 		if d.Summary != nil && *d.Summary != "" {
@@ -93,7 +106,7 @@ func renderContext(w io.Writer, r app.ContextResult) error {
 	}
 	docs := [][]string{}
 	for _, d := range r.Documents {
-		title := d.Title
+		title := oneLine(d.Title)
 		if d.Freshness == "stale" {
 			title += " (stale)"
 		}
@@ -119,13 +132,30 @@ func renderContext(w io.Writer, r app.ContextResult) error {
 	return p.flush(w)
 }
 
+var safeToken = regexp.MustCompile(`^[A-Za-z0-9_@%+=:,./-]+$`)
+
+// shellWord shows one program or argument unambiguously: anything but a plain
+// token is quoted with every control character escaped, so a reviewed command
+// line can neither split differently nor redraw the terminal.
+func shellWord(s string) string {
+	if safeToken.MatchString(s) {
+		return s
+	}
+	return strconv.Quote(s)
+}
+
+// oneLine quotes a value that would otherwise break or redraw its line.
+func oneLine(s string) string {
+	if strings.ContainsFunc(s, unicode.IsControl) {
+		return strconv.Quote(s)
+	}
+	return s
+}
+
 func taskCommandLine(t app.TaskSpec) string {
-	parts := []string{t.Program}
+	parts := []string{shellWord(t.Program)}
 	for _, arg := range t.Argv {
-		if arg == "" || strings.ContainsAny(arg, " \t\"'\\$`") {
-			arg = fmt.Sprintf("%q", arg)
-		}
-		parts = append(parts, arg)
+		parts = append(parts, shellWord(arg))
 	}
 	return strings.Join(parts, " ")
 }
@@ -302,9 +332,9 @@ func renderExecutionReview(w io.Writer, r app.ExecutionReview) error {
 	p.field("Enabled at", r.EnabledAt)
 	if d := r.Definition; d != nil {
 		p.line("Command: %s", taskCommandLine(app.TaskSpec{Program: d.Program, Argv: d.Argv}))
-		p.line("Checkout: %s", d.CheckoutRoot)
-		p.line("Membership: %s (Repository %s, root %s)", d.MembershipID, d.RepositoryID, d.MembershipRoot)
-		p.line("Working directory: %s", d.WorkingDirectory)
+		p.line("Checkout: %s", oneLine(d.CheckoutRoot))
+		p.line("Membership: %s (Repository %s, root %s)", d.MembershipID, d.RepositoryID, oneLine(d.MembershipRoot))
+		p.line("Working directory: %s", oneLine(d.WorkingDirectory))
 		p.line("Custom commands: %t", d.AllowCustomCommand)
 		p.field("Profile UUID", d.ProfileID)
 		// Every reviewed field of each delivery, so a first approval shows the
