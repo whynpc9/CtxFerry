@@ -392,8 +392,9 @@ func pendingDefaultProfile(ctx context.Context, q rowQuerier, loc configurationL
 		AND coalesce(json_extract(payload,'$.profile'),'')<>'')`, loc.project.ID).Scan(&exists); err != nil || exists {
 		return nil, configuration{}, err
 	}
+	// Like secretProfile, refuse a conflicted Project or Profile record.
 	id := configID(loc.workspace, Scope{"project", loc.project.ID}, defaultProfile)
-	if err := requireNoConflict(ctx, q, id); err != nil {
+	if err := requireNoBindingConflict(ctx, q, loc.project.ID, id); err != nil {
 		return nil, configuration{}, err
 	}
 	cfg := configuration{Values: map[string]json.RawMessage{}}

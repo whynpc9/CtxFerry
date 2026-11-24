@@ -13,6 +13,7 @@ import (
 	"github.com/whynpc9/CtxFerry/internal/cli"
 	"github.com/whynpc9/CtxFerry/internal/provider"
 	"github.com/whynpc9/CtxFerry/internal/provider/providertest"
+	"github.com/whynpc9/CtxFerry/internal/store"
 	"github.com/whynpc9/CtxFerry/internal/testcli"
 )
 
@@ -198,6 +199,23 @@ func TestBatchEnvImport(t *testing.T) {
 		t.Helper()
 		return run(append(args, "--confirm="+resourceString(t, previewOf(args), "preview"))...)
 	}
+
+	// An unresolved conflict on the Project blocks creating the default Profile.
+	projectID := obj(t, h.Run(t, "secret", "list", "--format=json").Success(t), "project")["id"].(string)
+	conflict := func(query string, args ...any) {
+		t.Helper()
+		db, err := store.Open(t.Context(), h.DataDir, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+		if _, err := db.ExecContext(t.Context(), query, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	conflict("INSERT INTO sync_conflicts VALUES('fixture',?,NULL,'{}','{}','head',1)", projectID)
+	failure(t, run(batch...), "binding-conflict")
+	conflict("DELETE FROM sync_conflicts WHERE token='fixture'")
 
 	plan := previewOf(batch)
 	var imports []struct {
