@@ -264,6 +264,9 @@ func dashCommand(cmd *cobra.Command, args []string) (string, []string, bool) {
 
 func taskSlots(json, concise []string) ([]app.TaskResourceSlot, error) {
 	out, err := slotFlags[app.TaskResourceSlot](json, "--resource-slot")
+	if err != nil {
+		return nil, err
+	}
 	for _, value := range concise {
 		parts := strings.Split(value, ":")
 		if len(parts) != 3 {
@@ -271,11 +274,14 @@ func taskSlots(json, concise []string) ([]app.TaskResourceSlot, error) {
 		}
 		out = append(out, app.TaskResourceSlot{Name: parts[0], Kind: parts[1], Stage: parts[2]})
 	}
-	return out, err
+	return out, nil
 }
 
 func taskCredentials(json, concise []string) ([]app.CredentialRequirement, error) {
 	out, err := slotFlags[app.CredentialRequirement](json, "--credential-requirement")
+	if err != nil {
+		return nil, err
+	}
 	for _, value := range concise {
 		parts := strings.Split(value, ":")
 		if len(parts) != 5 {
@@ -283,7 +289,7 @@ func taskCredentials(json, concise []string) ([]app.CredentialRequirement, error
 		}
 		out = append(out, app.CredentialRequirement{Name: parts[0], ResourceSlot: parts[1], Purpose: parts[2], Type: parts[3], Env: parts[4]})
 	}
-	return out, err
+	return out, nil
 }
 
 func slotFlags[T any](values []string, flag string) ([]T, error) {

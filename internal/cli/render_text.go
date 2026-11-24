@@ -79,12 +79,12 @@ func renderContext(w io.Writer, r app.ContextResult) error {
 	var p textPage
 	if d := r.Document; d != nil {
 		p.line("%s (%s)", oneLine(d.Title), d.ID)
-		p.field("Purpose", d.Purpose)
+		p.field("Purpose", oneLine(d.Purpose))
 		p.field("Source", oneLine(d.Source))
 		p.line("Policy: %s, %s disclosure", d.Policy.Storage, d.Policy.AgentDisclosure)
 		p.line("Revision: %s (updated %s, freshness %s)", d.Revision, d.UpdatedAt, d.Freshness)
 		if d.Summary != nil && *d.Summary != "" {
-			p.line("Summary: %s", *d.Summary)
+			p.line("Summary: %s", oneLine(*d.Summary))
 		}
 		if d.Body != nil {
 			p.line("\n%s", strings.TrimRight(*d.Body, "\n"))
@@ -93,7 +93,7 @@ func renderContext(w io.Writer, r app.ContextResult) error {
 	}
 	p.line("Project: %s (%s)", r.Project.Slug, r.Project.ID)
 	if r.Summary != nil {
-		p.line("Summary: %s", *r.Summary)
+		p.line("Summary: %s", oneLine(*r.Summary))
 	}
 	if r.Profile != nil {
 		p.line("Profile: %s", r.Profile.Name)
@@ -110,7 +110,8 @@ func renderContext(w io.Writer, r app.ContextResult) error {
 		if d.Freshness == "stale" {
 			title += " (stale)"
 		}
-		docs = append(docs, []string{d.ID, title, dash(d.Purpose)})
+		policy := d.Policy.Storage + "/" + d.Policy.AgentDisclosure
+		docs = append(docs, []string{d.ID, title, policy, dash(oneLine(d.Purpose))})
 	}
 	p.table("Documents", docs)
 	resources := [][]string{}
@@ -354,7 +355,7 @@ func renderExecutionReview(w io.Writer, r app.ExecutionReview) error {
 		changes = append(changes, []string{c.Field, string(c.Enabled), "->", string(c.Current)})
 	}
 	p.table("Changed since enabled", changes)
-	if r.Preview != "" {
+	if r.Preview != "" && r.State != "enabled" {
 		p.line("\nPreview token: %s", r.Preview)
 		p.line("Enable with ctxferry task trust enable %s --preview %s, repeating any --profile or --checkout given here.", r.Task, r.Preview)
 	}

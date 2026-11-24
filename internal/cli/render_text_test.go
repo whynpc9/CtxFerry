@@ -61,3 +61,24 @@ func TestTrustPreviewCommandCannotRedrawTheTerminal(t *testing.T) {
 		t.Fatalf("%q %v", doc.String(), err)
 	}
 }
+
+func TestEnabledTrustReviewOffersNoEnablePrompt(t *testing.T) {
+	var out strings.Builder
+	if err := render(&out, app.ExecutionReview{Task: "check", State: "enabled", Preview: "token", Definition: &app.ReviewedDefinition{Program: "make"}}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "Preview token") || strings.Contains(out.String(), "Enable with") {
+		t.Fatal(out.String())
+	}
+}
+
+func TestContextIndexKeepsRowsOnOneLine(t *testing.T) {
+	summary := "two\nlines"
+	var out strings.Builder
+	err := render(&out, app.ContextResult{Summary: &summary, Documents: []app.ContextDoc{{ID: "d-1", Title: "Notes",
+		Purpose: "a\tb\nFake: row", Policy: app.Policy{Storage: "shared", AgentDisclosure: "summary"}}}})
+	if err != nil || strings.Contains(out.String(), "\nFake: row") || strings.Contains(out.String(), "\nlines") ||
+		!strings.Contains(out.String(), "shared/summary") {
+		t.Fatalf("%q %v", out.String(), err)
+	}
+}

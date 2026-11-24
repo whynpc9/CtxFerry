@@ -30,7 +30,7 @@ Some failures are device-local gates that only the person at this machine may cl
 
 | `error.code` | Ask the human to |
 | --- | --- |
-| `project-unbound` | bind this checkout: `ctxferry project bind .` |
+| `project-unbound` | bind this checkout: `ctxferry project bind .`, or on a device that joined a synced workspace, attach it to the existing Project with `ctxferry project bind . --project <slug> --repository <repository-uuid>` so no duplicate Project is created |
 | `authentication-required`, `credential-storage-unavailable` | sign in to the provider: `ctxferry provider login <provider> --provider-profile <name> --method <method>` |
 | `execution-definition-changed` (including `details.state: not-enabled`) | review and enable the Task on this device: `ctxferry task trust preview <task>`, then `ctxferry task trust enable <task> --preview <token>` |
 | `profile-required`, `profile-not-found` | choose a Profile: `ctxferry profile select <name>` |

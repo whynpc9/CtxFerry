@@ -2,6 +2,7 @@ package tests
 
 import (
 	"encoding/json"
+	"net"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -37,8 +38,19 @@ func TestTaskShortcutsInferMembershipAndResolveNames(t *testing.T) {
 	if obj(t, detail, "resource")["id"] != resourceID {
 		t.Fatal(detail)
 	}
-	h.Run(t, "resource", "route", "primary-db", "--endpoint=127.0.0.1:5432", "--format=json").Success(t)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	h.Run(t, "resource", "route", "primary-db", "--endpoint="+listener.Addr().String(), "--format=json").Success(t)
+	if checked := h.Run(t, "resource", "check", "primary-db", "--format=json").Success(t); resourceString(t, checked, "resourceId") != resourceID {
+		t.Fatal(checked)
+	}
 	failure(t, h.Run(t, "resource", "inspect", "absent-db", "--format=json"), "resource-not-found")
+	addResource(t, h, "twin-db", "First twin", "local-only").Success(t)
+	addResource(t, h, "twin-db", "Second twin", "local-only").Success(t)
+	failure(t, h.Run(t, "resource", "inspect", "twin-db", "--format=json"), "ambiguous-resource")
 	h.Run(t, "profile", "create", "dev", "--format=json").Success(t)
 	mapping := h.Run(t, "profile", "map-resource", "dev", "check", "db", "primary-db", "--format=json").Success(t)
 	if resourceString(t, mapping, "resourceId") != resourceID {
@@ -48,7 +60,7 @@ func TestTaskShortcutsInferMembershipAndResolveNames(t *testing.T) {
 
 func TestTaskAddRefusesAmbiguousMembership(t *testing.T) {
 	h := gitHarness(t)
-	mid := obj(t, bind(t, h, "--slug=demo"), "binding")["membershipId"].(string)
+	mid := obj(t, bind(t, h, "--slug=demo", "--remote=https://github.com/owner/repo.git"), "binding")["membershipId"].(string)
 	// A second Repository membership leaves nothing to infer outside its checkouts.
 	other := t.TempDir()
 	first := h.Dir
@@ -62,6 +74,12 @@ func TestTaskAddRefusesAmbiguousMembership(t *testing.T) {
 	if !strings.Contains(r.Stdout, "--membership") {
 		t.Fatal(r)
 	}
+	// A remote URL match never establishes identity: an unbound clone with the
+	// Project's accepted remote still needs an explicit membership.
+	h.Dir = t.TempDir()
+	git(t, h, "init")
+	git(t, h, "remote", "add", "origin", "https://github.com/owner/repo.git")
+	failure(t, h.Run(t, "task", "add", "clone-check", "--project=demo", "--purpose=x", "--storage=local-only", "--format=json", "--", "make"), "usage")
 	h.Dir = first
 	task := h.Run(t, "task", "add", "check", "--purpose=x", "--storage=local-only", "--format=json", "--", "make").Success(t)
 	if resourceString(t, task, "membershipId") != mid {
@@ -96,6 +114,7 @@ func TestContextPutDefaultsAndGetByTitle(t *testing.T) {
 	failure(t, h.Run(t, "context", "get", "Release notes", "--format=json"), "ambiguous-document")
 	failure(t, h.Run(t, "context", "put", "--title", "No body", "--format=json"), "usage")
 	failure(t, h.Run(t, "context", "put", "--title", "Two bodies", "--body", "a", "--body-file", "-", "--format=json"), "usage")
+	failure(t, h.Run(t, "context", "put", "--title", "Empty file flag", "--body", "a", "--body-file", "", "--format=json"), "usage")
 
 	// Replacement replaces every field and takes no defaults.
 	var receipt struct{ ID, Revision string }

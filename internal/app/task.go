@@ -310,9 +310,11 @@ func (a App) inferMembership(ctx context.Context, selector, cwd string) (string,
 			db.Close()
 			candidates = found.Candidates
 		}
+		// Only local Git common-dir evidence identifies a membership; a remote
+		// URL match never establishes identity.
 		evidence := map[string]bool{}
 		for _, c := range candidates {
-			if c.Project.ID == r.Project.ID {
+			if c.Project.ID == r.Project.ID && c.Evidence == "git-common-dir" {
 				evidence[c.MembershipID] = true
 			}
 		}

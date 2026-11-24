@@ -45,8 +45,8 @@ func contextCommand(ctx context.Context, invoke func(func(app.App) (any, error))
 	put.Flags().StringVar(&body, "body", "", "Inline UTF-8 Markdown body (alternative to --body-file)")
 	put.RunE = func(cmd *cobra.Command, args []string) error {
 		return run(cmd, args, func(a app.App, cwd string) (any, error) {
-			inline := cmd.Flags().Changed("body")
-			if inline == (cmd.Flags().Changed("body-file") && file != "") {
+			inline, bodyFile := cmd.Flags().Changed("body"), cmd.Flags().Changed("body-file")
+			if inline == bodyFile || bodyFile && file == "" {
 				return nil, app.Fail("usage", "pass one of --body or --body-file")
 			}
 			if len(args) == 0 {
