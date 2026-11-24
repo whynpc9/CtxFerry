@@ -303,12 +303,18 @@ func renderExecutionReview(w io.Writer, r app.ExecutionReview) error {
 	if d := r.Definition; d != nil {
 		p.line("Command: %s", taskCommandLine(app.TaskSpec{Program: d.Program, Argv: d.Argv}))
 		p.line("Checkout: %s", d.CheckoutRoot)
+		p.line("Membership: %s (Repository %s, root %s)", d.MembershipID, d.RepositoryID, d.MembershipRoot)
 		p.line("Working directory: %s", d.WorkingDirectory)
-		creds := [][]string{}
+		p.line("Custom commands: %t", d.AllowCustomCommand)
+		p.field("Profile UUID", d.ProfileID)
+		// Every reviewed field of each delivery, so a first approval shows the
+		// whole mapping before an enable token is used.
 		for _, c := range d.Credentials {
-			creds = append(creds, []string{c.Env, c.Requirement, providerLabel(c.ProviderProfile), locatorLabel(c.Locator)})
+			p.line("\nCredential %s -> %s", c.Requirement, c.Env)
+			p.line("  Purpose: %s, type %s", c.Purpose, c.Type)
+			p.line("  Resource slot %s -> Resource %s (%s)", c.ResourceSlot, c.ResourceID, c.ResourcePurpose)
+			p.line("  SecretBinding %s via %s, %s", c.BindingID, providerLabel(c.ProviderProfile), locatorLabel(c.Locator))
 		}
-		p.table("Credentials delivered", creds)
 	}
 	if r.CustomCommands {
 		p.line("\nWarning: exec may run any caller-chosen program with these credentials.")

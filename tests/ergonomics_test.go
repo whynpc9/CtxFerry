@@ -2,6 +2,7 @@ package tests
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -48,7 +49,7 @@ func TestTaskShortcutsInferMembershipAndResolveNames(t *testing.T) {
 func TestTaskAddRefusesAmbiguousMembership(t *testing.T) {
 	h := gitHarness(t)
 	mid := obj(t, bind(t, h, "--slug=demo"), "binding")["membershipId"].(string)
-	// A second Repository membership leaves nothing to infer from first its checkouts.
+	// A second Repository membership leaves nothing to infer outside its checkouts.
 	other := t.TempDir()
 	first := h.Dir
 	h.Dir = other
@@ -63,6 +64,15 @@ func TestTaskAddRefusesAmbiguousMembership(t *testing.T) {
 	}
 	h.Dir = first
 	task := h.Run(t, "task", "add", "check", "--purpose=x", "--storage=local-only", "--format=json", "--", "make").Success(t)
+	if resourceString(t, task, "membershipId") != mid {
+		t.Fatal(task)
+	}
+	// An unbound worktree of the first checkout still identifies its
+	// membership through Git, also when the Project is explicit.
+	worktree := filepath.Join(t.TempDir(), "worktree")
+	git(t, h, "worktree", "add", "--detach", worktree)
+	h.Dir = worktree
+	task = h.Run(t, "task", "add", "worktree-check", "--project=demo", "--purpose=x", "--storage=local-only", "--format=json", "--", "make").Success(t)
 	if resourceString(t, task, "membershipId") != mid {
 		t.Fatal(task)
 	}

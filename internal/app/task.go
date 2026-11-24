@@ -299,8 +299,19 @@ func (a App) inferMembership(ctx context.Context, selector, cwd string) (string,
 		if id != "" {
 			return id, nil
 		}
+		candidates := res.Candidates
+		if res.Source == "explicit" {
+			// An explicit Project skips Git discovery; collect its evidence anyway.
+			db, err := store.Open(ctx, a.DataDir, false)
+			if err != nil {
+				return "", err
+			}
+			found, _ := resolveProject(ctx, db, "", res.Directory)
+			db.Close()
+			candidates = found.Candidates
+		}
 		evidence := map[string]bool{}
-		for _, c := range res.Candidates {
+		for _, c := range candidates {
 			if c.Project.ID == r.Project.ID {
 				evidence[c.MembershipID] = true
 			}

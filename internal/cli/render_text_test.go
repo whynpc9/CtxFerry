@@ -27,3 +27,18 @@ func TestTextRenderingIsReadable(t *testing.T) {
 		t.Fatal(out.String(), err)
 	}
 }
+
+func TestTrustPreviewShowsEveryReviewedCredentialField(t *testing.T) {
+	review := app.ExecutionReview{Task: "check", State: "not-enabled", Preview: "token", Definition: &app.ReviewedDefinition{
+		Program: "make", Credentials: []app.ReviewedCredential{{Requirement: "login", Env: "DATABASE_URL", Purpose: "runtime",
+			Type: "dsn", ResourceSlot: "db", ResourceID: "res-1", ResourcePurpose: "Dev Postgres", BindingID: "bind-1"}}}}
+	var out strings.Builder
+	if err := render(&out, review); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"runtime", "dsn", "db", "res-1", "Dev Postgres", "bind-1", "DATABASE_URL"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("preview omits %q:\n%s", want, out.String())
+		}
+	}
+}
