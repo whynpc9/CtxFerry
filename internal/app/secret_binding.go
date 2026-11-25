@@ -423,7 +423,9 @@ func newBindingSpec(ctx context.Context, q projectReader, project Project, req C
 		fill(&p.Provider, like.ProviderProfile.Provider)
 		fill(&p.Name, like.ProviderProfile.Name)
 		fill(&p.Method, like.ProviderProfile.Method)
-		if like.Locator.EntryID == "" && loc.EntryID == "" {
+		// Named locator fields belong to the template's provider; a different
+		// provider would read them as something else.
+		if p.Provider == like.ProviderProfile.Provider && like.Locator.EntryID == "" && loc.EntryID == "" {
 			fill(&loc.ProjectID, like.Locator.ProjectID)
 			fill(&loc.Environment, like.Locator.Environment)
 			fill(&loc.Path, like.Locator.Path)
@@ -452,15 +454,21 @@ func newBindingSpec(ctx context.Context, q projectReader, project Project, req C
 }
 
 // templateBinding finds the binding --like names among those the Project can
-// see, by UUID or by an alias that only one of them has.
+// see, by UUID or by an alias that only one of them has. A UUID match wins over
+// any alias, so a UUID is never ambiguous.
 func templateBinding(ctx context.Context, q projectReader, project Project, ref string) (SecretBinding, error) {
 	list, err := listProjectSecrets(ctx, q, project)
 	if err != nil {
 		return SecretBinding{}, err
 	}
+	for _, b := range list.Bindings {
+		if b.ID == ref {
+			return b, nil
+		}
+	}
 	var found []SecretBinding
 	for _, b := range list.Bindings {
-		if b.ID == ref || b.Alias == ref {
+		if b.Alias == ref {
 			found = append(found, b)
 		}
 	}

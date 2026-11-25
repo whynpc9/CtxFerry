@@ -75,6 +75,14 @@ func TestStandaloneCredentials(t *testing.T) {
 	}
 	failure(t, a.Run(t, "secret", "bind", "agent", "anthropic", "--like", "missing", "--format=json"), "binding-not-found")
 	failure(t, a.Run(t, "secret", "bind", "adhoc", "openai", "--binding", openai.ID, "--like", "openai", "--format=json"), "usage")
+	// --like with a UUID wins over another binding whose alias spells that UUID.
+	a.Run(t, "secret", "bind", "adhoc", "openai", "--like", "openai", "--alias", anthropic.ID, "--format=json").Success(t)
+	a.Run(t, "secret", "unmap", "adhoc", "openai", "--format=json").Success(t)
+	byID := bindingOf(t, a.Run(t, "secret", "bind", "adhoc", "openai", "--like", anthropic.ID, "--alias", "adhoc-openai", "--format=json").Success(t))
+	if byID.Locator != openai.Locator {
+		t.Fatalf("--like by UUID did not copy the namespace: %+v", byID)
+	}
+	a.Run(t, "secret", "unmap", "adhoc", "openai", "--format=json").Success(t)
 	a.Run(t, "secret", "bind", "adhoc", "openai", "--binding", openai.ID, "--format=json").Success(t)
 
 	// A Resource's binding never serves a standalone requirement.
@@ -262,12 +270,17 @@ func TestBatchEnvImport(t *testing.T) {
 		!results[0].Recovered || !results[1].Recovered || string(receipt.Data["profile"]) != `"default"` {
 		t.Fatalf("batch receipt: %s", receipt.Data["imports"])
 	}
+	// The committed bindings and default Profile wait in the sync outbox.
+	if pending := string(h.Run(t, "sync", "status", "--format=json").Success(t).Data["pending"]); pending == "0" {
+		t.Fatal("env import did not queue its shared records for sync")
+	}
 	failure(t, run(batch...), "secret-mapping-exists")
 
 	// A slot-attached field takes --resource; the default Profile now exists.
 	single := []string{"onboard", "import-env", env, "--project=checkout", "--task=agent", "--field=DATABASE_URL", "--like=openai", "--key=DB"}
 	failure(t, run(single...), "usage")
-	db := importResult(t, confirm(append(single, "--resource="+resourceID)).Success(t))
+	// --resource takes the Resource's identity as well as its UUID.
+	db := importResult(t, confirm(append(single, "--resource=shared-db")).Success(t))
 	if db.Binding.ResourceID != resourceID || db.Binding.Alias != "login" || db.Recovered {
 		t.Fatalf("slot-attached import: %+v", db)
 	}

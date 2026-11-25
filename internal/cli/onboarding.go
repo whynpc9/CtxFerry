@@ -90,7 +90,7 @@ func onboardingCommand(ctx context.Context, invoke func(func(app.App) (any, erro
 	flags.StringVar(&env.Task, "task", "", "Existing Task name or UUID")
 	flags.StringVar(&env.Requirement, "requirement", "", "Task credential requirement name (single field only)")
 	flags.StringArrayVar(&env.Fields, "field", nil, "Source variable name (repeatable)")
-	flags.StringVar(&env.ResourceID, "resource", "", "Shared Resource UUID for slot-attached requirements whose slot is not mapped yet")
+	flags.StringVar(&env.ResourceID, "resource", "", "Shared Resource UUID or identity for slot-attached requirements whose slot is not mapped yet")
 	flags.StringVar(&env.Like, "like", "", "Copy provider and backend namespace from this binding (alias or UUID)")
 	flags.StringVar(&env.Alias, "alias", "", "New SecretBinding alias (single field; defaults to the requirement name)")
 	flags.StringVar(&env.ProviderProfile.Provider, "provider", "", "Secret provider name")

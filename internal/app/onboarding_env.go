@@ -175,7 +175,13 @@ func planEnvImport(ctx context.Context, q taskReader, loc configurationLocation,
 	}
 	var resource *Resource
 	if in.ResourceID != "" {
-		r, err := loadMappedResource(ctx, q, in.ResourceID)
+		// Like profile map-resource, --resource takes a UUID or an identity
+		// that names one Resource in the Project.
+		id, err := resourceRef(ctx, q, loc.project.ID, in.ResourceID)
+		if err != nil {
+			return out, err
+		}
+		r, err := loadMappedResource(ctx, q, id)
 		if err != nil {
 			return out, err
 		}
@@ -293,8 +299,8 @@ func (in EnvImport) validate() error {
 	if len(in.Fields) > 1 && (in.Requirement != "" || in.Alias != "" || in.Locator.Key != "") {
 		return Fail("usage", "--requirement, --alias and --key apply to a single field; several fields map by variable name")
 	}
-	if in.ResourceID != "" && !validUUID(in.ResourceID) {
-		return Fail("usage", "--resource takes a shared Resource UUID")
+	if in.ResourceID != "" && strings.TrimSpace(in.ResourceID) == "" {
+		return Fail("usage", "--resource takes a shared Resource UUID or identity")
 	}
 	if in.Locator.EntryID != "" {
 		return Fail("usage", "env import creates named entries; choose a backend project, environment, path and key")
@@ -422,7 +428,12 @@ func (a App) ImportOnboardingEnv(ctx context.Context, selector, cwd, path string
 			}
 			receipt.Imports = append(receipt.Imports, result)
 		}
-		return saveSecretMappings(ctx, c, current.profileID, scope, current.cfg)
+		if err := saveSecretMappings(ctx, c, current.profileID, scope, current.cfg); err != nil {
+			return err
+		}
+		// Shared bindings and the Profile changed: queue them for sync in the
+		// same transaction, as mutateCatalog does.
+		return queueChanges(ctx, c)
 	})
 	if err != nil {
 		return nil, Fail("env-catalog-commit-failed", "provider entries are present but catalog commit could not be confirmed; check secret status and use a fresh --recover preview for any mapping that is missing")

@@ -39,7 +39,7 @@ func secretCommands(ctx context.Context, invoke func(func(app.App) (any, error))
 
 	status := &cobra.Command{Use: "status <task> <requirement>", Short: "Check one explicitly mapped credential on this device", Args: cobra.ExactArgs(2)}
 	var statusProfiles []string
-	status.Flags().StringArrayVar(&statusProfiles, "profile", nil, "Profile (defaults to this checkout's selected Profile)")
+	status.Flags().StringArrayVar(&statusProfiles, "profile", nil, "Profile (defaults to this checkout's selected Profile, then the Profile named default)")
 	status.RunE = func(cmd *cobra.Command, args []string) error {
 		return invoke(func(a app.App) (any, error) {
 			profile, err := explicitProfile(statusProfiles)
@@ -59,7 +59,7 @@ func secretCommands(ctx context.Context, invoke func(func(app.App) (any, error))
 	var change app.SecretBindingChange
 	var bindProfiles, bindingIDs []string
 	flags := bind.Flags()
-	flags.StringArrayVar(&bindProfiles, "profile", nil, "Profile (defaults to this checkout's selected Profile)")
+	flags.StringArrayVar(&bindProfiles, "profile", nil, "Profile (defaults to this checkout's selected Profile, then the Profile named default)")
 	flags.StringArrayVar(&bindingIDs, "binding", nil, "Existing shared SecretBinding UUID")
 	flags.StringVar(&change.Like, "like", "", "Copy provider and backend namespace from this binding (alias or UUID)")
 	flags.StringVar(&change.Alias, "alias", "", "New binding's logical alias (defaults to the requirement name)")
@@ -98,7 +98,7 @@ func secretCommands(ctx context.Context, invoke func(func(app.App) (any, error))
 	}
 	unmap := &cobra.Command{Use: "unmap <task> <requirement>", Short: "Remove an explicit credential mapping from a Profile", Args: cobra.ExactArgs(2)}
 	var unmapProfiles []string
-	unmap.Flags().StringArrayVar(&unmapProfiles, "profile", nil, "Profile (defaults to this checkout's selected Profile)")
+	unmap.Flags().StringArrayVar(&unmapProfiles, "profile", nil, "Profile (defaults to this checkout's selected Profile, then the Profile named default)")
 	unmap.RunE = func(cmd *cobra.Command, args []string) error {
 		return invoke(func(a app.App) (any, error) {
 			profile, err := explicitProfile(unmapProfiles)
