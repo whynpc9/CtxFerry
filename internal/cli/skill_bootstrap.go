@@ -16,13 +16,13 @@ func skillBootstrapCommand(ctx context.Context, invoke func(func(app.App) (any, 
 		var target, preview string
 		cmd := &cobra.Command{
 			Use:   action,
-			Short: "Preview changes to the CtxFerry Skill and global instructions",
+			Short: "Preview changes to the CtxFerry Skill and any managed instructions",
 			Args:  cobra.NoArgs,
 			RunE: invoke(func(a app.App) (any, error) {
 				return a.BootstrapAgentEntry(ctx, target, action, preview)
 			}),
 		}
-		cmd.Flags().StringVar(&target, "target", "", "User-level target: codex or claude-code")
+		cmd.Flags().StringVar(&target, "target", "", "User-level target: codex, claude-code, cursor, or pi")
 		cmd.Flags().StringVar(&preview, "preview", "", "Apply the token from the current preview")
 		group.AddCommand(cmd)
 	}

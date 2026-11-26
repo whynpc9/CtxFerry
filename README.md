@@ -530,25 +530,36 @@ directory and local version cache retain displaced data.
 
 ### Global agent entry
 
-After `ctxferry init`, preview the built-in `ctxferry` Skill and the small
-global instruction block for one agent:
+After `ctxferry init`, preview and install the built-in `ctxferry` Skill:
 
 ```sh
 ctxferry skill bootstrap install --target codex
 ctxferry skill bootstrap install --target codex --preview <token-from-preview>
 ```
 
-Use `--target claude-code` for Claude Code. The Skill uses the user-level
-targets above. The instruction block goes in `~/.codex/AGENTS.md` (or
+Use `--target cursor` for Cursor or `--target pi` for Pi. They discover the
+Skill from `~/.cursor/skills/ctxferry/SKILL.md` and
+`~/.pi/agent/skills/ctxferry/SKILL.md`, respectively. Pi uses
+`$PI_CODING_AGENT_DIR/skills/ctxferry/SKILL.md` when configured. Both targets
+install the Skill only. The targets apply to `skill bootstrap`.
+
+Use `--target claude-code` for Claude Code. Codex and Claude Code also manage
+an instruction block. The block goes in `~/.codex/AGENTS.md` (or
 `$CODEX_HOME/AGENTS.md`) for Codex, using a nonempty `AGENTS.override.md`
 when present. For Claude Code it goes in `~/.claude/CLAUDE.md` (or
 `$CLAUDE_CONFIG_DIR/CLAUDE.md`). The preview shows the proposed
 changes and CtxFerry's text without exposing your existing instructions.
 Use `--format json` to read the token from `data.preview`.
 
+For other agents that read repository instructions, add a line to your project's
+`AGENTS.md` telling the agent to run `ctxferry context show --format json` from
+the checkout when it needs project context. This works with shell access to the
+CLI. No MCP server configuration is required.
+
 Repeat install to verify the entry or preview changes again. A complete
-installation reports `unchanged`. If the files change between preview and
-apply, run a fresh preview. To remove the entry, preview and apply in the same
+installation reports `unchanged`. To refresh an older built-in Skill, preview
+and confirm uninstall, then preview and confirm install. If files change between
+preview and apply, run a fresh preview. To remove the entry, preview and apply in the same
 way with `skill bootstrap uninstall`. Uninstall preserves other instruction
 text and files. An edited managed block, edited Skill or unowned name collision
 is reported for manual resolution. Ownership and recovery records stay local

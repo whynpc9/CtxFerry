@@ -122,21 +122,38 @@ update. Pin conflicts require an explicit choice through
 
 ### Add the global CtxFerry agent entry
 
-The built-in bootstrap previews a short `ctxferry` Skill and a managed block in
-the selected agent's global instruction file:
+The built-in bootstrap previews the `ctxferry` Skill for the selected agent.
 
 ```sh
 ctxferry skill bootstrap install --target codex --format json
 ctxferry skill bootstrap install --target codex --preview <token-from-preview> --format json
 ```
 
+| `--target` | User Skill location |
+| --- | --- |
+| `codex` | `~/.agents/skills/ctxferry/SKILL.md` |
+| `claude-code` | `~/.claude/skills/ctxferry/SKILL.md` or `$CLAUDE_CONFIG_DIR/skills/ctxferry/SKILL.md` |
+| `cursor` | `~/.cursor/skills/ctxferry/SKILL.md` |
+| `pi` | `~/.pi/agent/skills/ctxferry/SKILL.md` or `$PI_CODING_AGENT_DIR/skills/ctxferry/SKILL.md` |
+
+Cursor and Pi use their native Skill discovery. Open a new agent session after
+installing. These targets install only the built-in Skill and are available to
+`skill bootstrap`.
+
+For Codex and Claude Code, bootstrap also adds a managed instruction block.
 For Codex, the instruction file is `~/.codex/AGENTS.md` (or
 `$CODEX_HOME/AGENTS.md`), using a nonempty `AGENTS.override.md` when present.
 For Claude Code, use `--target claude-code`; the file is
 `~/.claude/CLAUDE.md` or `$CLAUDE_CONFIG_DIR/CLAUDE.md`. The preview preserves
 existing instructions and exposes only CtxFerry's proposed text. Use
 `skill bootstrap uninstall` with the same preview-then-apply pattern to remove
-only the managed entry.
+only the managed entry. To refresh an older built-in Skill, uninstall and then
+install it with a fresh preview for each action.
+
+For another agent with shell access that reads repository instructions, add a
+project `AGENTS.md` line telling it to run `ctxferry context show --format json`
+from the current checkout when it needs project context. The CLI workflow needs
+no MCP configuration.
 
 ## Register and retrieve an Artifact
 

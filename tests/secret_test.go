@@ -82,7 +82,6 @@ func TestSecretBindingsAcrossDevices(t *testing.T) {
 		return h.Run(t, "profile", "map-resource", "dev", task, "db", id, "--format=json")
 	}
 	failure(t, mapResource(a, taskID, localID), "invalid-reference")
-	mapResource(a, taskID, resourceID).Success(t)
 
 	p := provider.Profile{Provider: "fake", Name: "team", Method: "machine"}
 	ref := provider.Locator{ProjectID: "backend", Environment: "sandbox", Path: "/apps", Key: "BACKEND_DB"}
@@ -105,9 +104,20 @@ func TestSecretBindingsAcrossDevices(t *testing.T) {
 	}
 	secretFacts(t, status(a, "checkout", taskID), "profile-required")
 	failure(t, status(a, "checkout", taskID, "--profile=dev", "--profile=other"), "ambiguous-profile")
-	missing := secretFacts(t, status(a, "checkout", taskID, "--profile=dev"), "binding-missing")
+	// A named slot appears in both errors. The message identifies which mapping is missing.
+	withoutResource := status(a, "checkout", taskID, "--profile=dev")
+	if facts := secretFacts(t, withoutResource, "binding-missing"); facts["resourceSlot"] != "db" ||
+		!strings.HasPrefix(withoutResource.JSON(t).Error.Message, "Profile has no Resource mapping") {
+		t.Fatal(withoutResource)
+	}
+	mapResource(a, taskID, resourceID).Success(t)
+	withoutBinding := status(a, "checkout", taskID, "--profile=dev")
+	missing := secretFacts(t, withoutBinding, "binding-missing")
 	if missing["task"] != "check" || missing["requirement"] != "login" || missing["resourceSlot"] != "db" {
 		t.Fatal(missing)
+	}
+	if !strings.HasPrefix(withoutBinding.JSON(t).Error.Message, "Profile has no SecretBinding mapping") {
+		t.Fatal(withoutBinding)
 	}
 	a.Run(t, "profile", "select", "dev", "--format=json").Success(t)
 	newBinding := func(h *testcli.Harness, task, alias string, loc provider.Locator, extra ...string) testcli.Result {

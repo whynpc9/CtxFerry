@@ -66,6 +66,13 @@ func skillTargetHome(target string) (string, error) {
 	default:
 		return "", Fail("usage", "target must be codex or claude-code")
 	}
+	if target == "claude-code" {
+		return agentConfigHome("CLAUDE_CONFIG_DIR", ".claude")
+	}
+	return agentConfigHome("", ".agents")
+}
+
+func agentConfigHome(env, relative string) (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
@@ -73,17 +80,13 @@ func skillTargetHome(target string) (string, error) {
 	if !filepath.IsAbs(home) {
 		return "", Fail("invalid-path", "the user home must be an absolute path")
 	}
-	base := filepath.Join(home, ".agents")
-	if target == "claude-code" {
-		base = filepath.Join(home, ".claude")
-		if config := os.Getenv("CLAUDE_CONFIG_DIR"); config != "" {
-			if !filepath.IsAbs(config) {
-				return "", Fail("invalid-path", "CLAUDE_CONFIG_DIR must be absolute")
-			}
-			base = config
+	if config := os.Getenv(env); config != "" {
+		if !filepath.IsAbs(config) {
+			return "", Fail("invalid-path", env+" must be absolute")
 		}
+		return config, nil
 	}
-	return base, nil
+	return filepath.Join(home, relative), nil
 }
 
 // Resolve existing ancestors so a changed home or adapter symlink selects a

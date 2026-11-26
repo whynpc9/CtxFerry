@@ -1,11 +1,11 @@
 ---
 name: ctxferry
-description: Discover the current Project's context, resources, and registered Tasks with the CtxFerry CLI, and run Tasks that need credentials without seeing the values.
+description: Use the CtxFerry CLI to find context kept outside Git, look up project resources and registered Tasks, or run a Task that needs credentials without seeing their values. Use when asked about CtxFerry, a project handoff, or a command that needs a registered Task's credentials.
 ---
 
 # CtxFerry
 
-CtxFerry carries project context and credential references that do not belong in Git. Run every command from the current checkout and add `--format json` (one JSON object) so results are machine-readable. Each response has `ok`, `data`, and `error.code`.
+CtxFerry carries project context and credential references kept outside Git. Run from the current checkout. For queries with `--format json`, read `data` on success and `error.code`, `error.message`, and any `error.details` on failure. Execution uses `--format jsonl` as described below.
 
 ## Find context
 
@@ -18,23 +18,29 @@ Retrieve only what the work needs. Add `--sync` to a query when the context may 
 ## Run commands that need credentials
 
 - `ctxferry task list --format json` and `ctxferry task inspect <task> --format json` show registered Tasks, their command, and the environment variables they receive.
-- `ctxferry run <task> --format jsonl` runs a registered Task. It emits `start`, `stdout`/`stderr`, and a final `result` event with `exitCode`.
-- `ctxferry exec --task <task> --format jsonl -- <program> [args...]` runs your own command with a Task's credentials. It works only if the Task allows custom commands (`allowCustomCommand`).
-- `ctxferry secret status <task> <requirement> --format json` checks one credential on this device (bound, provider authenticated, entry retrievable) without revealing it.
+- `ctxferry run <task> --format jsonl` runs the registered command. In the final `result` event, read `exitCode` when `origin` is `child`, or `error.code` and `error.message` when `origin` is `control-plane`.
+- `ctxferry exec --task <task> --format jsonl -- <program> [args...]` runs your own command with a Task's credentials. Inspect the Task first and use `exec` only when `allowCustomCommand` is true. A Task with no registered command must allow custom commands to be used for execution.
+- `ctxferry secret status <task> <requirement> --format json` checks one credential on this device without revealing it. Use the requirement's name from `task inspect`. Read `bound`, `authenticated`, and `entryRetrievable` separately in `data` or `error.details`. A standalone credential has no Resource slot. Its `resourceReachable: null` is expected and needs no Resource mapping or probe.
+
+Credential availability and local Task trust are separate checks. A successful `secret status` does not confirm that the Task is enabled to run on this device.
 
 Credential values are delivered only to the child process as environment variables, and CtxFerry replaces them with `[REDACTED]` in the output it forwards. Never print, echo, encode, write to files, or copy credential values into your context, and never pass them as command arguments.
 
 ## When a human must act
 
-Some failures are device-local gates that only the person at this machine may clear. Do not work around them, and do not run the approval commands yourself. Stop, report the error code and message, and ask the human to run the command shown:
+Stop on a handoff error. Report its code and message and, when known, the Task, requirement and Profile. Ask the human to take the action below. Leave approval and configuration changes to them. A SecretBinding mapping belongs to the Project Profile. Provider authentication and execution trust are local to the device.
 
 | `error.code` | Ask the human to |
 | --- | --- |
 | `project-unbound` | bind this checkout: `ctxferry project bind .`, or on a device that joined a synced workspace, attach it to the existing Project with `ctxferry project bind . --project <slug> --repository <repository-uuid>` so no duplicate Project is created |
-| `authentication-required`, `credential-storage-unavailable` | sign in to the provider: `ctxferry provider login <provider> --provider-profile <name> --method <method>` |
+| `authentication-required` | sign in to the provider: `ctxferry provider login <provider> --provider-profile <name> --method <method>` |
+| `credential-storage-unavailable` | restore access to this device's secure credential store and retry `ctxferry secret status <task> <requirement> --format json` |
 | `execution-definition-changed` (including `details.state: not-enabled`) | review and enable the Task on this device: `ctxferry task trust preview <task>`, then `ctxferry task trust enable <task> --preview <token>` |
 | `profile-required`, `profile-not-found` | choose a Profile: `ctxferry profile select <name>` |
-| `binding-missing`, `secret-unavailable` | map or fix the credential: `ctxferry secret bind <task> <requirement> ...` |
+| `binding-missing` with `Profile has no Resource mapping` | map the correct Resource with `ctxferry profile map-resource <profile> <task> <slot> <resource-uuid>`, then recheck credential status |
+| `binding-missing` with `Profile has no SecretBinding mapping` | map the named credential with `ctxferry secret bind <task> <requirement> --profile <profile> ...`. A named Resource slot can already be mapped |
+| other `binding-missing` messages | report the exact message and ask the human to inspect the existing Profile mappings before changing them |
+| `secret-unavailable` | check the exact provider entry and the provider account's access to it, then rerun `ctxferry secret status <task> <requirement> --format json` |
 | `custom-command-not-allowed` | use `ctxferry run <task>`, or ask whether the Task should allow custom commands |
 | `command-required` | the Task has no command of its own: use `ctxferry exec --task <task> -- <program> [args...]` |
 
