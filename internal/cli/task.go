@@ -25,7 +25,7 @@ func taskCommand(ctx context.Context, invoke func(func(app.App) (any, error)) fu
 	add.Flags().StringVar(&spec.Purpose, "purpose", "", "Task purpose")
 	add.Flags().StringArrayVar(&spec.Inputs, "input", []string{}, "Describe a Task input (repeatable)")
 	add.Flags().StringArrayVar(&slots, "slot", nil, "Resource slot as name:kind:stage (repeatable)")
-	add.Flags().StringArrayVar(&creds, "credential", nil, "Credential requirement as name:slot:purpose:type:ENV (repeatable)")
+	add.Flags().StringArrayVar(&creds, "credential", nil, "Credential requirement as name:slot:purpose:type:ENV; leave slot empty for a standalone credential (repeatable)")
 	add.Flags().StringArrayVar(&resources, "resource-slot", nil, "JSON object with name, kind and stage (repeatable)")
 	add.Flags().StringArrayVar(&credentials, "credential-requirement", nil, "JSON object with name, resourceSlot, purpose, type and env (repeatable)")
 	add.Flags().StringVar(&spec.MembershipID, "membership", "", "Repository membership UUID (inferred from the current checkout when unambiguous)")
@@ -98,7 +98,7 @@ or inputs alone keeps the enabled state.`}
 	cmd.Flags().StringVar(&purpose, "purpose", "", "Task purpose")
 	cmd.Flags().StringArrayVar(&inputs, "input", nil, "Describe a Task input (repeatable, replaces all inputs)")
 	cmd.Flags().StringArrayVar(&slots, "slot", nil, "Resource slot as name:kind:stage (repeatable, replaces all slots)")
-	cmd.Flags().StringArrayVar(&creds, "credential", nil, "Credential requirement as name:slot:purpose:type:ENV (repeatable, replaces all requirements)")
+	cmd.Flags().StringArrayVar(&creds, "credential", nil, "Credential requirement as name:slot:purpose:type:ENV; leave slot empty for a standalone credential (repeatable, replaces all requirements)")
 	cmd.Flags().StringArrayVar(&resources, "resource-slot", nil, "JSON Resource slot (repeatable, replaces all slots)")
 	cmd.Flags().StringArrayVar(&credentials, "credential-requirement", nil, "JSON credential requirement (repeatable, replaces all requirements)")
 	cmd.Flags().StringVar(&membership, "membership", "", "Repository membership UUID")
@@ -243,7 +243,16 @@ Give the command after --, as with exec:
 or to the Project's only membership. Declare what the Task needs with
 --slot name:kind:stage and --credential name:slot:purpose:type:ENV; the JSON
 forms --resource-slot and --credential-requirement remain available for
-values that contain colons.`
+values that contain colons.
+
+Leave the slot empty for a standalone credential that no Resource backs, such
+as an API key:
+
+  ctxferry task add agent --purpose "Coding agent" --storage shared \
+    --credential openai::model-api:api-key:OPENAI_API_KEY --allow-custom-command
+
+A Task with --allow-custom-command may omit its command. It then only lends its
+credentials to ctxferry exec --task <name> -- <program>, and run refuses it.`
 
 // commandArgs accepts one name, optionally followed by -- and a command.
 func commandArgs(cmd *cobra.Command, args []string) error {

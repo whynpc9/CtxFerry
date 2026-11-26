@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -32,6 +33,22 @@ func (p *envImportProvider) Import(ctx context.Context, profile provider.Profile
 		return err
 	}
 	return p.afterCreate
+}
+
+type envImportResult struct {
+	Field     string
+	Recovered bool
+	Binding   struct{ ID, Alias, ResourceID, Purpose, Type string }
+}
+
+// importResult returns the only import of a single-field receipt.
+func importResult(t *testing.T, r testcli.Response) envImportResult {
+	t.Helper()
+	var imports []envImportResult
+	if err := json.Unmarshal(r.Data["imports"], &imports); err != nil || len(imports) != 1 {
+		t.Fatalf("expected one import: %s", r.Data["imports"])
+	}
+	return imports[0]
 }
 
 func TestOnboardingEnvImport(t *testing.T) {
@@ -123,13 +140,17 @@ func TestOnboardingEnvImport(t *testing.T) {
 	}
 	missing("checkout", taskID)
 	failure(t, confirm(main), "env-provider-collision")
-	failure(t, confirm(append(main, "--field=OTHER_NAME", "--recover")), "env-recovery-mismatch")
+	otherField := slices.Clone(main)
+	otherField[slices.Index(otherField, "--field=CTXFERRY_IMPORT_TEST")] = "--field=OTHER_NAME"
+	failure(t, confirm(append(otherField, "--recover")), "env-recovery-mismatch")
+	// Several fields with one named requirement, alias or key are refused.
+	failure(t, run(append(main, "--field=OTHER_NAME")...), "usage")
 	missing("checkout", taskID)
 	recovered := confirm(append(main, "--recover")).Success(t)
-	var binding struct{ ID, ResourceID, Purpose, Type string }
-	if err := json.Unmarshal(recovered.Data["binding"], &binding); err != nil || binding.ID == "" ||
-		binding.ResourceID != resourceID || binding.Purpose != "runtime" || binding.Type != "connection-string" ||
-		string(recovered.Data["recovered"]) != "true" || fake.calls != 2 {
+	result := importResult(t, recovered)
+	binding := result.Binding
+	if binding.ID == "" || binding.ResourceID != resourceID || binding.Purpose != "runtime" || binding.Type != "connection-string" ||
+		!result.Recovered || fake.calls != 2 {
 		t.Fatal("recovery did not produce the selected binding without another write")
 	}
 	failure(t, run(main...), "secret-mapping-exists")
@@ -162,14 +183,14 @@ func TestOnboardingEnvImport(t *testing.T) {
 	missing("peer", peerTask)
 	exec("DROP TRIGGER env_test_fail")
 	peerBinding := confirm(append(peer, "--recover")).Success(t)
-	if bytes.Contains(peerBinding.Data["binding"], []byte(binding.ID)) || fake.calls != 3 {
+	if importResult(t, peerBinding).Binding.ID == binding.ID || fake.calls != 3 {
 		t.Fatal("same-name field reused another Project's binding or retried a provider write")
 	}
 
 	// A fresh target follows the regular create-and-commit path.
 	h.Run(t, "profile", "create", "second", "--format=json").Success(t)
 	second := confirm(append(args("peer", peerTask, resourceID, "SECOND_ENTRY", p.Method, selected), "--profile=second")).Success(t)
-	if string(second.Data["recovered"]) != "false" || fake.calls != 4 {
+	if importResult(t, second).Recovered || fake.calls != 4 {
 		t.Fatal("regular import did not commit")
 	}
 	if contents, err := os.ReadFile(selected); err != nil || string(contents) != plain {

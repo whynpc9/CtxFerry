@@ -333,6 +333,28 @@ func chooseProfile(ctx context.Context, q rowQuerier, loc configurationLocation,
 	}, nil
 }
 
+// defaultProfile names the Profile that credential and Resource resolution
+// falls back to when none is given or selected.
+const defaultProfile = "default"
+
+// executionProfile chooses the Profile for commands that resolve credentials
+// or Resource slots. Without an explicit or selected Profile it falls back to
+// the Project's Profile named default, when one exists. The fallback is by
+// name, so adding another Profile never changes which one is used.
+func executionProfile(ctx context.Context, q rowQuerier, loc configurationLocation, name string) (*SelectedProfile, error) {
+	p, err := chooseProfile(ctx, q, loc, name)
+	if err != nil || p != nil {
+		return p, err
+	}
+	id := configID(loc.workspace, Scope{"project", loc.project.ID}, defaultProfile)
+	var exists bool
+	if err := q.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM configurations WHERE id=?)", id).Scan(&exists); err != nil || !exists {
+		return nil, err
+	}
+	return &SelectedProfile{Name: defaultProfile, ID: id,
+		Origin: ConfigOrigin{Layer: layerProfile, Source: "default", Storage: "local-only"}}, nil
+}
+
 func (a App) ExplainConfiguration(ctx context.Context, selector, cwd, name string) (ConfigurationExplanation, error) {
 	out := ConfigurationExplanation{Source: "local-store", Freshness: "unknown", Values: []EffectiveValue{}}
 	db, err := store.Open(ctx, a.DataDir, false)

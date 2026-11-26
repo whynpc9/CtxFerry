@@ -8,6 +8,42 @@ CtxFerry stores and synchronizes credential **references**, not credential
 values. Each device authenticates to its own provider profile, and each device
 and checkout approves the execution definition before a Task receives values.
 
+## Standalone credentials: API keys
+
+An API key such as `OPENAI_API_KEY` is not tied to a service CtxFerry can route
+to or probe. Declare it as a **standalone** requirement by leaving the slot
+empty. It needs no Resource, slot mapping or `resource check`:
+
+```sh
+ctxferry task add agent --purpose 'Coding agent' --storage shared \
+  --credential openai::model-api:api-key:OPENAI_API_KEY \
+  --credential anthropic::model-api:api-key:ANTHROPIC_API_KEY \
+  --allow-custom-command
+ctxferry secret bind agent openai --provider infisical --provider-profile team \
+  --method universal-auth --backend-project <infisical-project-id> --environment dev
+ctxferry secret bind agent anthropic --like openai
+```
+
+A new binding's alias defaults to the requirement name, its path to `/`, and
+its key to the delivery variable. `--like <alias-or-uuid>` copies the provider,
+provider profile, method, backend project, environment and path from a binding
+the Project can see; flags you pass override the copied values.
+
+Without `--profile`, credential commands use the checkout's selected Profile,
+then the Project's Profile named `default`. When neither exists and the Project
+has no Profiles, `secret bind` creates `default`, so a single-environment
+Project needs no `profile create` or `profile select`.
+
+Because the Task allows custom commands and has no command of its own, it only
+lends its credentials to `exec`; `run` stops with `command-required`. Then
+authenticate and enable trust as below and run, for example,
+`ctxferry exec --task agent -- python agent.py`.
+
+A standalone requirement accepts only a binding without a Resource, and a
+requirement with a slot only a binding for its mapped Resource. Reusing a
+binding across Tasks or Projects still needs an explicit `--binding <uuid>`.
+See [ADR 0001](https://github.com/whynpc9/CtxFerry/blob/main/docs/adr/0001-standalone-credentials.md) for the design.
+
 ## Declare the requirement and Resource mapping
 
 Start with the Resource and Git membership setup in
@@ -140,7 +176,7 @@ Treat the returned facts independently:
 | `bound` | The requirement has an explicit compatible mapping |
 | `authenticated` | The selected provider authentication check succeeded; `null` means unknown |
 | `entryRetrievable` | The exact entry could be read; no value is returned |
-| `resourceReachable` | This device's latest matching `resource check` observation, not a new probe |
+| `resourceReachable` | This device's latest matching `resource check` observation, not a new probe; always `null` for a standalone credential |
 | `authentication` and `capabilities` | Method-specific login details and offline or execution capabilities |
 
 A failure can retain these facts in `error.details` when the Task and Project

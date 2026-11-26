@@ -23,12 +23,20 @@ type DesktopCredentialTask struct {
 
 type DesktopCredentialRequirement struct {
 	Name, Purpose, Type string
+	// ResourceSlot is empty for a standalone requirement.
+	ResourceSlot string
 }
 
 type DesktopCredentialSlot struct {
-	Status   SecretStatus
-	Resource Resource
-	Reusable []SecretBinding
+	Status SecretStatus
+	// Standalone requirements have no Resource slot; Resource is then empty
+	// and Reusable lists standalone bindings only.
+	Standalone bool
+	Resource   Resource
+	Reusable   []SecretBinding
+	// SourceProjects maps each reusable binding's Project ID to its slug, so
+	// a reference from another Project is named before it is confirmed.
+	SourceProjects map[string]string
 	// Issue codes intentionally exclude raw backend, SQL and CLI messages.
 	Issue string
 
@@ -69,7 +77,7 @@ func (a App) DesktopCredentials(ctx context.Context, project string) (DesktopCre
 	for _, task := range tasks {
 		entry := DesktopCredentialTask{ID: task.ID, Name: task.Name}
 		for _, req := range task.CredentialRequirements {
-			entry.Slots = append(entry.Slots, DesktopCredentialRequirement{req.Name, req.Purpose, req.Type})
+			entry.Slots = append(entry.Slots, DesktopCredentialRequirement{req.Name, req.Purpose, req.Type, req.ResourceSlot})
 		}
 		if len(entry.Slots) > 0 {
 			out.Tasks = append(out.Tasks, entry)
@@ -122,7 +130,7 @@ func readDesktopSecretSlot(ctx context.Context, tx *sql.Tx, loc configurationLoc
 	if !ok {
 		return Fail("incompatible", "Task does not declare this credential requirement")
 	}
-	out.Status.ResourceSlot = req.ResourceSlot
+	out.Status.ResourceSlot, out.Standalone = req.ResourceSlot, req.standalone()
 	if err := requireNoBindingConflict(ctx, tx, task.ID); err != nil {
 		return err
 	}
@@ -138,10 +146,23 @@ func readDesktopSecretSlot(ctx context.Context, tx *sql.Tx, loc configurationLoc
 	if err != nil {
 		return err
 	}
+	out.SourceProjects = map[string]string{}
+	for _, b := range out.Reusable {
+		if _, seen := out.SourceProjects[b.Scope.ID]; seen {
+			continue
+		}
+		var slug string
+		if err := tx.QueryRowContext(ctx, "SELECT slug FROM projects WHERE id=?", b.Scope.ID).Scan(&slug); err != nil {
+			return err
+		}
+		out.SourceProjects[b.Scope.ID] = slug
+	}
 	i := slices.IndexFunc(cfg.SecretMappings, func(m SecretMapping) bool { return m.TaskID == task.ID && m.Requirement == req.Name })
 	return readSecretMapping(ctx, tx, cfg, req, resource, i, &out.Status)
 }
 
+// reusableDesktopBindings lists bindings the requirement could reuse: those of
+// the mapped Resource, or for a standalone requirement those with no Resource.
 func reusableDesktopBindings(ctx context.Context, tx *sql.Tx, project, resource string, req CredentialRequirement) ([]SecretBinding, error) {
 	rows, err := tx.QueryContext(ctx, "SELECT metadata"+liveSecretBindings+`
 		AND json_extract(metadata,'$.payload.resourceId')=?

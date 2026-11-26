@@ -6,6 +6,28 @@ title: 凭据引用与执行信任
 
 CtxFerry 存储和同步凭据**引用**，而不是凭据值。每台设备分别向自己的 Provider Profile 进行身份验证，每台设备和每个 Checkout 都要在 Task 获得值之前批准执行定义。
 
+## 独立凭据：API 密钥
+
+`OPENAI_API_KEY` 这类 API 密钥并不对应 CtxFerry 可以路由或探测的服务。将槽位留空，即可把它声明为**独立**（standalone）凭据需求。它不需要 Resource、槽位映射或 `resource check`：
+
+```sh
+ctxferry task add agent --purpose 'Coding agent' --storage shared \
+  --credential openai::model-api:api-key:OPENAI_API_KEY \
+  --credential anthropic::model-api:api-key:ANTHROPIC_API_KEY \
+  --allow-custom-command
+ctxferry secret bind agent openai --provider infisical --provider-profile team \
+  --method universal-auth --backend-project <infisical-project-id> --environment dev
+ctxferry secret bind agent anthropic --like openai
+```
+
+新绑定的别名默认为需求名称，路径默认为 `/`，键默认为交付变量名。`--like <alias-or-uuid>` 会从 Project 可见的某个绑定复制 Provider、Provider profile、方法、后端项目、环境和路径；显式传入的参数优先。
+
+未指定 `--profile` 时，凭据命令先使用当前检出目录选择的 Profile，其次使用 Project 中名为 `default` 的 Profile。如果两者都不存在且 Project 没有任何 Profile，`secret bind` 会创建 `default`，因此单环境 Project 无需执行 `profile create` 或 `profile select`。
+
+由于该 Task 允许自定义命令且自身没有命令，它只能把凭据提供给 `exec`；`run` 会以 `command-required` 停止。按下文完成身份验证并启用信任后，可以运行例如 `ctxferry exec --task agent -- python agent.py`。
+
+独立需求只接受没有 Resource 的绑定，带槽位的需求只接受其映射 Resource 的绑定。跨 Task 或 Project 复用绑定仍需显式传入 `--binding <uuid>`。设计细节见 [ADR 0001](https://github.com/whynpc9/CtxFerry/blob/main/docs/adr/0001-standalone-credentials.md)。
+
 ## 声明要求和 Resource 映射
 
 从 [Resource 和 Task](tasks-and-resources.md) 中的 Resource 与 Git membership 设置开始。以下 Task 声明名为 `db` 的 Resource 槽位和名为 `login` 的凭据要求。后端键刻意独立于交付变量 `DATABASE_URL`。
@@ -92,7 +114,7 @@ ctxferry secret status integration-check login --profile development --format js
 | `bound` | 要求具有显式且兼容的映射 |
 | `authenticated` | 选定 Provider 身份验证检查成功；`null` 表示未知 |
 | `entryRetrievable` | 精确条目可以读取；不返回值 |
-| `resourceReachable` | 此设备最近一次匹配的 `resource check` 观察，而不是新探测 |
+| `resourceReachable` | 此设备最近一次匹配的 `resource check` 观察，而不是新探测；独立凭据始终为 `null` |
 | `authentication` 和 `capabilities` | 方法特定的登录详情，以及离线或执行能力 |
 
 只要能够评估 Task 和 Project，失败仍可能在 `error.details` 中保留这些事实。`binding-missing`、`binding-conflict`、`incompatible`、`authentication-required` 和 `secret-unavailable` 表示不同的缺失条件。每种状态的下一项检查请参阅[诊断](diagnostics.md)。

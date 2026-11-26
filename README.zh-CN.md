@@ -75,7 +75,7 @@ Start 将选定目录保存在设备的本地 catalog 中。Status 使用本地�
 
 运行 `ctxferry onboard scan-env ./.env --project api` 可以列出变量名和该 Project 中候选的 Task。候选项是具有凭据要求的共享 Task，且其交付变量与文件中的字段匹配。对于尚无要求的 Task，使用 `task add` 或 `task update` 声明要求。每个字段都只是提示，你需要独立选择要求和后端键。
 
-选择一个现有 Profile、共享 Task 和兼容的共享 Resource。确认前，请登录选定设备的 Provider Profile。运行以下命令预览精确映射，然后带上 `--confirm <preview-id>` 再次运行。
+选择一个共享 Task。附属于 Resource 槽位的需求还需要兼容的共享 Resource：使用 Profile 中该槽位的现有映射，或传入 `--resource <uuid>`。API 密钥这类独立需求不需要 Resource。Profile 的默认规则与 `secret bind` 相同。确认前，请登录选定设备的 Provider Profile。运行以下命令预览精确映射，然后带上 `--confirm <preview-id>` 再次运行。
 
 ```sh
 ctxferry onboard import-env ./.env --project api --profile dev --task integration \
@@ -84,13 +84,20 @@ ctxferry onboard import-env ./.env --project api --profile dev --task integratio
   --backend-project <infisical-project-id> --environment dev --path /api --key API_DB_URL
 ```
 
+重复 `--field` 可一次导入多个字段。每个字段映射到交付变量同名的需求，并获得各自的绑定：别名为需求名称，键为字段名。`--like <alias>` 会从现有绑定复制 Provider 和后端命名空间：
+
+```sh
+ctxferry onboard import-env ./.env --project api --task agent \
+  --field OPENAI_API_KEY --field ANTHROPIC_API_KEY --like openai
+```
+
 解析器接受 UTF-8 单行 `NAME=value` 赋值、可选的 `export`、空行、注释以及成对的单引号或双引号。它拒绝重复名称（包括仅大小写不同的名称）、多行值、shell 语法和展开。单引号内可以将 shell 字符作为字面数据。命令只读取指定的普通文件，不会修改它。预览 ID 确认文件路径和映射元数据。导入在确认时会重新读取并验证选定文件。
 
 导入支持 Infisical US Cloud 的 Universal Auth、精确文件夹和键，以及在其中创建共享 Secret 的权限。它使用 [v4 create endpoint](https://infisical.com/docs/api-reference/endpoints/secrets/create)。带有首尾空白或 Infisical 引用语法的值会被拒绝，因为端点可能转换它们。其他 Provider 和身份验证方法需要声明支持创建导入的适配器。
 
-每次确认一个字段。一次成功调用会同时提交 Project 的 SecretBinding 和两个 Profile 映射。已存在的后端键或凭据映射会阻止普通导入。如果后续字段失败，先前已完成字段的映射会保留。Catalog、同步记录和回执只携带经过批准的元数据与引用。
+一个预览 ID 覆盖整批字段。确认时会依次创建每个 Provider 条目，然后在一个 catalog 事务中提交所有 SecretBinding 和 Profile 映射。已存在的后端键或凭据映射会阻止普通导入。如果某个 Provider 步骤中途失败，错误会在 `error.details.created` 中列出已创建条目的字段；请对每个字段使用 `--recover=<field>` 重新预览。Catalog、同步记录和回执只携带经过批准的元数据与引用。
 
-如果 Provider 结果不确定、批准待处理，或者创建后本地 catalog 提交失败，请用 `secret status` 检查映射。对于缺失的映射，使用 `--recover` 再次运行相同导入命令以获得新预览，然后确认。恢复需要 read-value 权限，并在内存中将精确的现有条目与源字段比较后才保存映射。条目缺失或不同则不会改动 catalog。普通导入和恢复都不会改变现有 Provider 条目。
+如果 Provider 结果不确定、批准待处理，或者创建后本地 catalog 提交失败，请用 `secret status` 检查映射。对于缺失的映射，使用 `--recover`（所有字段）或 `--recover=<field>`（可重复）再次运行相同导入命令以获得新预览，然后确认。恢复需要 read-value 权限，并在内存中将精确的现有条目与源字段比较后才保存映射。条目缺失或不同则不会改动 catalog。普通导入和恢复都不会改变现有 Provider 条目。
 
 Project 按以下顺序识别：显式 `--project`、最长本地路径绑定、本地绑定的 Git common directory 与 membership 范围，最后是远程候选项。新 worktree 继承包含它的最深仓库相对范围。相同范围指向不同 Project 时保持未绑定。直接路径绑定始终优先，即使存在更窄的推断范围。远程匹配始终保持未绑定，即使只有一个候选项。未绑定检查以退出码 1 和 `project-unbound` 结束；JSON 在 `error.details` 中包含解析结果和候选项，文本输出在 stderr 中列出候选项。
 
@@ -140,7 +147,22 @@ ctxferry run unit-tests --format jsonl
 
 ### 凭据引用
 
-注册 Task 要求并在 Profile 中映射其 Resource 槽位后，再创建绑定。绑定从该选择中取得 Resource、用途和类型。
+不对应 CtxFerry 可路由或探测服务的 API 密钥属于**独立**凭据。将槽位留空声明它并直接绑定，无需 Resource、槽位映射或 `resource check`：
+
+```sh
+ctxferry task add agent --purpose "Coding agent" --storage shared \
+  --credential openai::model-api:api-key:OPENAI_API_KEY \
+  --credential anthropic::model-api:api-key:ANTHROPIC_API_KEY --allow-custom-command
+ctxferry secret bind agent openai --provider infisical --provider-profile team \
+  --method universal-auth --backend-project <infisical-project-id> --environment dev
+ctxferry secret bind agent anthropic --like openai
+```
+
+新绑定的 `--alias` 默认为需求名称，`--path` 默认为 `/`，`--key` 默认为需求的交付变量。`--like <alias-or-uuid>` 从 Project 可见的绑定复制 Provider、Provider profile、方法、后端项目、环境和路径；显式参数优先。未指定 `--profile` 时，凭据命令先使用检出目录选择的 Profile，其次使用 Project 中名为 `default` 的 Profile；两者都不存在且 Project 没有任何 Profile 时，`secret bind` 和 `onboard import-env` 会创建 `default`。带 `--allow-custom-command` 注册的 Task 可以省略命令；此时 `run` 会拒绝它，它只把凭据提供给 `exec`。
+
+独立需求只接受没有 Resource 的绑定，带槽位的需求只接受其映射 Resource 的绑定。独立凭据的 `secret status` 中 `resourceReachable` 为 `null`。参见 [ADR 0001](docs/adr/0001-standalone-credentials.md)。
+
+对于对应某个服务的凭据，注册 Task 要求并在 Profile 中映射其 Resource 槽位后，再创建绑定。绑定从该选择中取得 Resource、用途和类型。
 
 ```sh
 ctxferry secret bind integration-check login --profile development \

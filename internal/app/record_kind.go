@@ -504,9 +504,14 @@ var secretBindingRecordKind = recordKind{
 		}
 		return nil
 	},
-	references:   noTaskDependencyErrors,
-	dependencies: func(r remoteRecord) []string { return []string{r.SecretBinding.ResourceID} },
-	install:      installEnvelope,
+	references: noTaskDependencyErrors,
+	dependencies: func(r remoteRecord) []string {
+		if r.SecretBinding.ResourceID == "" {
+			return nil
+		}
+		return []string{r.SecretBinding.ResourceID}
+	},
+	install: installEnvelope,
 	export: exportEnvelopeKind(secretBindingKind, "reference", func(r remoteRecord) error {
 		return validateSecretBinding(r.SecretBinding)
 	}),

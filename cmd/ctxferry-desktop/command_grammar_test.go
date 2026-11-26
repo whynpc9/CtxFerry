@@ -58,8 +58,24 @@ func TestDesktopCommandsMatchCLIGrammar(t *testing.T) {
 		t.Fatal("found no desktop commands")
 	}
 	// Commands built from a slice are covered by their builder's own test.
-	if spread != 1 {
+	if spread != 2 {
 		t.Fatalf("%d desktop commands are built from slices; give each a builder test", spread)
+	}
+}
+
+// An implicit default Profile leaves no selected Profile; the handoff must
+// never pass an empty --profile.
+func TestTrustPreviewCommandMatchesCLIGrammar(t *testing.T) {
+	for _, profile := range []string{"", "default", "staging"} {
+		args := trustPreviewArgs("8d7f0a7e-2f5b-4c4f-9a59-6f1c3a9d2e10", profile, "checkout")
+		for i, arg := range args {
+			if arg == "--profile" && args[i+1] == "" {
+				t.Errorf("%v: empty --profile", args)
+			}
+		}
+		if err := ctxcli.Validate(append(args, "--data-dir", "/data")); err != nil {
+			t.Errorf("%v: %v", args, err)
+		}
 	}
 }
 

@@ -154,6 +154,9 @@ func oneLine(s string) string {
 }
 
 func taskCommandLine(t app.TaskSpec) string {
+	if t.Program == "" {
+		return "(none; exec only)"
+	}
 	parts := []string{shellWord(t.Program)}
 	for _, arg := range t.Argv {
 		parts = append(parts, shellWord(arg))
@@ -185,7 +188,11 @@ func renderTask(w io.Writer, t app.Task) error {
 	p.table("Resource slots", slots)
 	creds := [][]string{}
 	for _, c := range t.CredentialRequirements {
-		creds = append(creds, []string{c.Env, c.Name, "slot " + c.ResourceSlot, c.Type, dash(c.Purpose)})
+		slot := "standalone"
+		if c.ResourceSlot != "" {
+			slot = "slot " + c.ResourceSlot
+		}
+		creds = append(creds, []string{c.Env, c.Name, slot, c.Type, dash(c.Purpose)})
 	}
 	p.table("Credentials", creds)
 	return p.flush(w)
@@ -300,6 +307,10 @@ func renderSecretStatus(w io.Writer, r app.SecretStatus) error {
 	}
 	p.line("Provider authenticated: %s", auth)
 	p.line("Entry retrievable: %s", flag(r.EntryRetrievable))
+	if r.ResourceSlot == "" {
+		p.line("Resource reachable: not applicable (standalone credential)")
+		return p.flush(w)
+	}
 	reachable := flag(r.ResourceReachable)
 	if r.ReachabilitySeenAt != "" {
 		reachable += " (observed " + r.ReachabilitySeenAt + ")"
@@ -343,7 +354,11 @@ func renderExecutionReview(w io.Writer, r app.ExecutionReview) error {
 		for _, c := range d.Credentials {
 			p.line("\nCredential %s -> %s", c.Requirement, c.Env)
 			p.line("  Purpose: %s, type %s", c.Purpose, c.Type)
-			p.line("  Resource slot %s -> Resource %s (%s)", c.ResourceSlot, c.ResourceID, c.ResourcePurpose)
+			if c.ResourceSlot == "" {
+				p.line("  Standalone: no Resource")
+			} else {
+				p.line("  Resource slot %s -> Resource %s (%s)", c.ResourceSlot, c.ResourceID, c.ResourcePurpose)
+			}
 			p.line("  SecretBinding %s via %s, %s", c.BindingID, providerLabel(c.ProviderProfile), locatorLabel(c.Locator))
 		}
 	}

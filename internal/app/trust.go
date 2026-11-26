@@ -39,15 +39,17 @@ type ReviewedDefinition struct {
 
 // ReviewedCredential is one reviewed delivery: the requirement, the Profile's
 // Resource and SecretBinding mapping, the binding's provider profile and
-// locator, and the Resource purpose.
+// locator, and the Resource purpose. A standalone credential has no Resource;
+// its Resource fields are omitted, so slot-attached credentials keep the
+// encoding, and the digest, they had before standalone credentials existed.
 type ReviewedCredential struct {
 	Requirement     string           `json:"requirement"`
 	Env             string           `json:"env"`
 	Purpose         string           `json:"purpose"`
 	Type            string           `json:"type"`
-	ResourceSlot    string           `json:"resourceSlot"`
-	ResourceID      string           `json:"resourceId"`
-	ResourcePurpose string           `json:"resourcePurpose"`
+	ResourceSlot    string           `json:"resourceSlot,omitempty"`
+	ResourceID      string           `json:"resourceId,omitempty"`
+	ResourcePurpose string           `json:"resourcePurpose,omitempty"`
 	BindingID       string           `json:"bindingId"`
 	ProviderProfile provider.Profile `json:"providerProfile"`
 	Locator         provider.Locator `json:"locator"`

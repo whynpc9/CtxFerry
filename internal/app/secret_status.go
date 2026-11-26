@@ -161,13 +161,17 @@ func readSecretMapping(ctx context.Context, tx *sql.Tx, cfg configuration, req C
 		return err
 	}
 	if !compatibleSecret(req, resource.ID, binding.SecretBindingSpec) {
-		return Fail("incompatible", "SecretBinding does not match the requirement purpose, type and selected Resource")
+		return incompatibleBinding(req)
 	}
 	out.Binding, out.Bound = &binding, true
 	return nil
 }
 
 func readSecretReachability(ctx context.Context, tx *sql.Tx, cwd string, resource Resource, out *SecretStatus) error {
+	if resource.ID == "" {
+		// A standalone credential has no Resource; reachability stays unknown.
+		return nil
+	}
 	detail, err := resourceDetail(ctx, tx, resource.Scope.ID, cwd, resource.ID)
 	if err != nil {
 		return err

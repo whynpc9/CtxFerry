@@ -15,7 +15,8 @@ import (
 )
 
 // ExecutionCredential describes one credential delivery of a reviewed
-// execution definition. It holds references only, never values.
+// execution definition. It holds references only, never values. The Resource
+// fields are empty for a standalone credential.
 type ExecutionCredential struct {
 	Requirement     string           `json:"requirement"`
 	Env             string           `json:"env"`
@@ -124,7 +125,7 @@ func planCredential(ctx context.Context, q rowQuerier, task Task, req Credential
 		return plannedCredential{}, err
 	}
 	if !compatibleSecret(req, resource.ID, binding.SecretBindingSpec) {
-		return plannedCredential{}, Fail("incompatible", "SecretBinding does not match the requirement purpose, type and selected Resource")
+		return plannedCredential{}, incompatibleBinding(req)
 	}
 	return plannedCredential{ExecutionCredential{
 		Requirement: req.Name, Env: req.Env, Purpose: req.Purpose, Type: req.Type, ResourceSlot: req.ResourceSlot,
@@ -234,7 +235,8 @@ func (a App) requireReachable(ctx context.Context, plan TaskExecution) error {
 	defer db.Close()
 	seen := map[string]bool{}
 	for _, c := range plan.credentials {
-		if seen[c.ResourceID] {
+		// A standalone credential has no Resource and nothing to reach.
+		if c.ResourceID == "" || seen[c.ResourceID] {
 			continue
 		}
 		seen[c.ResourceID] = true

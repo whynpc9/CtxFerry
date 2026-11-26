@@ -47,7 +47,10 @@ type SecretTarget struct {
 
 type SecretBindingChange struct {
 	SecretTarget
-	BindingID       string
+	BindingID string
+	// Like names a binding, by alias or UUID, whose provider profile and
+	// backend namespace a new binding copies where it gives none of its own.
+	Like            string
 	Alias           string
 	ProviderProfile provider.Profile
 	Locator         provider.Locator
@@ -74,9 +77,9 @@ func validLocator(l provider.Locator) bool {
 }
 
 func validateSecretBinding(s SecretBindingSpec) error {
-	if !resourceToken.MatchString(s.Alias) || !validUUID(s.ResourceID) || !taskText(s.Purpose) || !taskText(s.Type) ||
+	if !resourceToken.MatchString(s.Alias) || s.ResourceID != "" && !validUUID(s.ResourceID) || !taskText(s.Purpose) || !taskText(s.Type) ||
 		!validProviderProfile(s.ProviderProfile) || !validLocator(s.Locator) {
-		return Fail("invalid-secret-binding", "a binding requires an alias, Resource UUID, purpose, type, provider profile and one exact locator")
+		return Fail("invalid-secret-binding", "a binding requires an alias, an optional Resource UUID, purpose, type, provider profile and one exact locator")
 	}
 	return nil
 }
@@ -90,9 +93,21 @@ func (spec TaskSpec) requirement(name string) (CredentialRequirement, bool) {
 	return CredentialRequirement{}, false
 }
 
+// compatibleSecret keeps standalone and slot-attached credentials apart: a
+// standalone requirement takes only a binding without a Resource, and a
+// slot-attached one only a binding for the Resource its slot is mapped to.
 func compatibleSecret(req CredentialRequirement, resourceID string, binding SecretBindingSpec) bool {
-	return resourceID != "" && resourceID == binding.ResourceID && req.Purpose == binding.Purpose && req.Type == binding.Type
+	if req.Purpose != binding.Purpose || req.Type != binding.Type {
+		return false
+	}
+	if req.standalone() {
+		return binding.ResourceID == ""
+	}
+	return resourceID != "" && resourceID == binding.ResourceID
 }
+
+// standalone reports a requirement that no Resource slot backs.
+func (req CredentialRequirement) standalone() bool { return req.ResourceSlot == "" }
 
 func secretBindingFromRecord(r remoteRecord) SecretBinding {
 	return SecretBinding{r.SecretBinding, r.ID, r.Scope, r.Revision, r.Provenance.UpdatedAt}
@@ -138,12 +153,12 @@ func requireNoBindingConflict(ctx context.Context, q rowQuerier, ids ...string) 
 }
 
 func secretProfile(ctx context.Context, q rowQuerier, loc configurationLocation, name string) (*SelectedProfile, configuration, error) {
-	p, err := chooseProfile(ctx, q, loc, name)
+	p, err := executionProfile(ctx, q, loc, name)
 	if err != nil {
 		return nil, configuration{}, err
 	}
 	if p == nil {
-		return nil, configuration{}, Fail("profile-required", "select a Profile or pass --profile")
+		return nil, configuration{}, Fail("profile-required", "select a Profile, pass --profile or create a Profile named default")
 	}
 	if err := requireNoBindingConflict(ctx, q, loc.project.ID, p.ID); err != nil {
 		return p, configuration{}, err
@@ -155,7 +170,15 @@ func secretProfile(ctx context.Context, q rowQuerier, loc configurationLocation,
 	return p, cfg, err
 }
 
+// secretResource returns the Resource the Profile maps to the requirement's
+// slot. A standalone requirement has none and gets the zero Resource.
 func secretResource(ctx context.Context, q rowQuerier, cfg configuration, task Task, req CredentialRequirement) (Resource, error) {
+	if req.standalone() {
+		if task.Policy.Storage != "shared" {
+			return Resource{}, Fail("incompatible", "a credential mapping requires a shared Task")
+		}
+		return Resource{}, nil
+	}
 	id, err := mappedResourceID(cfg, task, req.ResourceSlot)
 	if err != nil {
 		return Resource{}, err
@@ -190,7 +213,7 @@ func (a App) UnmapSecret(ctx context.Context, selector, cwd string, target Secre
 func (a App) changeSecretMapping(ctx context.Context, selector, cwd string, change SecretBindingChange, unmap bool, expected *DesktopCredentialSlot) (SecretBindResult, error) {
 	var out SecretBindResult
 	reuse := change.BindingID != ""
-	if reuse && (!validUUID(change.BindingID) || change.Alias != "" || change.ProviderProfile != (provider.Profile{}) || change.Locator != (provider.Locator{})) {
+	if reuse && (!validUUID(change.BindingID) || change.Like != "" || change.Alias != "" || change.ProviderProfile != (provider.Profile{}) || change.Locator != (provider.Locator{})) {
 		return out, Fail("usage", "pass an existing --binding UUID or specify new binding metadata")
 	}
 	release, err := a.syncOwner(ctx)
@@ -210,6 +233,13 @@ func (a App) changeSecretMapping(ctx context.Context, selector, cwd string, chan
 	var queueCheck []string
 	err = a.mutateCatalog(ctx, db, func(c *sql.Conn) (bool, error) {
 		inserted := false
+		if !unmap && change.Profile == "" && expected == nil {
+			created, err := ensureDefaultProfile(ctx, c, loc)
+			if err != nil {
+				return false, err
+			}
+			inserted = created
+		}
 		p, cfg, err := secretProfile(ctx, c, loc, change.Profile)
 		if err != nil {
 			return false, err
@@ -279,15 +309,12 @@ func (a App) changeSecretMapping(ctx context.Context, selector, cwd string, chan
 				return false, Fail("selection-changed", "the reusable binding changed; refresh and confirm again")
 			}
 			if !compatibleSecret(req, resource.ID, binding.SecretBindingSpec) {
-				return false, Fail("incompatible", "SecretBinding does not match the requirement purpose, type and selected Resource")
+				return false, incompatibleBinding(req)
 			}
 		} else {
-			spec := SecretBindingSpec{change.Alias, resource.ID, req.Purpose, req.Type, change.ProviderProfile, change.Locator}
-			if err := validateSecretBinding(spec); err != nil {
+			spec, err := newBindingSpec(ctx, c, loc.project, req, resource.ID, change)
+			if err != nil {
 				return false, err
-			}
-			if spec.ProviderProfile.Provider == bitwarden.Name && !bitwarden.ValidLocator(spec.Locator) {
-				return false, Fail("invalid-secret-binding", "Bitwarden requires an exact item UUID in --entry-id")
 			}
 			if i >= 0 {
 				current, err := loadSecretBinding(ctx, c, cfg.SecretMappings[i].BindingID)
@@ -299,7 +326,7 @@ func (a App) changeSecretMapping(ctx context.Context, selector, cwd string, chan
 						return false, err
 					}
 					out = SecretBindResult{Profile: p.Name, Binding: &current, Mapping: cfg.SecretMappings[i]}
-					return false, nil
+					return inserted, nil
 				}
 			}
 			binding, err = insertSecretBinding(ctx, c, loc, spec)
@@ -338,6 +365,129 @@ func (a App) changeSecretMapping(ctx context.Context, selector, cwd string, chan
 		}
 	}
 	return out, err
+}
+
+// ensureDefaultProfile creates the Project's default Profile when nothing
+// selects a Profile here and the Project has none at all, so a
+// single-environment Project needs no profile create and select. It reports
+// whether it created one.
+func ensureDefaultProfile(ctx context.Context, c *sql.Conn, loc configurationLocation) (bool, error) {
+	p, cfg, err := pendingDefaultProfile(ctx, c, loc)
+	if err != nil || p == nil {
+		return false, err
+	}
+	return true, saveConfiguration(ctx, c, p.ID, Scope{"project", loc.project.ID}, cfg)
+}
+
+// pendingDefaultProfile returns the default Profile that a credential command
+// without --profile would create, or nil when a Profile is selected or the
+// Project already has Profiles.
+func pendingDefaultProfile(ctx context.Context, q rowQuerier, loc configurationLocation) (*SelectedProfile, configuration, error) {
+	p, err := chooseProfile(ctx, q, loc, "")
+	if err != nil || p != nil {
+		return nil, configuration{}, err
+	}
+	var exists bool
+	if err := q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM configurations WHERE project_id=?
+		AND coalesce(json_extract(payload,'$.profile'),'')<>'')`, loc.project.ID).Scan(&exists); err != nil || exists {
+		return nil, configuration{}, err
+	}
+	// Like secretProfile, refuse a conflicted Project or Profile record.
+	id := configID(loc.workspace, Scope{"project", loc.project.ID}, defaultProfile)
+	if err := requireNoBindingConflict(ctx, q, loc.project.ID, id); err != nil {
+		return nil, configuration{}, err
+	}
+	cfg := configuration{Values: map[string]json.RawMessage{}}
+	ConfigurationChange{Layer: layerProfile, Profile: defaultProfile, Create: true}.apply(&cfg)
+	return &SelectedProfile{Name: defaultProfile, ID: id,
+		Origin: ConfigOrigin{Layer: layerProfile, Source: "default", Storage: "local-only"}}, cfg, nil
+}
+
+// newBindingSpec completes the metadata of a new binding. Fields given
+// explicitly win; the rest come from the --like template binding, then from
+// the requirement: its name for the alias and its delivery variable for the
+// key, with the backend root as the path. The template's key or entry ID is
+// never copied, since it names another entry.
+func newBindingSpec(ctx context.Context, q projectReader, project Project, req CredentialRequirement, resourceID string, change SecretBindingChange) (SecretBindingSpec, error) {
+	p, loc := change.ProviderProfile, change.Locator
+	if change.Like != "" {
+		like, err := templateBinding(ctx, q, project, change.Like)
+		if err != nil {
+			return SecretBindingSpec{}, err
+		}
+		fill := func(dst *string, src string) {
+			if *dst == "" {
+				*dst = src
+			}
+		}
+		fill(&p.Provider, like.ProviderProfile.Provider)
+		fill(&p.Name, like.ProviderProfile.Name)
+		fill(&p.Method, like.ProviderProfile.Method)
+		// Named locator fields belong to the template's provider; a different
+		// provider would read them as something else.
+		if p.Provider == like.ProviderProfile.Provider && like.Locator.EntryID == "" && loc.EntryID == "" {
+			fill(&loc.ProjectID, like.Locator.ProjectID)
+			fill(&loc.Environment, like.Locator.Environment)
+			fill(&loc.Path, like.Locator.Path)
+		}
+	}
+	alias := change.Alias
+	if alias == "" {
+		alias = req.Name
+	}
+	if loc.EntryID == "" && p.Provider != bitwarden.Name {
+		if loc.Path == "" {
+			loc.Path = "/"
+		}
+		if loc.Key == "" {
+			loc.Key = req.Env
+		}
+	}
+	spec := SecretBindingSpec{alias, resourceID, req.Purpose, req.Type, p, loc}
+	if err := validateSecretBinding(spec); err != nil {
+		return spec, err
+	}
+	if spec.ProviderProfile.Provider == bitwarden.Name && !bitwarden.ValidLocator(spec.Locator) {
+		return spec, Fail("invalid-secret-binding", "Bitwarden requires an exact item UUID in --entry-id")
+	}
+	return spec, nil
+}
+
+// templateBinding finds the binding --like names among those the Project can
+// see, by UUID or by an alias that only one of them has. A UUID match wins over
+// any alias, so a UUID is never ambiguous.
+func templateBinding(ctx context.Context, q projectReader, project Project, ref string) (SecretBinding, error) {
+	list, err := listProjectSecrets(ctx, q, project)
+	if err != nil {
+		return SecretBinding{}, err
+	}
+	for _, b := range list.Bindings {
+		if b.ID == ref {
+			return b, nil
+		}
+	}
+	var found []SecretBinding
+	for _, b := range list.Bindings {
+		if b.Alias == ref {
+			found = append(found, b)
+		}
+	}
+	switch len(found) {
+	case 0:
+		return SecretBinding{}, Fail("binding-not-found", "no SecretBinding visible to this Project has that alias or UUID")
+	case 1:
+		return found[0], nil
+	default:
+		return SecretBinding{}, Fail("ambiguous-binding", "several SecretBindings have that alias; pass --like with a UUID from secret list")
+	}
+}
+
+// incompatibleBinding explains why a binding cannot serve a requirement.
+func incompatibleBinding(req CredentialRequirement) error {
+	if req.standalone() {
+		return Fail("incompatible", "SecretBinding does not match the standalone requirement: it needs the same purpose and type and no Resource")
+	}
+	return Fail("incompatible", "SecretBinding does not match the requirement purpose, type and selected Resource")
 }
 
 func insertSecretBinding(ctx context.Context, c *sql.Conn, loc configurationLocation, spec SecretBindingSpec) (SecretBinding, error) {

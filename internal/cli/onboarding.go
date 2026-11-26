@@ -4,10 +4,35 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/spf13/cobra"
 	"github.com/whynpc9/CtxFerry/internal/app"
 )
+
+const importEnvHelp = `Create provider entries from selected env file fields and map them in a Profile.
+
+Run once without --confirm to preview, then again with --confirm <preview> to
+transfer the values and commit every mapping together. Values never leave the
+provider transfer: previews, output and the catalog hold names only.
+
+Several --field flags import a batch: each field maps to the Task requirement
+whose delivery variable has the same name, and gets its own binding with the
+requirement name as alias and the field name as key. --requirement, --alias and
+--key apply only to a single field.
+
+Provider flags and the Profile default as for secret bind, including --like.
+Slot-attached requirements use the Profile's Resource mapping, or --resource
+when the slot is not mapped yet; standalone requirements need no Resource.
+
+Entries are created only when absent. --recover verifies an existing entry
+against the source and maps it instead: a bare --recover applies to every
+field, --recover=FIELD to the named fields. If a batch fails part-way, the error
+lists the fields already created; preview again with --recover for each.
+
+Example:
+  ctxferry onboard import-env .env --project app --task agent \
+    --field OPENAI_API_KEY --field ANTHROPIC_API_KEY --like openai`
 
 func onboardingCommand(ctx context.Context, invoke func(func(app.App) (any, error)) func(*cobra.Command, []string) error, selector *string) *cobra.Command {
 	group := &cobra.Command{Use: "onboard", Short: "Set up the first Project and import selected files"}
@@ -59,29 +84,35 @@ func onboardingCommand(ctx context.Context, invoke func(func(app.App) (any, erro
 		})(cmd, args)
 	}
 	var env app.EnvImport
-	importEnv := &cobra.Command{Use: "import-env <file>", Short: "Preview or confirm one env field's provider import and Profile mapping", Args: cobra.ExactArgs(1)}
+	importEnv := &cobra.Command{Use: "import-env <file>", Short: "Preview or confirm the provider import and Profile mapping of env fields", Long: importEnvHelp, Args: cobra.ExactArgs(1)}
 	flags := importEnv.Flags()
-	flags.StringVar(&env.Profile, "profile", "", "Existing Project Profile name")
+	flags.StringVar(&env.Profile, "profile", "", "Project Profile name (defaults like secret bind)")
 	flags.StringVar(&env.Task, "task", "", "Existing Task name or UUID")
-	flags.StringVar(&env.Requirement, "requirement", "", "Task credential requirement name")
-	flags.StringVar(&env.Field, "field", "", "Source variable name")
-	flags.StringVar(&env.ResourceID, "resource", "", "Shared Resource UUID for the requirement's slot")
-	flags.StringVar(&env.Alias, "alias", "", "New SecretBinding alias")
+	flags.StringVar(&env.Requirement, "requirement", "", "Task credential requirement name (single field only)")
+	flags.StringArrayVar(&env.Fields, "field", nil, "Source variable name (repeatable)")
+	flags.StringVar(&env.ResourceID, "resource", "", "Shared Resource UUID or identity for slot-attached requirements whose slot is not mapped yet")
+	flags.StringVar(&env.Like, "like", "", "Copy provider and backend namespace from this binding (alias or UUID)")
+	flags.StringVar(&env.Alias, "alias", "", "New SecretBinding alias (single field; defaults to the requirement name)")
 	flags.StringVar(&env.ProviderProfile.Provider, "provider", "", "Secret provider name")
 	flags.StringVar(&env.ProviderProfile.Name, "provider-profile", "", "Device provider profile name")
 	flags.StringVar(&env.ProviderProfile.Method, "method", "", "Provider authentication method")
 	flags.StringVar(&env.Locator.ProjectID, "backend-project", "", "Exact backend project ID")
 	flags.StringVar(&env.Locator.Environment, "environment", "", "Exact backend environment")
-	flags.StringVar(&env.Locator.Path, "path", "", "Exact backend folder path (use / for root)")
-	flags.StringVar(&env.Locator.Key, "key", "", "Exact backend entry key")
-	flags.BoolVar(&env.Recover, "recover", false, "Verify an existing entry against the source before mapping it")
+	flags.StringVar(&env.Locator.Path, "path", "", "Exact backend folder path (defaults to /)")
+	flags.StringVar(&env.Locator.Key, "key", "", "Exact backend entry key (single field; defaults to the requirement's variable)")
+	flags.StringArrayVar(&env.Recover, "recover", nil, "Verify existing entries against the source before mapping them: all fields, or --recover=FIELD (repeatable)")
+	flags.Lookup("recover").NoOptDefVal = app.RecoverAll
 	flags.StringVar(&env.Confirm, "confirm", "", "Preview ID from the same command without --confirm")
 	importEnv.RunE = func(cmd *cobra.Command, args []string) error {
 		if flags.Changed("confirm") && env.Confirm == "" {
 			return app.Fail("usage", "pass a nonempty --confirm preview ID")
 		}
 		return invoke(func(a app.App) (any, error) {
-			return a.ImportOnboardingEnv(ctx, *selector, args[0], env)
+			cwd, err := os.Getwd()
+			if err != nil {
+				return nil, err
+			}
+			return a.ImportOnboardingEnv(ctx, *selector, cwd, args[0], env)
 		})(cmd, args)
 	}
 	group.AddCommand(start, status, bind, scan, importNote, scanEnv, importEnv, finish)

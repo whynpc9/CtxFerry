@@ -149,7 +149,7 @@ func (a App) prepareTask(ctx context.Context, project, cwd, name, checkout, prof
 	if err := tx.QueryRowContext(ctx, "SELECT id FROM workspace").Scan(&loc.workspace); err != nil {
 		return out, err
 	}
-	selected, err := chooseProfile(ctx, tx, loc, profile)
+	selected, err := executionProfile(ctx, tx, loc, profile)
 	if err != nil {
 		return out, err
 	}
@@ -173,8 +173,8 @@ func (a App) prepareTask(ctx context.Context, project, cwd, name, checkout, prof
 		cfg = value
 		out.Profile = selected.Name
 	}
-	if len(task.ResourceSlots) != 0 && selected == nil {
-		return out, Fail("profile-required", "select a Profile or use --profile to resolve the Task's Resource slots")
+	if (len(task.ResourceSlots) != 0 || len(task.CredentialRequirements) != 0) && selected == nil {
+		return out, Fail("profile-required", "select a Profile, use --profile or create a Profile named default to resolve the Task's Resource slots and credentials")
 	}
 	for _, slot := range task.ResourceSlots {
 		id, err := mappedResourceID(cfg, task, slot.Name)
@@ -342,6 +342,11 @@ func (a App) ExecuteTask(ctx context.Context, plan TaskExecution, stdin io.Reade
 		return 0, Fail("credentials-required", "prepare the Task before execution")
 	}
 	launch := *plan.launch
+	if !launch.custom && launch.program == "" {
+		return 0, &Error{Code: "command-required", Message: "Task " + plan.Task.Name +
+			" has no registered command; use ctxferry exec --task " + plan.Task.Name + " -- <program> [args...]",
+			Details: map[string]string{"taskId": plan.Task.ID, "task": plan.Task.Name}}
+	}
 	env := taskEnvironment()
 	if len(plan.credentials) != 0 {
 		delivered, values, err := a.credentialEnvironment(ctx, plan)

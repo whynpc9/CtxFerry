@@ -291,7 +291,11 @@ func (p *projectPage) taskDetail(c *ui.Context, task app.Task) {
 			ui.Row(c).Gap(sp3).Padding(sp2, 0).AlignItems(ui.Center).Children(func() {
 				ui.Column(c).Grow(1).Gap(2).Children(func() {
 					strong(c, requirement.Name)
-					muted(c, requirement.Purpose+" · "+requirement.Type+" · slot "+requirement.ResourceSlot)
+					slot := "slot " + requirement.ResourceSlot
+					if requirement.ResourceSlot == "" {
+						slot = "standalone"
+					}
+					muted(c, requirement.Purpose+" · "+requirement.Type+" · "+slot)
 				})
 				if p.host != nil {
 					linkButton(c, "Open requirement", icArrowR).OnClick(func() {
@@ -331,13 +335,27 @@ func (p *projectPage) taskTrustView(c *ui.Context, task app.Task) {
 			ui.Button(c, "Recheck execution definition").AlignSelf(ui.Start).Disabled(p.busy).OnClick(func() { p.reviewTask(task.ID) })
 			if p.host != nil {
 				profile := ""
-				if p.config.Profile != nil {
+				switch {
+				case p.config.Profile != nil:
 					profile = p.config.Profile.Name
+				case r.review != nil:
+					profile = r.review.Profile
 				}
-				p.host.commandBlock(c, desktopCommand(p.host.core.DataDir, "task", "trust", "preview", task.ID, "--profile", profile, "--checkout", p.checkoutChoice), false)
+				p.host.commandBlock(c, desktopCommand(p.host.core.DataDir, trustPreviewArgs(task.ID, profile, p.checkoutChoice)...), false)
 			}
 		})
 	})
+}
+
+// trustPreviewArgs builds the trust preview handoff. The profile is the
+// selected one, else the one the review resolved, such as the implicit
+// default; when it is empty the CLI resolves the Profile itself.
+func trustPreviewArgs(taskID, profile, checkout string) []string {
+	args := []string{"task", "trust", "preview", taskID}
+	if profile != "" {
+		args = append(args, "--profile", profile)
+	}
+	return append(args, "--checkout", checkout)
 }
 
 func executionState(state string) string {
