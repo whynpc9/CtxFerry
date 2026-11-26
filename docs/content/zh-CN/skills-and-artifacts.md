@@ -90,14 +90,25 @@ ctxferry skill plan --group capability:review --target codex --format json
 
 ### 添加全局 CtxFerry 代理入口
 
-内置 bootstrap 会预览一个简短的 `ctxferry` Skill，以及选定代理全局指令文件中的受管理块：
+内置 bootstrap 会为选定的代理预览 `ctxferry` Skill。
 
 ```sh
 ctxferry skill bootstrap install --target codex --format json
 ctxferry skill bootstrap install --target codex --preview <token-from-preview> --format json
 ```
 
-对于 Codex，指令文件为 `~/.codex/AGENTS.md`（或 `$CODEX_HOME/AGENTS.md`），存在非空 `AGENTS.override.md` 时使用后者。对于 Claude Code，使用 `--target claude-code`；文件为 `~/.claude/CLAUDE.md` 或 `$CLAUDE_CONFIG_DIR/CLAUDE.md`。预览保留现有指令，只暴露 CtxFerry 拟添加的文本。使用 `skill bootstrap uninstall` 按相同的先预览再应用模式，仅移除受管理入口。
+| `--target` | 用户级 Skill 位置 |
+| --- | --- |
+| `codex` | `~/.agents/skills/ctxferry/SKILL.md` |
+| `claude-code` | `~/.claude/skills/ctxferry/SKILL.md` 或 `$CLAUDE_CONFIG_DIR/skills/ctxferry/SKILL.md` |
+| `cursor` | `~/.cursor/skills/ctxferry/SKILL.md` |
+| `pi` | `~/.pi/agent/skills/ctxferry/SKILL.md` 或 `$PI_CODING_AGENT_DIR/skills/ctxferry/SKILL.md` |
+
+Cursor 和 Pi 会自行发现 Skill，安装后请启动新的代理会话。这两个 `skill bootstrap` 目标只安装内置 Skill。
+
+Codex 和 Claude Code 还会添加一段受管理指令。对于 Codex，指令文件为 `~/.codex/AGENTS.md`（或 `$CODEX_HOME/AGENTS.md`），存在非空 `AGENTS.override.md` 时使用后者。对于 Claude Code，文件为 `~/.claude/CLAUDE.md` 或 `$CLAUDE_CONFIG_DIR/CLAUDE.md`。预览仅展示 CtxFerry 拟添加的文本。使用 `skill bootstrap uninstall` 按相同的先预览再应用流程移除受管理入口。要更新旧版内置 Skill，请先卸载再安装，分别使用各自的新预览。
+
+如果其他代理支持读取仓库指令和运行 CLI，可以在项目的 `AGENTS.md` 中说明，需要项目上下文时，从当前检出目录运行 `ctxferry context show --format json`。此方式无需配置 MCP。
 
 ## 注册并检索 Artifact
 

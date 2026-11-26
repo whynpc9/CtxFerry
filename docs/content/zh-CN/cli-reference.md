@@ -160,8 +160,8 @@ Resource 槽位 JSON 包含 `name`、`kind` 和 `stage`。凭据要求 JSON 包�
 | `ctxferry skill apply <name>` | `--target <codex\|claude-code>`、`--symlink` | 在用户级安装或继续安装固定的 Skill。 |
 | `ctxferry skill update <name>` | `--ref <commit-or-tag>`、`--license <identifier>`、`--target <codex\|claude-code>`、`--confirm <token>` | 预览显式 pin 变更；只有提供该精确预览的确认信息才会应用。 |
 | `ctxferry skill rollback <name>` | `--target <codex\|claude-code>`、`--confirm <token>` | 预览或确认恢复先前安装的 Skill。 |
-| `ctxferry skill bootstrap install` | `--target <codex\|claude-code>`、`--preview <token>` | 预览对 CtxFerry Skill 和全局指令的变更；使用当前预览的 token 应用。 |
-| `ctxferry skill bootstrap uninstall` | `--target <codex\|claude-code>`、`--preview <token>` | 预览或确认移除 CtxFerry bootstrap 条目。 |
+| `ctxferry skill bootstrap install` | `--target <codex\|claude-code\|cursor\|pi>`、`--preview <token>` | 预览或确认安装内置 CtxFerry Skill。Codex 和 Claude Code 还会添加一段受管理指令。 |
+| `ctxferry skill bootstrap uninstall` | `--target <codex\|claude-code\|cursor\|pi>`、`--preview <token>` | 预览或确认移除 CtxFerry bootstrap 条目。 |
 | `ctxferry skill group set <group> [name...]` | — | 替换 `global`、`project:<project>` 或 `capability:<name>` Skill 选择。 |
 
 `--local` 和 `--git` 表示可替代的包来源。Git 引用必须是完整 commit 哈希或 `refs/tags/<release>`。默认 Git 子目录是仓库根目录。投影和确认示例请参阅 [Skill 和 Artifact](skills-and-artifacts.md)。

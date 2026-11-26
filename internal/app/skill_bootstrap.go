@@ -155,12 +155,16 @@ func (a App) planAgentEntry(target, action string) (entryProjection, error) {
 	if err != nil {
 		return p, err
 	}
-	if contains(root, local) || contains(local, root) || contains(local, instructions) {
+	if contains(root, local) || contains(local, root) || (instructions != "" && contains(local, instructions)) {
 		return p, Fail("invalid-path", "agent entry and local Skill state must be separate")
 	}
 	p.path = filepath.Join(root, "ctxferry")
 	p.instructions = instructions
-	key := digest([]byte(p.path + "\x00" + instructions))
+	receiptScope := instructions
+	if receiptScope == "" {
+		receiptScope = target
+	}
+	key := digest([]byte(p.path + "\x00" + receiptScope))
 	receipts, err := resolveSkillDirectory(filepath.Join(local, "bootstrap"))
 	if err != nil {
 		return p, err
@@ -173,10 +177,15 @@ func (a App) planAgentEntry(target, action string) (entryProjection, error) {
 	switch {
 	case err == nil:
 		name := p.receipt.InstructionsName
-		if name != filepath.Base(instructions) && (target != "codex" || name != "AGENTS.override.md") {
+		if instructions == "" {
+			if name != "" || p.receipt.Block != "" || p.receipt.InstructionIdentity != "" {
+				return p, Fail("invalid-skill-state", "unexpected instructions in bootstrap receipt")
+			}
+		} else if name != filepath.Base(instructions) && (target != "codex" || name != "AGENTS.override.md") {
 			return p, Fail("invalid-skill-state", "invalid instruction filename in bootstrap receipt")
+		} else {
+			p.instructions = filepath.Join(filepath.Dir(instructions), name)
 		}
-		p.instructions = filepath.Join(filepath.Dir(instructions), name)
 		if err := p.inspectOwnedSkill(); err != nil {
 			return p, err
 		}
@@ -203,13 +212,15 @@ func (a App) planAgentEntry(target, action string) (entryProjection, error) {
 		}
 		p.instructions = instructions
 	}
-	p.receipt.InstructionsName = filepath.Base(p.instructions)
-	p.instruction, err = readEntryFile(p.instructions)
-	if err != nil {
-		return p, err
-	}
-	if err := p.planInstructions(); err != nil {
-		return p, err
+	if p.instructions != "" {
+		p.receipt.InstructionsName = filepath.Base(p.instructions)
+		p.instruction, err = readEntryFile(p.instructions)
+		if err != nil {
+			return p, err
+		}
+		if err := p.planInstructions(); err != nil {
+			return p, err
+		}
 	}
 	if action == "install" && p.skillDir != p.path {
 		content := entrySkill
@@ -253,6 +264,25 @@ func (a App) planAgentEntry(target, action string) (entryProjection, error) {
 }
 
 func agentEntryPaths(target string) (root, instructions string, err error) {
+	var base string
+	switch target {
+	case "cursor":
+		base, err = agentConfigHome("", ".cursor")
+	case "pi":
+		base, err = agentConfigHome("PI_CODING_AGENT_DIR", filepath.Join(".pi", "agent"))
+	case "codex", "claude-code":
+		return agentEntryPathsWithInstructions(target)
+	default:
+		return "", "", Fail("usage", "bootstrap target must be codex, claude-code, cursor, or pi")
+	}
+	if err != nil {
+		return "", "", err
+	}
+	root, err = resolveSkillDirectory(filepath.Join(base, "skills"))
+	return root, "", err
+}
+
+func agentEntryPathsWithInstructions(target string) (root, instructions string, err error) {
 	root, err = skillTarget(target)
 	if err != nil {
 		return "", "", err

@@ -157,6 +157,74 @@ func TestSkillBootstrapCustomHomesAndOwnedFiles(t *testing.T) {
 	}
 }
 
+func TestSkillBootstrapNativeDiscoveryTargets(t *testing.T) {
+	for _, target := range []struct{ name, config, override string }{
+		{"cursor", ".cursor", ""},
+		{"pi", ".pi/agent", ""},
+		{"pi", "custom-pi", "PI_CODING_AGENT_DIR"},
+	} {
+		t.Run(target.name+"/"+target.config, func(t *testing.T) {
+			h := testcli.New(t, binary)
+			h.Run(t, "init", "--format=json").Success(t)
+			config := filepath.Join(skillHome(t, h), target.config)
+			if target.override != "" {
+				h.ExtraEnv = append(h.ExtraEnv, target.override+"="+config)
+			}
+			skill := filepath.Join(config, "skills", "ctxferry", "SKILL.md")
+			instructions := filepath.Join(config, "AGENTS.md")
+			writeSkillFixture(t, instructions, "user instructions\n", 0600)
+			before := skillPaths(t, h.DataDir)
+
+			plan := bootstrapPlan(t, bootstrapRun(t, h, target.name, "install"))
+			if plan.Status != "ready" || plan.Preview == "" || len(plan.Writes) != 1 ||
+				plan.Writes[0].Path != skill || plan.Writes[0].Action != "create" ||
+				!strings.Contains(plan.Writes[0].Content, "ctxferry context search") {
+				t.Fatalf("install preview: %+v", plan)
+			}
+			assertBootstrapAbsent(t, filepath.Dir(skill))
+			if after := skillPaths(t, h.DataDir); !slices.Equal(before, after) {
+				t.Fatalf("preview wrote local state: %v -> %v", before, after)
+			}
+
+			writeSkillFixture(t, skill, "unowned Skill", 0600)
+			failure(t, bootstrapRun(t, h, target.name, "install", "--preview", plan.Preview), "skill-name-collision")
+			if got := bootstrapPlan(t, bootstrapRun(t, h, target.name, "uninstall")); got.Status != "unchanged" {
+				t.Fatalf("unowned uninstall: %+v", got)
+			}
+			assertBootstrapFile(t, skill, "unowned Skill")
+			if err := os.RemoveAll(filepath.Dir(skill)); err != nil {
+				t.Fatal(err)
+			}
+
+			if got := bootstrapPlan(t, bootstrapRun(t, h, target.name, "install", "--preview", plan.Preview)); got.Status != "installed" {
+				t.Fatalf("install: %+v", got)
+			}
+			assertBootstrapFile(t, skill, plan.Writes[0].Content)
+			if got := bootstrapPlan(t, bootstrapRun(t, h, target.name, "install")); got.Status != "unchanged" || len(got.Writes) != 0 {
+				t.Fatalf("repeat install: %+v", got)
+			}
+			writeSkillFixture(t, skill, "edited Skill", 0600)
+			failure(t, bootstrapRun(t, h, target.name, "uninstall"), "skill-external-edit")
+			assertBootstrapFile(t, skill, "edited Skill")
+			writeSkillFixture(t, skill, plan.Writes[0].Content, 0600)
+
+			removal := bootstrapPlan(t, bootstrapRun(t, h, target.name, "uninstall"))
+			if removal.Preview == "" || len(removal.Writes) != 2 || removal.Writes[0].Path != skill || removal.Writes[0].Action != "remove" {
+				t.Fatalf("uninstall preview: %+v", removal)
+			}
+			assertBootstrapFile(t, skill, plan.Writes[0].Content)
+			if got := bootstrapPlan(t, bootstrapRun(t, h, target.name, "uninstall", "--preview", removal.Preview)); got.Status != "uninstalled" {
+				t.Fatalf("uninstall: %+v", got)
+			}
+			assertBootstrapAbsent(t, filepath.Dir(skill))
+			assertBootstrapFile(t, instructions, "user instructions\n")
+			if got := bootstrapPlan(t, bootstrapRun(t, h, target.name, "uninstall")); got.Status != "unchanged" {
+				t.Fatalf("repeat uninstall: %+v", got)
+			}
+		})
+	}
+}
+
 func TestSkillBootstrapKeepsLaterUserEdits(t *testing.T) {
 	h := testcli.New(t, binary)
 	h.Run(t, "init", "--format=json").Success(t)

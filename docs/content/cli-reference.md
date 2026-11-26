@@ -190,8 +190,8 @@ backend entry instead. Secret values and provider sessions are not synchronized.
 | `ctxferry skill apply <name>` | `--target <codex\|claude-code>`, `--symlink` | Install or resume installation of a pinned Skill at the user level. |
 | `ctxferry skill update <name>` | `--ref <commit-or-tag>`, `--license <identifier>`, `--target <codex\|claude-code>`, `--confirm <token>` | Preview an explicit pin change; apply it only with the confirmation from that exact preview. |
 | `ctxferry skill rollback <name>` | `--target <codex\|claude-code>`, `--confirm <token>` | Preview or confirm restoration of the previously installed Skill. |
-| `ctxferry skill bootstrap install` | `--target <codex\|claude-code>`, `--preview <token>` | Preview changes to the CtxFerry Skill and global instructions; apply the current preview with its token. |
-| `ctxferry skill bootstrap uninstall` | `--target <codex\|claude-code>`, `--preview <token>` | Preview or confirm removal of the CtxFerry bootstrap entry. |
+| `ctxferry skill bootstrap install` | `--target <codex\|claude-code\|cursor\|pi>`, `--preview <token>` | Preview or confirm installation of the built-in CtxFerry Skill. Codex and Claude Code also get a managed instruction block. |
+| `ctxferry skill bootstrap uninstall` | `--target <codex\|claude-code\|cursor\|pi>`, `--preview <token>` | Preview or confirm removal of the CtxFerry bootstrap entry. |
 | `ctxferry skill group set <group> [name...]` | — | Replace a `global`, `project:<project>`, or `capability:<name>` Skill selection. |
 
 `--local` and `--git` identify alternative package sources. Git references must

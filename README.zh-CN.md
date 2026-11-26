@@ -316,13 +316,17 @@ ctxferry skill rollback example --target codex --confirm <confirmation-from-prev
 
 ### 全局代理入口
 
-执行 `ctxferry init` 后，可以为一个代理预览内置 `ctxferry` Skill 和一小段全局指令块：
+执行 `ctxferry init` 后，可以预览并安装内置的 `ctxferry` Skill。
 
 ```sh
 ctxferry skill bootstrap install --target codex
 ctxferry skill bootstrap install --target codex --preview <token-from-preview>
 ```
 
-Claude Code 使用 `--target claude-code`。Skill 使用上述用户级目标。Codex 的指令块写入 `~/.codex/AGENTS.md`（或 `$CODEX_HOME/AGENTS.md`），存在非空 `AGENTS.override.md` 时使用后者。Claude Code 的指令块写入 `~/.claude/CLAUDE.md`（或 `$CLAUDE_CONFIG_DIR/CLAUDE.md`）。预览显示拟议变更和 CtxFerry 的文本，不暴露你的现有指令。使用 `--format json` 从 `data.preview` 读取令牌。
+Cursor 使用 `--target cursor`，从 `~/.cursor/skills/ctxferry/SKILL.md` 加载 Skill。Pi 使用 `--target pi`，从 `~/.pi/agent/skills/ctxferry/SKILL.md` 加载。配置 `PI_CODING_AGENT_DIR` 时，Pi 使用 `$PI_CODING_AGENT_DIR/skills/ctxferry/SKILL.md`。这两个 `skill bootstrap` 目标只安装 Skill。
 
-重复安装可以验证入口或再次预览变更。完整安装会报告 `unchanged`。如果文件在预览和应用之间发生变化，请重新预览。要移除入口，使用 `skill bootstrap uninstall` 按同样方式预览并应用。卸载保留其他指令文本和文件。受管理块被编辑、Skill 被编辑或名称冲突且目标不属于它时，会报告为需要手动解决。所有权和恢复记录保留在 CtxFerry 数据根目录中。
+Claude Code 使用 `--target claude-code`。Codex 和 Claude Code 还会安装一段受管理指令。Codex 的指令块写入 `~/.codex/AGENTS.md`（或 `$CODEX_HOME/AGENTS.md`），存在非空 `AGENTS.override.md` 时使用后者。Claude Code 的指令块写入 `~/.claude/CLAUDE.md`（或 `$CLAUDE_CONFIG_DIR/CLAUDE.md`）。预览仅显示拟议变更和 CtxFerry 的文本。使用 `--format json` 从 `data.preview` 读取令牌。
+
+如果其他代理支持读取仓库指令，可以在项目的 `AGENTS.md` 中说明，需要项目上下文时，从当前检出目录运行 `ctxferry context show --format json`。代理只需能通过终端运行 CLI，无需配置 MCP 服务。
+
+重复安装可以验证入口或再次预览变更。完整安装会报告 `unchanged`。若要更新已安装的内置 Skill，请先预览并确认卸载，再预览并确认安装。如果文件在预览和应用之间发生变化，请重新预览。要移除入口，使用 `skill bootstrap uninstall` 按同样方式预览并应用。卸载保留其他指令文本和文件。受管理块被编辑、Skill 被编辑或名称冲突且目标不属于它时，会报告为需要手动解决。所有权和恢复记录保留在 CtxFerry 数据根目录中。
