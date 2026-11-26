@@ -37,7 +37,9 @@ Stop on a handoff error. Report its code and message and, when known, the Task, 
 | `credential-storage-unavailable` | restore access to this device's secure credential store and retry `ctxferry secret status <task> <requirement> --format json` |
 | `execution-definition-changed` (including `details.state: not-enabled`) | review and enable the Task on this device: `ctxferry task trust preview <task>`, then `ctxferry task trust enable <task> --preview <token>` |
 | `profile-required`, `profile-not-found` | choose a Profile: `ctxferry profile select <name>` |
-| `binding-missing` | map the named credential with `ctxferry secret bind <task> <requirement> ...`. If the error names a Resource slot, ask the human to map the correct Resource with `ctxferry profile map-resource <profile> <task> <slot> <resource-uuid>` first |
+| `binding-missing` with `Profile has no Resource mapping` | map the correct Resource with `ctxferry profile map-resource <profile> <task> <slot> <resource-uuid>`, then recheck credential status |
+| `binding-missing` with `Profile has no SecretBinding mapping` | map the named credential with `ctxferry secret bind <task> <requirement> --profile <profile> ...`. A named Resource slot can already be mapped |
+| other `binding-missing` messages | report the exact message and ask the human to inspect the existing Profile mappings before changing them |
 | `secret-unavailable` | check the exact provider entry and the provider account's access to it, then rerun `ctxferry secret status <task> <requirement> --format json` |
 | `custom-command-not-allowed` | use `ctxferry run <task>`, or ask whether the Task should allow custom commands |
 | `command-required` | the Task has no command of its own: use `ctxferry exec --task <task> -- <program> [args...]` |
