@@ -21,7 +21,7 @@ CtxFerry 同步的是**开发上下文和凭据引用**，而不是凭据值、P
 - 一个名为 `atlas-context` 的空专用**私有 GitHub 仓库**，以及两台设备上均可用的 Git 和 GitHub 元数据身份验证。身份验证详情见[私有同步](sync.md#启用并验证私有目标)。
 - 两台设备上的 TCP 端口 `18080` 均空闲，供回环 fixture 使用。
 
-第 1–2 步和本地注册步骤不需要 Provider 登录。Provider 身份验证、首次发布和设备 B 加入需要网络。将每个 `<angle-bracket>` 值替换为你自己的输出或服务元数据。人工命令使用默认的可读输出；JSON 和 JSONL 只出现在代理的底层调用中，用作结构化工具约定。
+第 1–2 步和本地注册步骤不需要 Provider 登录。Provider 身份验证、首次发布和设备 B 加入需要网络。将每个 `<angle-bracket>` 值替换为你自己的输出或服务元数据。人工命令使用默认输出。大多数命令输出文本，`sync` 和 `join` 则输出带缩进的 JSON。代理显式请求 JSON 或 JSONL，以获得结构化结果。
 
 ## 1. 初始化设备 A 并连接编码代理
 
@@ -223,13 +223,15 @@ CtxFerry 自行解析 Provider 条目，只将 `DEMO_API_TOKEN` 交付到子进�
 ctxferry sync enable --remote git@github.com:<owner>/atlas-context.git
 ```
 
-只有结果显示已启用，且检查同时确认 Git 可访问和仓库为私有时才继续。检查共享源材料和计划导出的精确内容，然后批准当前预览：
+确认响应显示 `state: "enabled"`、`check.gitReachable: true` 和 `check.privacy: "private"` 后再继续。检查共享源材料和 `sync preview` 列出的导出内容，然后将它返回的 `previewId` 填入批准命令：
 
 ```sh
 ctxferry sync preview
 ctxferry sync init --preview <sync-preview-id>
 ctxferry sync status
 ```
+
+确认结果包含 `state: "synced"` 和 `head`。首次同步的 `lastSyncAt` 可以是 `null`。
 
 导出包括共享 Context 正文、Task、`default` Profile 和 SecretBinding 定位器。它排除令牌值、Provider 会话、Checkout 绑定和路径、Profile 选择及执行信任。已发布 Context 为明文，即使后来删除，也仍保留在仓库历史中。
 
@@ -243,7 +245,7 @@ ctxferry project list
 ctxferry project inspect
 ```
 
-使用第 1 步保存的 Repository UUID。`--project atlas-api` 将此检出目录附加到已同步 Project，而不是创建重复 Project；`--repository` 复用已同步 Task 的 membership 所需的 Repository 身份。`project list` 应只显示一个 `atlas-api`，检查结果应显示设备 B 的本地路径以及与设备 A 相同的 Repository 和 membership ID。
+`join` 成功时也会显示 `state: "synced"`。绑定时使用第 1 步保存的 Repository UUID。`--project atlas-api` 将此检出目录附加到已同步 Project，而不是创建重复 Project；`--repository` 复用已同步 Task 的 membership 所需的 Repository 身份。`project list` 应只显示一个 `atlas-api`，检查结果应显示设备 B 的本地路径以及与设备 A 相同的 Repository 和 membership ID。
 
 为此设备上的代理安装 Skill，检查新的本地写入，并使用设备 B 预览中的令牌：
 

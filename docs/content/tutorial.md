@@ -48,8 +48,9 @@ Context is plaintext in the dedicated private sync repository and its history.
 Steps 1–2 and the local registration steps need no provider login. Provider
 authentication, first publication and joining device B require network access.
 Replace every `<angle-bracket>` value with your own output or service metadata.
-Human commands use the default readable output. JSON and JSONL appear only in
-the agent's underlying calls, where they provide a structured tool contract.
+Human commands use the default output. Most print text, while `sync` and
+`join` print indented JSON. Agents explicitly request JSON or JSONL for
+structured results.
 
 ## 1. Initialize device A and connect your coding agent
 
@@ -297,15 +298,19 @@ verify the dedicated private destination. `sync enable` uploads nothing:
 ctxferry sync enable --remote git@github.com:<owner>/atlas-context.git
 ```
 
-Continue only when the result is enabled and its checks confirm Git access and
-private repository visibility. Review the shared source material and the exact
-proposed export, then approve the current preview:
+Continue only when the response shows `state: "enabled"`,
+`check.gitReachable: true` and `check.privacy: "private"`. Review the shared
+source material and the export listed by `sync preview`. Copy its `previewId`
+into the approval command:
 
 ```sh
 ctxferry sync preview
 ctxferry sync init --preview <sync-preview-id>
 ctxferry sync status
 ```
+
+Confirm `state: "synced"` and a `head` in the result. The initial
+`lastSyncAt` can be `null`.
 
 The export includes the shared Context body, Task, `default` Profile and
 SecretBinding locator. It excludes the token value, provider session, checkout
@@ -325,7 +330,8 @@ ctxferry project list
 ctxferry project inspect
 ```
 
-Use the Repository UUID saved in step 1. `--project atlas-api` attaches this
+A successful `join` also shows `state: "synced"`. Use the Repository UUID
+saved in step 1. `--project atlas-api` attaches this
 checkout to the synchronized Project instead of creating a duplicate Project;
 `--repository` reuses the Repository identity required by the synchronized
 Task's membership. `project list` should show one `atlas-api`, and inspection
