@@ -1,16 +1,36 @@
 name: CI
-on: [push, pull_request]
+on:
+  # Branch pushes are covered by their pull request; only main runs on push.
+  push:
+    branches: [main]
+    paths-ignore:
+      - docs/**
+      - '*.md'
+      - .agents/**
+      - .claude/**
+      - skills-lock.json
+      - .github/workflows/docs.yml
+  pull_request:
+    paths-ignore:
+      - docs/**
+      - '*.md'
+      - .agents/**
+      - .claude/**
+      - skills-lock.json
+      - .github/workflows/docs.yml
+  workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  # A newer commit on the same pull request supersedes the running check.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+env:
+  CGO_ENABLED: '0'
 jobs:
-  test:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    env:
-      CGO_ENABLED: '0'
+  linux:
+    name: test (ubuntu-latest)
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -18,22 +38,13 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: Check formatting
-        shell: bash
         run: test -z "$(gofmt -l cmd internal tests)"
       - run: go vet ./...
+      - name: Vet the Windows and macOS builds
+        run: GOOS=windows go vet ./... && GOOS=darwin go vet ./...
       - run: go test -count=1 -timeout=15m ./...
       - run: go build -o ctxferry ./cmd/ctxferry
-      - name: Build and test the native desktop
-        if: runner.os == 'macOS'
-        working-directory: cmd/ctxferry-desktop
-        run: |
-          go vet ./...
-          go test -count=1 ./...
-          go test -count=1 -tags ctxferry_test -run TestConflictFromQueueToSharedRevision ./...
-          go build .
       - name: Offline headless smoke
-        if: runner.os == 'Linux'
-        shell: bash
         run: |
           mkdir -p "$RUNNER_TEMP/ctxferry-offline"
           docker run --rm --network none --user "$(id -u):$(id -g)" -w /tmp \
@@ -44,3 +55,40 @@ jobs:
             jq -se 'length == 1 and .[0].ok and (.[0].data | .cli.status == "available" and
               .directoryBinding.status == "available" and .credentialStorage.status == "unavailable" and
               .backgroundSync.status == "unavailable")'
+  # The slower runners start only after the cheap Linux job passes. Pull requests
+  # get the macOS desktop build and a Windows/macOS compile check; the full macOS
+  # and Windows test suites run on main, or on any branch via "Run workflow".
+  macos:
+    needs: linux
+    name: test (macos-latest)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go vet ./...
+      - if: github.event_name != 'pull_request'
+        run: go test -count=1 -timeout=15m ./...
+      - name: Build and test the native desktop
+        working-directory: cmd/ctxferry-desktop
+        run: |
+          go vet ./...
+          go test -count=1 ./...
+          go test -count=1 -tags ctxferry_test -run TestConflictFromQueueToSharedRevision ./...
+          go build .
+  windows:
+    needs: linux
+    if: github.event_name != 'pull_request'
+    name: test (windows-latest)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go vet ./...
+      - run: go test -count=1 -timeout=15m ./...
+      - run: go build -o ctxferry ./cmd/ctxferry
