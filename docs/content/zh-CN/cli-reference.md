@@ -75,9 +75,9 @@ onboarding 命令会在所选应用数据根目录中保存进度。先运行 `o
 
 | 命令 | 命令专用参数 | 用途 |
 | --- | --- | --- |
-| `ctxferry context put [document-uuid]` | `--body-file <path\|->`、`--title <title>`、`--purpose <purpose>`、`--source <description>`、`--summary <text>`、`--summary-file <path>`、`--storage <local-only\|shared>`、`--disclosure <full\|summary\|reference\|local-tool>`、`--valid-until <rfc3339>`、`--if-revision <revision>` | 创建文档，或按当前 revision 替换指定文档。正文文件、存储策略和披露策略为必需项；`-` 从标准输入读取正文。使用 `--purpose project-summary` 指定 Project 摘要。 |
+| `ctxferry context put [document-uuid]` | `--body <markdown>`、`--body-file <path\|->`、`--title <title>`、`--purpose <purpose>`、`--source <description>`、`--summary <text>`、`--summary-file <path>`、`--storage <local-only\|shared>`、`--disclosure <full\|summary\|reference\|local-tool>`、`--valid-until <rfc3339>`、`--if-revision <revision>` | 创建文档，或按当前 revision 替换指定文档。`--body` 与 `--body-file` 必须二选一；`-` 从标准输入读取正文。新文档默认使用 `note`、`ctxferry CLI`、`local-only` 和 `full`；替换时必须提供完整文档。使用 `--purpose project-summary` 指定 Project 摘要。 |
 | `ctxferry context show` | `--cursor <uuid>`、`--sync` | 读取 Project 摘要、执行环境，以及大小受限的文档、Resource 和 Task 索引。使用返回的 cursor 获取下一页；`--sync` 会先等待一次成功同步。 |
-| `ctxferry context get <document-uuid>` | `--sync` | 按代理披露策略检索文档，也可先等待一次成功同步。 |
+| `ctxferry context get <document-uuid-or-title>` | `--sync` | 按代理披露策略检索文档，也可先等待一次成功同步。标题有歧义时会报错。 |
 | `ctxferry context search <keywords>` | `--sync` | 使用字面关键词搜索代理可见内容，最多返回 100 个结果。 |
 | `ctxferry context delete <document-uuid>` | `--if-revision <revision>` | 按必需的当前 revision 删除文档。 |
 | `ctxferry context restore <document-uuid>` | `--from-commit <sha>`、`--if-revision <revision>` | 按当前 revision，从必需的祖先 commit 恢复文档。 |

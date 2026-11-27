@@ -124,3 +124,37 @@ The `ctxferry_test` binary wraps the real backend to lose push responses, publis
 competing candidate immediately before the lease, fail ancestry/fetch, or truncate
 Git reads. These controls are absent from production builds. Scenarios use only a
 loopback metadata endpoint, temporary application directories and local bare Git.
+
+## User-workflow acceptance checks
+
+Run the end-to-end scenarios that correspond to the coding-agent tutorial from
+the repository root:
+
+```sh
+go test -count=1 ./tests \
+  -run '^(TestFirstPrivatePublish|TestTwoDeviceSync|TestCredentialedRun)$'
+go test -count=1 ./tests \
+  -run '^(TestStandaloneCredentials|TestSkillBootstrapPreservesInstructions|TestSkillBootstrapCustomHomesAndOwnedFiles|TestSkillBootstrapNativeDiscoveryTargets)$'
+```
+
+`TestFirstPrivatePublish` checks the negative storage-isolation boundary with
+sentinels: the complete body of a shared summary-disclosure document is present,
+while local-only document, artifact, credential and local-path sentinels are
+absent from every published Git object. `TestTwoDeviceSync` covers joining,
+subscribing and binding another checkout to the existing Project, offline
+reads, compatible edits and conflicts. `TestCredentialedRun` covers device-local
+trust, a minimal child environment and `[REDACTED]` output with a fake provider.
+The second command covers standalone API credentials, the automatic `default`
+Profile, Codex and Claude Code instruction preservation, and Cursor and Pi
+Skill discovery paths.
+
+These scenarios use isolated data and home directories, local Git transport
+and fake provider entries. They do not replace live GitHub privacy checks,
+provider authentication, an operating-system credential store or the tutorial's
+loopback API check. Before changing the implementation, run the complete
+checks:
+
+```sh
+go test -count=1 ./...
+go vet ./...
+```

@@ -4,14 +4,14 @@ title: CtxFerry 使用指南
 
 [English](../index.md) · 简体中文
 
-CtxFerry 将一个逻辑 Project 的开发上下文保存在你的设备上。从一个检出目录开始，无需登录；需要时再添加共享 Resource、Task、凭据引用、Skill 和 Artifact。只有当你希望在另一台设备上使用相同的共享上下文时，才需要私有 Git 仓库。
+CtxFerry 为每台机器上的编码代理提供经过批准的 Project 上下文和用于带凭据命令的已注册 Task，无需把私有笔记或 Secret 值放入源码 Git 或代理命令行。私有 Git 仓库在机器之间同步共享上下文和凭据引用；每台设备分别保留自己的 Provider 登录和执行信任决定。
 
 ## 选择你的目标
 
 ### 从这里开始
 
 - [安装并绑定检出目录](getting-started.md)：从源码构建 CLI，初始化本地 Workspace，并在无网络的情况下检查 Project。
-- [跟随端到端教程](tutorial.md)：让一个 Go Project 从本地 Context 和 Task，逐步走到带凭据执行和双设备同步。
+- [跟随编码代理教程](tutorial.md)：用五个步骤连接两台机器上的代理，发现私有 Context 并运行带凭据 Task。
 - [打开原生桌面应用](desktop.md)：从 Home 跟踪冲突到队列，检查 Checkout 的有效配置，或在 Catalog 中查找工具。
 
 ### 在项目中工作
