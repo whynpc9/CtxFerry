@@ -415,10 +415,6 @@ h2 {
   font-size: 17px;
   line-height: 1.5;
 }
-.body-copy code {
-  display: block;
-  font: 15px/1.65 Plex, monospace;
-}
 .choices p {
   margin: 9px 0 0;
   color: var(--soft);
@@ -663,7 +659,6 @@ main > .band:last-child {
     padding: 9px 11px;
     font-size: 16px;
   }
-  .body-copy code,
   .setting code {
     font-size: 14px;
   }
