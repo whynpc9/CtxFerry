@@ -1,507 +1,397 @@
 ---
-title: 'Tutorial: from one checkout to two devices'
+title: 'Tutorial: coding agents on two machines'
 ---
 
 English · [简体中文](zh-CN/tutorial.md)
 
-This walkthrough builds a complete, typical CtxFerry workflow around a Go
-service named `atlas-api`. You will register Project instructions, run a local
-test Task, connect an integration Task to a database credential, publish the
-shared catalog, and reproduce the Task on a second device.
+You use Claude Code, Codex, Cursor or Pi on two machines against the same
+source project. Some private environment notes and agent instructions do not
+belong in source Git, and an API credential should not be pasted into agent
+chat. CtxFerry lets each agent discover the context you approve and run a
+registered, credentialed Task while you keep control of publication, provider
+login and execution trust.
 
-The example uses Infisical US Cloud for the credential reference. The local
-steps need no account or network. Sync and credential steps are explicit and
-require your own private GitHub repository, database, and provider entry.
+In this walkthrough, a human creates one shared note and one standalone API
+credential reference on device A. A coding agent then finds that note and runs
+the Task without handling the raw token. Private sync carries the note, Task
+and credential reference to device B, where the human establishes local login
+and trust before the agent repeats the workflow.
 
 ![Two device-local CtxFerry workspaces synchronize approved plaintext records through a private Git repository. Checkout paths, provider sessions, and execution trust stay local; credential values come directly from the external provider on each device.](assets/tutorial-flow.png)
 
-The important distinction is that CtxFerry synchronizes **development context
-and credential references**. It does not copy a checkout, synchronize a SQLite
-file, share a provider login, or place credential values in Git.
+CtxFerry synchronizes **development context and credential references**, not
+credential values, provider sessions, checkout paths or execution trust. Shared
+Context is plaintext in the dedicated private sync repository and its history.
 
 ## What you need
 
-- Go 1.27.4 or a later compatible version, and Git.
-- An existing Git checkout of a Go project. The example assumes ordinary tests
-  run with `go test ./...` and integration tests use the `integration` build
-  tag; adjust the arguments for your project.
-- For the credentialed steps, a **disposable development database**, its
-  non-secret host and port, and an Infisical Universal Auth identity allowed to
-  read one connection-string entry. Do not start with production data.
-- For the two-device steps, an empty, dedicated **private GitHub repository**
-  and working Git and GitHub metadata authentication on both devices.
+- Two macOS or Linux devices, each with Go 1.27.4 or a later compatible
+  version, Git, Python 3 and a POSIX shell. The shell examples use `python3`.
+- A CtxFerry source checkout to install the CLI, and one installed coding agent
+  supported by `skill bootstrap`: Codex, Claude Code, Cursor or Pi. Bootstrap
+  installs CtxFerry's Skill, not the agent itself.
+- A disposable Git source project named `atlas-api`, with one checkout on each
+  device. You will add the safe Python fixture below and distribute it through
+  the project's ordinary source Git workflow. That source repository is
+  separate from CtxFerry's sync repository.
+- An Infisical US Cloud project with a `dev` environment and an entry named
+  `DEMO_API_TOKEN` at path `/`. Give it a nonempty, URL-safe **disposable test
+  value**, not a production credential. The loopback fixture accepts any such
+  value. A Universal Auth identity needs read access, and each device needs an
+  accessible operating-system credential store.
+- An empty, dedicated **private GitHub repository** named `atlas-context`, plus
+  working Git and GitHub metadata authentication on both devices. See
+  [Private sync](sync.md#enable-and-verify-a-private-destination) for the
+  authentication details.
+- TCP port `18080` free on both devices for the loopback fixture.
 
-The shell examples use POSIX syntax. Replace every `<angle-bracket>` value with
-a value from your own output or service. Output snapshots are abridged; UUIDs,
-revisions, timestamps, paths, and hashes will differ.
+Steps 1–2 and the local registration steps need no provider login. Provider
+authentication, first publication and joining device B require network access.
+Replace every `<angle-bracket>` value with your own output or service metadata.
+Human commands use the default readable output. JSON and JSONL appear only in
+the agent's underlying calls, where they provide a structured tool contract.
 
-## 1. Install and initialize the first device
+## 1. Initialize device A and connect your coding agent
 
-From the CtxFerry source checkout, install the CLI:
+**Human:** from the CtxFerry source checkout, install the CLI. Then initialize
+one local Workspace and bind the source checkout:
 
 ```sh
 go install ./cmd/ctxferry
-ctxferry --help
+ctxferry init
+cd /path/to/atlas-api
+ctxferry project bind . --slug atlas-api
 ```
 
-If your Go binary directory is not on `PATH`, use `go env GOBIN` and
-`go env GOPATH` to locate it. Then initialize a local Workspace:
+If `ctxferry` is not on `PATH`, see [Install and bind your first
+checkout](getting-started.md). Save the `Repository:` UUID printed by `project
+bind` as `<repository-uuid>` for device B. The binding and absolute checkout
+path stay on device A.
+
+Next, preview installation of the built-in CtxFerry Skill:
 
 ```sh
-ctxferry init --format json
+ctxferry skill bootstrap install --target codex
 ```
 
-The response contains `data.workspace`, `data.device`, and `created: true`.
-This creates a local catalog and stable identities. It does not contact GitHub
-or a credential provider. Repeating `init` preserves the identities and returns
-`created: false`.
+Review the proposed user-level writes, then run the printed `To apply:` command
+with its exact token:
 
-## 2. Bind the checkout and record its IDs
+```sh
+ctxferry skill bootstrap install --target codex --preview <skill-preview-token>
+```
 
-Move to the project checkout and bind it to a logical Project:
+Replace `codex` in both commands if you use another supported target:
+
+| Target | Installation |
+| --- | --- |
+| `codex` | Skill in `~/.agents/skills`, plus a managed block in `~/.codex/AGENTS.md` |
+| `claude-code` | Skill in `~/.claude/skills`, plus a managed block in `~/.claude/CLAUDE.md` |
+| `cursor` | Skill only in `~/.cursor/skills` |
+| `pi` | Skill only in `~/.pi/agent/skills` |
+
+`CODEX_HOME`, `CLAUDE_CONFIG_DIR` and `PI_CODING_AGENT_DIR` select their
+respective custom configuration directories. The preview shows CtxFerry's own
+changes without revealing your existing instruction text. Start a new agent
+session after installation so it can discover the Skill.
+
+**Agent:** from the `atlas-api` checkout, ask:
+
+```text
+Use CtxFerry to inspect this checkout. Tell me which context documents and registered Tasks are available.
+```
+
+The Skill directs the agent to begin with:
+
+```sh
+ctxferry context show --format json
+```
+
+At this point the Project exists but has no documents or Tasks. If the agent
+cannot find `ctxferry`, fix `PATH` in its environment rather than pasting
+context into chat.
+
+## 2. Add private agent context and let the agent discover it
+
+A public build command belongs in source Git. This example instead records
+private environment notes and personal agent instructions that are suitable
+for your dedicated private sync repository but not for the source project.
+
+**Human:** from the bound checkout, register one shared document:
+
+```sh
+ctxferry context put \
+  --title 'Atlas agent handoff' \
+  --purpose project-summary \
+  --source 'Atlas maintainer' \
+  --summary 'Loopback demo and credentialed Task conventions' \
+  --body '# Atlas agent handoff
+
+The disposable API fixture listens only on 127.0.0.1:18080.
+Use the registered demo-api-check Task for credentialed checks.
+Never print, encode, save or copy DEMO_API_TOKEN; use it only through that Task.' \
+  --storage shared --disclosure full
+```
+
+`shared` makes the complete body eligible for plaintext private sync;
+`full` also permits the agent to retrieve that body. Keep content that must not
+enter any Git history `local-only` instead. See [Context](context.md) for the
+independent storage and disclosure policies.
+
+**Agent:** start a session in the checkout and ask:
+
+```text
+Read the Atlas agent handoff with CtxFerry. Summarize the local demo and the rules for credentialed checks.
+```
+
+Under the hood, the Skill tells the agent to discover the index first and then
+retrieve only the document it needs:
+
+```sh
+ctxferry context show --format json
+ctxferry context get 'Atlas agent handoff' --format json
+```
+
+`context show` returns the Project summary and document index, not document
+bodies. `context get` returns this body because its disclosure is `full`. The
+agent can use the title from the index; no UUID copying is needed.
+
+## 3. Let the agent use an API credential without exposing it
+
+The example uses a standalone credential: an API token needs no CtxFerry
+Resource, Resource mapping or TCP probe. It also uses a local fixture rather
+than a real third-party API, so the walkthrough cannot modify production data.
+
+### Create the safe test fixture
+
+**Human:** add `tools/demo_api.py` to the disposable source checkout and commit
+it through your normal source Git workflow:
+
+```python
+import json
+import os
+import sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.request import Request, urlopen
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        authorization = self.headers.get("Authorization", "")
+        body = json.dumps({"authorization": authorization}).encode()
+        self.send_response(200 if authorization.startswith("Bearer ") and authorization[7:] else 401)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+if sys.argv[1:] == ["serve"]:
+    HTTPServer(("127.0.0.1", 18080), Handler).serve_forever()
+elif sys.argv[1:] == ["check"]:
+    request = Request(
+        "http://127.0.0.1:18080/check",
+        headers={"Authorization": "Bearer " + os.environ["DEMO_API_TOKEN"]},
+    )
+    with urlopen(request) as response:
+        print(response.read().decode())
+else:
+    raise SystemExit("usage: demo_api.py serve|check")
+```
+
+The file contains no token. The server listens only on loopback, accepts any
+nonempty Bearer token and deliberately echoes the authorization header so you
+can verify output redaction. Do not point the fixture at an external service.
+
+Start its server in a separate terminal on device A and leave it running:
 
 ```sh
 cd /path/to/atlas-api
-ctxferry project bind . --slug atlas-api --format json
-ctxferry project inspect --format json
+python3 tools/demo_api.py serve
 ```
 
-A successful bind has this shape:
+### Register the Task and credential reference
 
-```json
-{
-  "schemaVersion": 1,
-  "ok": true,
-  "data": {
-    "project": { "id": "<project-uuid>", "slug": "atlas-api" },
-    "binding": {
-      "path": "/path/to/atlas-api",
-      "membershipId": "<membership-uuid>",
-      "repositoryId": "<repository-uuid>"
-    },
-    "created": true
-  },
-  "error": null
-}
-```
-
-Copy the membership and Repository IDs for later steps. The membership connects
-the Project to a scope in a source Repository; Tasks use it to find their
-working directory. The binding itself and its absolute path stay on this
-device. CtxFerry does not add files to your source checkout.
-
-`project inspect` should report `resolution.source: "path-binding"` and the
-current checkout. Later commands run from this checkout resolve `atlas-api`
-without an explicit `--project` flag.
-
-## 3. Add shared instructions and a local-only note
-
-Create a UTF-8 Markdown file named `development.md` with content suitable for a
-private GitHub repository:
-
-```md
-# Development workflow
-
-Run `go test ./...` before publishing a change.
-The integration database contains disposable test data only.
-Use the registered integration-check Task instead of pasting its connection
-string into a shell or agent session.
-```
-
-Register it as shared Context with full agent disclosure:
+**Human:** in the original terminal, register the pinned command and bind its
+standalone requirement to the provider entry:
 
 ```sh
-ctxferry context put \
-  --title 'Development workflow' \
-  --purpose project-summary \
-  --source 'Atlas maintainers' \
-  --summary 'Build, test, and integration database conventions' \
-  --body-file /path/to/development.md \
-  --storage shared --disclosure full --format json
-```
-
-Save `data.document.id` as `<shared-document-uuid>`. The receipt contains
-metadata and a revision, not the document body.
-
-Now create a second Markdown file, `private-notes.md`, and register it with a
-different storage policy:
-
-```sh
-ctxferry context put \
-  --title 'Private launch notes' \
-  --purpose notes \
-  --source 'Local maintainer' \
-  --summary 'Notes that must not leave this device' \
-  --body-file /path/to/private-notes.md \
-  --storage local-only --disclosure full --format json
-```
-
-Save this ID as `<local-document-uuid>`. Then inspect the Project as an agent
-would:
-
-```sh
-ctxferry context show --format json
-ctxferry context get <shared-document-uuid> --format json
-ctxferry context search 'integration database' --format json
-```
-
-The `show` snapshot should include both document indexes and the shared Project
-summary, but no document body:
-
-```text
-summary: Build, test, and integration database conventions
-documents:
-  - Development workflow    storage: shared      disclosure: full
-  - Private launch notes    storage: local-only  disclosure: full
-truncated: false
-```
-
-`get` returns the shared body because its disclosure is `full`; `show` still
-returns only the index. Storage and disclosure are independent: a `shared`
-document's complete body is eligible for plaintext publication even when its
-agent disclosure is only `summary` or `reference`.
-
-## 4. Register and run a credential-free Task
-
-Register a Task using the membership ID from step 2. Each argument is a separate
-`--arg`; CtxFerry does not evaluate a shell command string.
-
-```sh
-ctxferry task add unit-tests \
-  --purpose 'Run the Go unit tests' \
-  --membership <membership-uuid> \
-  --working-directory . \
-  --program go --arg=test --arg=./... \
-  --storage shared --format json
-```
-
-Inspect and run it:
-
-```sh
-ctxferry task inspect unit-tests --format json
-ctxferry run unit-tests --format jsonl
-```
-
-A passing run emits a start event, forwarded output, and a final child result:
-
-```jsonl
-{"type":"start","taskId":"<task-uuid>","task":"unit-tests"}
-{"type":"stdout","data":"ok  \texample.com/atlas-api\t0.457s\n"}
-{"type":"result","origin":"child","exitCode":0,"truncated":false}
-```
-
-This Task needs neither provider authentication nor execution-trust approval.
-Its working directory comes from the bound Repository membership, not from an
-arbitrary caller directory. A failing child preserves its own exit code;
-CtxFerry control-plane failures use `origin: "control-plane"` instead.
-
-## 5. Describe the database and integration Task
-
-Register the database's non-secret endpoint. Replace the example host with a
-real development endpoint; do not put a username, password, or connection
-string in `--endpoint`.
-
-```sh
-ctxferry resource add \
-  --identity dev-db --kind database --stage dev \
-  --purpose 'Disposable integration-test database' \
-  --storage shared --endpoint db.example.com:5432 --format json
-```
-
-Save `data.id` as `<resource-uuid>`. If this device reaches that logical service
-through a local forward instead, add a device-local route:
-
-```sh
-ctxferry resource route <resource-uuid> \
-  --endpoint localhost:15432 --format json
-```
-
-The route replaces neither the shared endpoint nor another device's route.
-Next, register the integration Task with one Resource slot and one credential
-requirement:
-
-```sh
-ctxferry task add integration-check \
-  --purpose 'Run integration checks against disposable data' \
-  --membership <membership-uuid> \
-  --working-directory . \
-  --program go --arg=test --arg=-tags=integration --arg=./... \
-  --storage shared \
-  --resource-slot '{"name":"db","kind":"database","stage":"dev"}' \
-  --credential-requirement '{"name":"login","resourceSlot":"db","purpose":"integration-tests","type":"connection-string","env":"DATABASE_URL"}' \
-  --format json
-```
-
-This says that `integration-check` needs a development database and one
-connection string delivered as `DATABASE_URL`. It does not name a backend entry
-or contain a credential value.
-
-## 6. Connect the requirement to an exact provider entry
-
-Create a Profile, map the Task's `db` slot to the registered Resource, and
-select the Profile for this checkout:
-
-```sh
-ctxferry profile create development --format json
-ctxferry profile map-resource development integration-check db \
-  <resource-uuid> --format json
-ctxferry profile select development --format json
-```
-
-Create the shared credential reference. Replace the backend project,
-environment, folder, and key with the exact Infisical entry that contains the
-development connection string:
-
-```sh
-ctxferry secret bind integration-check login --profile development \
-  --alias integration-db \
+ctxferry task add demo-api-check \
+  --purpose 'Check the loopback demo with a disposable API token' \
+  --credential demo-token::demo-api:api-key:DEMO_API_TOKEN \
+  --storage shared -- python3 tools/demo_api.py check
+ctxferry secret bind demo-api-check demo-token \
   --provider infisical --provider-profile team --method universal-auth \
-  --backend-project <infisical-project-id> \
-  --environment dev --path /atlas-api --key ATLAS_DB_URL \
-  --format json
+  --backend-project <infisical-project-id> --environment dev
 ```
 
-The backend key `ATLAS_DB_URL` is deliberately independent of the child
-variable `DATABASE_URL`. The command creates SecretBinding metadata and an
-explicit Profile mapping; it neither reads nor stores the entry's value.
+The empty slot in `demo-token::demo-api:...` makes this a standalone
+requirement. The binding defaults to alias `demo-token`, path `/` and key
+`DEMO_API_TOKEN`. Because the Project has no Profile, `secret bind` creates one
+named `default`; no profile setup commands are needed. These commands record a
+reference and do not read the entry's value.
 
-```sh
-ctxferry secret list --format json
-ctxferry task inspect integration-check --format json
-```
-
-The list snapshot includes the provider profile and locator, but no value:
-
-```text
-alias: integration-db
-providerProfile: infisical / team / universal-auth
-locator: <infisical-project-id> / dev / /atlas-api / ATLAS_DB_URL
-resourceId: <resource-uuid>
-purpose: integration-tests
-type: connection-string
-```
-
-## 7. Authenticate, review trust, and run on device A
-
-Supply `INFISICAL_CLIENT_ID` and `INFISICAL_CLIENT_SECRET` through your existing
-protected launcher. With those variables present for this invocation, run:
+**Human:** authenticate this device and inspect state without revealing the
+value. Supply `INFISICAL_CLIENT_ID` and `INFISICAL_CLIENT_SECRET` through your
+protected launcher, never in agent chat or a command line:
 
 ```sh
 CTXFERRY_INFISICAL_PROFILE=team \
-  ctxferry provider login infisical \
-  --provider-profile team --method universal-auth --format json
+  ctxferry provider login infisical --provider-profile team --method universal-auth
+ctxferry secret status demo-api-check demo-token
 ```
 
-CtxFerry stores the resulting access token in this device's operating-system
-credential store. It does not write a plaintext token file or synchronize the
-session. For personal authentication, headless token injection, or Bitwarden,
-use the provider-specific procedure in [Credentials](credentials.md).
+The status should report a bound mapping, successful authentication and a
+retrievable entry. Resource reachability is **not applicable** for this
+standalone credential. Login stores the provider session in device A's
+operating-system credential store; it does not synchronize it.
 
-Check the Resource and exact provider entry independently:
+Before the first credentialed run, the human must review and enable the exact
+execution definition:
 
 ```sh
-ctxferry resource check <resource-uuid> --format json
-ctxferry secret status integration-check login \
-  --profile development --format json
+ctxferry task trust preview demo-api-check
+ctxferry task trust enable demo-api-check --preview <task-preview-token>
 ```
 
-`resource check` performs a two-second TCP probe; it does not prove the database
-protocol or login works. After a reachable probe and successful provider read,
-the `data` facts should include:
+Check the program and arguments, checkout and working directory, `default`
+Profile, provider locator and standalone mapping. `Custom commands` must be
+`false`. Use the preview token printed by this device. Provider authentication
+and execution trust are deliberately human responsibilities; the Skill tells
+the agent to stop and ask for these handoffs rather than perform them itself.
 
-```json
-{
-  "bound": true,
-  "authenticated": true,
-  "entryRetrievable": true,
-  "resourceReachable": true
-}
+**Agent:** with the fixture server still running, ask:
+
+```text
+Run the registered demo-api-check Task with CtxFerry. Report whether the loopback API accepted the request. Do not inspect, print, encode, save or copy DEMO_API_TOKEN.
 ```
 
-No credential value appears in this report. A `null` fact is unknown, not a
-successful check.
-
-Before the first credentialed run, preview the exact execution definition:
+The agent inspects the registered definition and runs it:
 
 ```sh
-ctxferry task trust preview integration-check \
-  --profile development --format json
+ctxferry task inspect demo-api-check --format json
+ctxferry run demo-api-check --format jsonl
 ```
 
-Review at least `definition.program`, `definition.argv`, `checkoutRoot`,
-`workingDirectory`, the Resource mapping, and every credential locator. The
-initial `data.state` is `not-enabled`. Enable exactly the preview you inspected:
+The fixture returns its request header, and the forwarded child output contains:
+
+```text
+{"authorization": "Bearer [REDACTED]"}
+```
+
+CtxFerry resolves the provider entry itself and delivers `DEMO_API_TOKEN` only
+to the child process's environment. The agent does not need to read it or put
+it in a command argument. CtxFerry replaces recognized delivered values in
+forwarded stdout and stderr with `[REDACTED]`.
+
+Redaction is not an operating-system security boundary: the child can read,
+transform, print or transmit what it receives. The Skill therefore prohibits
+intentional secret reads, printing, encoding, file writes, copying and passing
+values as command arguments. Approve only code you trust, and do not ask the
+agent to demonstrate the raw value with `env`, `printenv` or a custom script.
+
+## 4. Sync privately and establish device B locally
+
+**Human on device A:** prepare Git and GitHub metadata authentication, then
+verify the dedicated private destination. `sync enable` uploads nothing:
 
 ```sh
-ctxferry task trust enable integration-check --profile development \
-  --preview <preview-token> --format json
+ctxferry sync enable --remote git@github.com:<owner>/atlas-context.git
 ```
 
-Copy `<preview-token>` from `data.preview`, not from the Task revision. Then run:
+Continue only when the result is enabled and its checks confirm Git access and
+private repository visibility. Review the shared source material and the exact
+proposed export, then approve the current preview:
 
 ```sh
-ctxferry run integration-check --profile development --format jsonl
+ctxferry sync preview
+ctxferry sync init --preview <sync-preview-id>
+ctxferry sync status
 ```
 
-The child receives a minimal base environment plus `DATABASE_URL`, not your
-entire shell environment, Git authentication, or provider token. CtxFerry
-replaces delivered values it recognizes in forwarded output with `[REDACTED]`.
-The child can still read, encode, print, or transmit the value: a Task is not an
-operating-system security boundary.
+The export includes the shared Context body, Task, `default` Profile and
+SecretBinding locator. It excludes the token value, provider session, checkout
+binding and path, Profile selection and execution trust. Published Context is
+plaintext and remains in repository history even after later deletion.
 
-## 8. Review and publish the shared catalog
-
-Prepare Git authentication and GitHub metadata authentication as described in
-[Private sync](sync.md#enable-and-verify-a-private-destination). Then verify the
-dedicated destination without uploading anything:
+**Human on device B:** install the same CLI and make its own source checkout
+available. Start with a fresh CtxFerry data root: do not copy device A's SQLite
+catalog, WAL, locks, managed Git repository or credential store, and do not run
+`init` first. Join the existing Workspace and subscribe to the Project:
 
 ```sh
-ctxferry sync enable \
-  --remote git@github.com:<owner>/atlas-context.git --format json
+ctxferry join git@github.com:<owner>/atlas-context.git --subscribe atlas-api
+cd /path/to/device-b/atlas-api
+ctxferry project bind . --project atlas-api --repository <repository-uuid>
+ctxferry project list
+ctxferry project inspect
 ```
 
-Continue only when `data.state` is `"enabled"` and `data.check` reports both
-`gitReachable: true` and `privacy: "private"`. An unverified result does not
-authorize publication.
+Use the Repository UUID saved in step 1. `--project atlas-api` attaches this
+checkout to the synchronized Project instead of creating a duplicate Project;
+`--repository` reuses the Repository identity required by the synchronized
+Task's membership. `project list` should show one `atlas-api`, and inspection
+should show device B's local path with the same Repository and membership IDs.
 
-Preview the exact export:
+Install the Skill for the agent on this device, reviewing its new local writes
+and using the token from device B's preview:
 
 ```sh
-ctxferry sync preview --format json
+ctxferry skill bootstrap install --target codex
+ctxferry skill bootstrap install --target codex --preview <device-b-skill-preview-token>
 ```
 
-Inspect every `data.files` path and the original shared source material. Save
-`data.previewId`. The export includes shared Context bodies, the Resource and
-Task definitions, Profile mappings, and the SecretBinding's locator. It excludes
-the local-only note, checkout bindings and paths, local routes and observations,
-Profile selection, execution trust, provider sessions, and credential values.
-Repository history retains published plaintext, including later-deleted
-content.
-
-When that exact snapshot is approved, initialize the sync branch:
+Use your chosen target from step 1. Then establish this device's own provider
+session and Task trust. The synchronized `default` Profile needs no local
+creation or selection:
 
 ```sh
-ctxferry sync init --preview <preview-id> --format json
-ctxferry sync status --format json
+CTXFERRY_INFISICAL_PROFILE=team \
+  ctxferry provider login infisical --provider-profile team --method universal-auth
+ctxferry secret status demo-api-check demo-token
+ctxferry task trust preview demo-api-check
+ctxferry task trust enable demo-api-check --preview <device-b-task-preview-token>
 ```
 
-A successful first publication returns `data.state: "synced"`, a confirmed
-`data.head`, and eventually `pending: 0` in status. Any shared change after the
-preview makes it stale; preview again instead of forcing publication.
+The trust preview begins as `not-enabled` even though device A enabled the same
+Task. Review device B's resolved checkout and working directory as well as the
+command and credential locator. Login and trust do not synchronize; every
+device and checkout makes these decisions locally.
 
-## 9. Join and run from device B
+## 5. Ask the agent on device B to repeat the workflow
 
-On the second device, install the same CLI and prepare Git/GitHub
-authentication. Start with a fresh CtxFerry data root. Do **not** copy device
-A's SQLite catalog, WAL files, locks, managed Git repository, or credential
-store, and do not run `init` to create a separate Workspace first.
-
-Join the existing Workspace and subscribe to the Project:
-
-```sh
-ctxferry join git@github.com:<owner>/atlas-context.git \
-  --subscribe atlas-api --format json
-ctxferry project list --format json
-```
-
-Move to device B's own source checkout and bind it to the synchronized Project
-and Repository:
+**Human:** make sure the fixture from step 3 is present in device B's source
+checkout, then start its loopback server in a separate terminal:
 
 ```sh
 cd /path/to/device-b/atlas-api
-ctxferry project bind . --project atlas-api \
-  --repository <repository-uuid> --format json
-ctxferry project inspect --format json
-ctxferry profile select development --format json
+python3 tools/demo_api.py serve
 ```
 
-The Project, Repository, membership, Task, Resource, and SecretBinding IDs now
-match device A. The Device ID and checkout path are different and local.
-Inspect the synchronized context without logging in to Infisical:
+**Agent:** open a new session in device B's checkout and ask:
+
+```text
+Use CtxFerry to read the Atlas agent handoff, then run demo-api-check. Report the result without inspecting or printing DEMO_API_TOKEN.
+```
+
+The agent now has the same discovery and execution path as on device A:
 
 ```sh
 ctxferry context show --format json
-ctxferry context get <shared-document-uuid> --format json
-ctxferry task inspect integration-check --format json
-ctxferry secret list --format json
+ctxferry context get 'Atlas agent handoff' --format json
+ctxferry task inspect demo-api-check --format json
+ctxferry run demo-api-check --format jsonl
 ```
 
-The shared document and credential **reference** are available offline after
-join. The local-only note is not. This expected failure demonstrates that
-storage policy was enforced:
+You should see the same private note and another successful response with
+`Bearer [REDACTED]`. The Project, Task and credential reference identities match
+device A; the Device ID, checkout path, provider session and execution trust are
+local to device B. If the agent receives `authentication-required`,
+`execution-definition-changed` or another handoff error, it must stop and ask
+the human rather than reading the token or changing trust itself.
 
-```sh
-ctxferry context get <local-document-uuid> --format json
-# error.code: document-not-found
-```
+For later shared edits, run `ctxferry sync` on the editing device and then on
+the other device. Local reads still work when sync is offline.
 
-Device B must establish its own network evidence, provider authentication, and
-execution trust. If it uses a local forward, set its own route first:
-
-```sh
-ctxferry resource route <resource-uuid> \
-  --endpoint localhost:25432 --format json
-```
-
-Then authenticate and inspect the current state:
-
-```sh
-CTXFERRY_INFISICAL_PROFILE=team \
-  ctxferry provider login infisical \
-  --provider-profile team --method universal-auth --format json
-ctxferry resource check <resource-uuid> --format json
-ctxferry secret status integration-check login \
-  --profile development --format json
-ctxferry task trust preview integration-check \
-  --profile development --format json
-```
-
-The trust preview must again start as `not-enabled`: device A's approval did
-not synchronize. Review device B's resolved paths and the same execution
-fields, then enable and run:
-
-```sh
-ctxferry task trust enable integration-check --profile development \
-  --preview <device-b-preview-token> --format json
-ctxferry run integration-check --profile development --format jsonl
-```
-
-For later shared edits, run `ctxferry sync --format json` on the editing device,
-then on the other device. Local reads remain available when sync is offline;
-`sync status --format json` distinguishes pending, offline, conflict, and synced
-state.
-
-## Proof-of-concept checklist
-
-You have exercised the core product promise when all of these are true:
-
-| Expectation | Evidence from this tutorial |
-| --- | --- |
-| Local-first context | Initialization, binding, Context reads, and the unit Task work before sync or provider login. |
-| Progressive disclosure | `context show` indexes documents without bodies; `context get` returns only what disclosure permits. |
-| Repeatable execution | Both devices run the same Task and argument array from their own bound checkouts. |
-| Explicit credential resolution | The Task requirement, Profile mapping, Resource, and exact provider locator agree; no similar entry is guessed. |
-| Device-local security decisions | Each device performs its own provider login, Resource observation, and execution-trust approval. |
-| Deliberate plaintext sync | First upload requires repository verification and an exact preview; the local-only note never reaches device B. |
-| No secret-value transport | `secret list`, `secret status`, sync records, and output snapshots contain references and facts, not the connection string. |
-
-To check the corresponding implementation paths from a CtxFerry source
-checkout, run:
-
-```sh
-go test -count=1 ./tests \
-  -run '^(TestFirstPrivatePublish|TestTwoDeviceSync|TestCredentialedRun)$'
-```
-
-These integration tests use an isolated local Git transport and a fake provider;
-they do not replace the live GitHub, database, and Infisical checks above. Run
-the full suite before changing the implementation:
-
-```sh
-go test -count=1 ./...
-go vet ./...
-```
-
-For deeper reference, continue to [Context](context.md), [Resources and
-Tasks](tasks-and-resources.md), [Credentials](credentials.md), and [Private
-sync](sync.md).
+Continue with [Context](context.md), [Credentials and execution
+trust](credentials.md), [Resources and Tasks](tasks-and-resources.md), [Private
+sync](sync.md) and the [CLI reference](cli-reference.md) for advanced policies,
+JSON automation, device-local routes and recovery procedures.

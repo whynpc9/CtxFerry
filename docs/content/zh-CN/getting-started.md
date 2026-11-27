@@ -89,7 +89,7 @@ ctxferry --data-dir /path/to/isolated-ctxferry project list --format json
 
 ## 后续步骤
 
-- [跟随端到端教程](tutorial.md)，在一个概念验证工作流中连接 Context、Task、凭据和第二台设备。
+- [跟随编码代理教程](tutorial.md)，用五个步骤连接双设备代理、私有 Context 和带凭据 Task。
 - [编写 Context 文档](context.md)，选择它仅保留本地，还是可以参与私有同步。
 - 绑定或路径未按预期解析时，[使用 doctor 检查此设备](diagnostics.md)。
 - 只有准备好检查并发布共享明文记录时，才[连接私有同步](sync.md)。

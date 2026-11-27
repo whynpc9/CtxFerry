@@ -4,10 +4,11 @@ title: CtxFerry user guide
 
 English · [简体中文](zh-CN/index.md)
 
-CtxFerry keeps development context for a logical Project on your device. Start
-with one checkout and no login, then add shared resources, Tasks, credential
-references, Skills and artifacts as you need them. A private Git repository is
-optional until you want the same shared context on another device.
+CtxFerry gives coding agents on each machine approved project context and
+registered Tasks for credentialed commands, without putting private notes or
+secret values in source Git or agent command lines. A private Git repository
+synchronizes shared context and credential references between machines; each
+device keeps its own provider login and execution-trust decisions.
 
 ## Choose your goal
 
@@ -15,8 +16,8 @@ optional until you want the same shared context on another device.
 
 - [Install and bind a checkout](getting-started.md): build the CLI from source,
   initialize a local workspace, and inspect a Project without network access.
-- [Follow the end-to-end tutorial](tutorial.md): take a Go Project from local
-  Context and Tasks through credentialed execution and two-device sync.
+- [Follow the coding-agent tutorial](tutorial.md): connect an agent on two
+  machines, discover private Context and run a credentialed Task in five steps.
 - [Open the native desktop](desktop.md) to follow a conflict from Home to the
   queue, inspect a Checkout’s effective configuration or find tools in Catalog.
 

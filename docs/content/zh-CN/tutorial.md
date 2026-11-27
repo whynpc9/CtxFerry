@@ -1,416 +1,295 @@
 ---
-title: 教程：从一个检出目录到两台设备
+title: 教程：双设备编码代理工作流
 ---
 
 [English](../tutorial.md) · 简体中文
 
-本演练围绕名为 `atlas-api` 的 Go 服务构建一套完整、典型的 CtxFerry 工作流。你将注册 Project 指令，运行本地测试 Task，将集成 Task 连接到数据库凭据，发布共享 catalog，并在第二台设备上复现该 Task。
+你在两台机器上使用 Claude Code、Codex、Cursor 或 Pi 处理同一个源码 Project。某些私有环境说明和代理指令不应进入源码 Git，API 凭据也不应粘贴到代理对话中。CtxFerry 让每个代理发现你批准的上下文并运行已注册的带凭据 Task，同时由你控制发布、Provider 登录和执行信任。
 
-示例使用 Infisical US Cloud 作为凭据引用。本地步骤不需要账户或网络。同步和凭据步骤是显式操作，需要你自己的私有 GitHub 仓库、数据库和 Provider 条目。
+在本演练中，人工在设备 A 上创建一条共享笔记和一个独立 API 凭据引用。随后，编码代理发现该笔记并运行 Task，无需接触原始令牌。私有同步把笔记、Task 和凭据引用带到设备 B；人工在设备 B 上分别完成本地登录和信任审批，然后由代理重复整套工作流。
 
 ![两个设备本地的 CtxFerry Workspace 通过私有 Git 仓库同步经过批准的明文记录。Checkout 路径、Provider 会话和执行信任保留在本地；凭据值在每台设备上直接来自外部 Provider。](../assets/tutorial-flow.png)
 
-关键区别在于，CtxFerry 同步的是**开发上下文和凭据引用**。它不会复制检出目录、同步 SQLite 文件、共享 Provider 登录，或把凭据值放入 Git。
+CtxFerry 同步的是**开发上下文和凭据引用**，而不是凭据值、Provider 会话、Checkout 路径或执行信任。共享 Context 在专用私有同步仓库及其历史中以明文保存。
 
 ## 准备工作
 
-- Go 1.27.4 或更新的兼容版本，以及 Git。
-- 一个 Go 项目的现有 Git 检出目录。示例假设普通测试通过 `go test ./...` 运行，集成测试使用 `integration` build tag；请根据项目调整参数。
-- 带凭据步骤需要一个**一次性开发数据库**、其非 Secret 主机和端口，以及允许读取一个连接字符串条目的 Infisical Universal Auth 身份。不要从生产数据开始。
-- 双设备步骤需要一个空的专用**私有 GitHub 仓库**，以及两台设备上都可用的 Git 和 GitHub 元数据身份验证。
+- 两台 macOS 或 Linux 设备，各自安装 Go 1.27.4 或更新的兼容版本、Git、Python 3 和 POSIX shell。Shell 示例使用 `python3`。
+- 一个用于安装 CLI 的 CtxFerry 源码检出目录，以及 `skill bootstrap` 支持的一种已安装编码代理：Codex、Claude Code、Cursor 或 Pi。Bootstrap 安装的是 CtxFerry Skill，而不是代理本身。
+- 一个名为 `atlas-api` 的一次性 Git 源码 Project，每台设备各有一个检出目录。你将添加下述安全 Python fixture，并通过 Project 的普通源码 Git 工作流分发。该源码仓库与 CtxFerry 同步仓库相互独立。
+- 一个 Infisical US Cloud Project，其中包含 `dev` 环境和路径 `/` 下名为 `DEMO_API_TOKEN` 的条目。为它设置非空、URL 安全的**一次性测试值**，不要使用生产凭据。回环 fixture 接受任意此类值。Universal Auth 身份需要读取权限，每台设备还需要可访问的操作系统凭据存储。
+- 一个名为 `atlas-context` 的空专用**私有 GitHub 仓库**，以及两台设备上均可用的 Git 和 GitHub 元数据身份验证。身份验证详情见[私有同步](sync.md#启用并验证私有目标)。
+- 两台设备上的 TCP 端口 `18080` 均空闲，供回环 fixture 使用。
 
-Shell 示例使用 POSIX 语法。将每个 `<angle-bracket>` 值替换为来自你自己的输出或服务的值。输出快照经过删减；UUID、修订、时间戳、路径和哈希会有所不同。
+第 1–2 步和本地注册步骤不需要 Provider 登录。Provider 身份验证、首次发布和设备 B 加入需要网络。将每个 `<angle-bracket>` 值替换为你自己的输出或服务元数据。人工命令使用默认的可读输出；JSON 和 JSONL 只出现在代理的底层调用中，用作结构化工具约定。
 
-## 1. 安装并初始化第一台设备
+## 1. 初始化设备 A 并连接编码代理
 
-从 CtxFerry 源码检出目录安装 CLI：
+**人工：**从 CtxFerry 源码检出目录安装 CLI。然后初始化一个本地 Workspace 并绑定源码检出目录：
 
 ```sh
 go install ./cmd/ctxferry
-ctxferry --help
+ctxferry init
+cd /path/to/atlas-api
+ctxferry project bind . --slug atlas-api
 ```
 
-如果 Go 二进制目录不在 `PATH` 中，使用 `go env GOBIN` 和 `go env GOPATH` 定位。然后初始化本地 Workspace：
+如果 `PATH` 中找不到 `ctxferry`，请参阅[安装并绑定你的第一个检出目录](getting-started.md)。将 `project bind` 输出的 `Repository:` UUID 保存为 `<repository-uuid>`，供设备 B 使用。绑定和绝对 Checkout 路径保留在设备 A 上。
+
+接下来，预览内置 CtxFerry Skill 的安装：
 
 ```sh
-ctxferry init --format json
+ctxferry skill bootstrap install --target codex
 ```
 
-响应包含 `data.workspace`、`data.device` 和 `created: true`。这会创建本地 catalog 和稳定身份，不会联系 GitHub 或凭据 Provider。重复 `init` 会保留身份并返回 `created: false`。
+检查计划写入的用户级文件，然后使用输出中的确切令牌运行打印的 `To apply:` 命令：
 
-## 2. 绑定检出目录并记录其 ID
+```sh
+ctxferry skill bootstrap install --target codex --preview <skill-preview-token>
+```
 
-进入项目检出目录，将其绑定到逻辑 Project：
+如果使用其他支持的目标，请替换这两条命令中的 `codex`：
+
+| 目标 | 安装内容 |
+| --- | --- |
+| `codex` | `~/.agents/skills` 中的 Skill，以及 `~/.codex/AGENTS.md` 中的受管理指令块 |
+| `claude-code` | `~/.claude/skills` 中的 Skill，以及 `~/.claude/CLAUDE.md` 中的受管理指令块 |
+| `cursor` | 仅安装 `~/.cursor/skills` 中的 Skill |
+| `pi` | 仅安装 `~/.pi/agent/skills` 中的 Skill |
+
+`CODEX_HOME`、`CLAUDE_CONFIG_DIR` 和 `PI_CODING_AGENT_DIR` 分别选择对应的自定义配置目录。预览只显示 CtxFerry 自己的变更，不会暴露你已有的指令文本。安装后启动新的代理会话，使其能够发现 Skill。
+
+**代理：**在 `atlas-api` 检出目录中提问：
+
+```text
+使用 CtxFerry 检查这个检出目录。告诉我有哪些上下文文档和已注册 Task。
+```
+
+Skill 会指导代理先运行：
+
+```sh
+ctxferry context show --format json
+```
+
+此时 Project 已存在，但还没有文档或 Task。如果代理找不到 `ctxferry`，应修正其环境中的 `PATH`，而不是把上下文粘贴到对话中。
+
+## 2. 添加私有代理上下文并让代理发现它
+
+公开的构建命令应放在源码 Git 中。本例改为记录私有环境说明和个人代理指令：它们适合放入你的专用私有同步仓库，但不适合放入源码 Project。
+
+**人工：**在已绑定检出目录中注册一篇共享文档：
+
+```sh
+ctxferry context put \
+  --title 'Atlas agent handoff' \
+  --purpose project-summary \
+  --source 'Atlas 维护者' \
+  --summary '回环演示和带凭据 Task 约定' \
+  --body '# Atlas 代理交接
+
+一次性 API fixture 只监听 127.0.0.1:18080。
+带凭据检查必须使用已注册的 demo-api-check Task。
+不得打印、编码、保存或复制 DEMO_API_TOKEN；只能通过该 Task 使用它。' \
+  --storage shared --disclosure full
+```
+
+`shared` 使完整正文可以参与明文私有同步；`full` 还允许代理检索该正文。绝不能进入任何 Git 历史的内容应保持为 `local-only`。独立的存储和披露策略见 [Context](context.md)。
+
+**代理：**在检出目录中启动会话并提问：
+
+```text
+使用 CtxFerry 阅读 Atlas agent handoff。总结本地演示和带凭据检查的规则。
+```
+
+在底层，Skill 会告诉代理先发现索引，再只检索所需文档：
+
+```sh
+ctxferry context show --format json
+ctxferry context get 'Atlas agent handoff' --format json
+```
+
+`context show` 返回 Project 摘要和文档索引，不返回文档正文。由于此文档的披露策略为 `full`，`context get` 会返回正文。代理可以使用索引中的标题，无需复制 UUID。
+
+## 3. 让代理使用 API 凭据而不暴露它
+
+本例使用独立凭据：API 令牌不需要 CtxFerry Resource、Resource 映射或 TCP 探测。示例还使用本地 fixture 而不是真实第三方 API，因此演练不会修改生产数据。
+
+### 创建安全测试 fixture
+
+**人工：**将 `tools/demo_api.py` 添加到一次性源码检出目录，并通过普通源码 Git 工作流提交：
+
+```python
+import json
+import os
+import sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.request import Request, urlopen
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        authorization = self.headers.get("Authorization", "")
+        body = json.dumps({"authorization": authorization}).encode()
+        self.send_response(200 if authorization.startswith("Bearer ") and authorization[7:] else 401)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+if sys.argv[1:] == ["serve"]:
+    HTTPServer(("127.0.0.1", 18080), Handler).serve_forever()
+elif sys.argv[1:] == ["check"]:
+    request = Request(
+        "http://127.0.0.1:18080/check",
+        headers={"Authorization": "Bearer " + os.environ["DEMO_API_TOKEN"]},
+    )
+    with urlopen(request) as response:
+        print(response.read().decode())
+else:
+    raise SystemExit("usage: demo_api.py serve|check")
+```
+
+该文件不包含令牌。服务器只监听回环地址，接受任意非空 Bearer 令牌，并刻意回显 Authorization 请求头，以便验证输出脱敏。不要将 fixture 指向外部服务。
+
+在设备 A 的另一个终端中启动服务器并保持运行：
 
 ```sh
 cd /path/to/atlas-api
-ctxferry project bind . --slug atlas-api --format json
-ctxferry project inspect --format json
+python3 tools/demo_api.py serve
 ```
 
-成功绑定具有以下结构：
+### 注册 Task 和凭据引用
 
-```json
-{
-  "schemaVersion": 1,
-  "ok": true,
-  "data": {
-    "project": { "id": "<project-uuid>", "slug": "atlas-api" },
-    "binding": {
-      "path": "/path/to/atlas-api",
-      "membershipId": "<membership-uuid>",
-      "repositoryId": "<repository-uuid>"
-    },
-    "created": true
-  },
-  "error": null
-}
-```
-
-复制 membership 和 Repository ID 供后续步骤使用。Membership 将 Project 连接到源码 Repository 中的一个范围；Task 使用它查找工作目录。绑定本身及其绝对路径保留在此设备上。CtxFerry 不会向你的源码检出目录添加文件。
-
-`project inspect` 应报告 `resolution.source: "path-binding"` 和当前检出目录。之后从此检出目录运行的命令无需显式 `--project` 参数即可解析 `atlas-api`。
-
-## 3. 添加共享指令和 local-only 笔记
-
-创建名为 `development.md` 的 UTF-8 Markdown 文件，内容应适合放入私有 GitHub 仓库：
-
-```md
-# Development workflow
-
-Run `go test ./...` before publishing a change.
-The integration database contains disposable test data only.
-Use the registered integration-check Task instead of pasting its connection
-string into a shell or agent session.
-```
-
-将其注册为允许向代理完整披露的共享 Context：
+**人工：**在原始终端中注册固定命令，并将其独立凭据需求绑定到 Provider 条目：
 
 ```sh
-ctxferry context put \
-  --title 'Development workflow' \
-  --purpose project-summary \
-  --source 'Atlas maintainers' \
-  --summary 'Build, test, and integration database conventions' \
-  --body-file /path/to/development.md \
-  --storage shared --disclosure full --format json
-```
-
-将 `data.document.id` 保存为 `<shared-document-uuid>`。回执包含元数据和修订，不包含文档正文。
-
-现在创建第二个 Markdown 文件 `private-notes.md`，使用不同的存储策略注册：
-
-```sh
-ctxferry context put \
-  --title 'Private launch notes' \
-  --purpose notes \
-  --source 'Local maintainer' \
-  --summary 'Notes that must not leave this device' \
-  --body-file /path/to/private-notes.md \
-  --storage local-only --disclosure full --format json
-```
-
-将此 ID 保存为 `<local-document-uuid>`。然后像代理一样检查 Project：
-
-```sh
-ctxferry context show --format json
-ctxferry context get <shared-document-uuid> --format json
-ctxferry context search 'integration database' --format json
-```
-
-`show` 快照应包含两个文档索引和共享 Project 摘要，但不包含文档正文：
-
-```text
-summary: Build, test, and integration database conventions
-documents:
-  - Development workflow    storage: shared      disclosure: full
-  - Private launch notes    storage: local-only  disclosure: full
-truncated: false
-```
-
-`get` 返回共享正文，因为其披露为 `full`；`show` 仍只返回索引。存储与披露相互独立：即使 `shared` 文档的代理披露只有 `summary` 或 `reference`，其完整正文仍可进行明文发布。
-
-## 4. 注册并运行无凭据 Task
-
-使用第 2 步的 membership ID 注册 Task。每个参数都是独立的 `--arg`；CtxFerry 不会解析 shell 命令字符串。
-
-```sh
-ctxferry task add unit-tests \
-  --purpose 'Run the Go unit tests' \
-  --membership <membership-uuid> \
-  --working-directory . \
-  --program go --arg=test --arg=./... \
-  --storage shared --format json
-```
-
-检查并运行：
-
-```sh
-ctxferry task inspect unit-tests --format json
-ctxferry run unit-tests --format jsonl
-```
-
-成功运行会产生开始事件、转发的输出和最终子进程结果：
-
-```jsonl
-{"type":"start","taskId":"<task-uuid>","task":"unit-tests"}
-{"type":"stdout","data":"ok  \texample.com/atlas-api\t0.457s\n"}
-{"type":"result","origin":"child","exitCode":0,"truncated":false}
-```
-
-此 Task 不需要 Provider 身份验证或执行信任批准。其工作目录来自已绑定 Repository membership，而不是任意调用方目录。子进程失败会保留自己的退出码；CtxFerry 控制面失败改用 `origin: "control-plane"`。
-
-## 5. 描述数据库和集成 Task
-
-注册数据库的非 Secret 端点。将示例主机替换为真实开发端点；不要在 `--endpoint` 中放入用户名、密码或连接字符串。
-
-```sh
-ctxferry resource add \
-  --identity dev-db --kind database --stage dev \
-  --purpose 'Disposable integration-test database' \
-  --storage shared --endpoint db.example.com:5432 --format json
-```
-
-将 `data.id` 保存为 `<resource-uuid>`。如果此设备通过本地转发访问该逻辑服务，请添加设备本地路由：
-
-```sh
-ctxferry resource route <resource-uuid> \
-  --endpoint localhost:15432 --format json
-```
-
-该路由不会替换共享端点或其他设备的路由。接下来，注册具有一个 Resource 槽位和一个凭据要求的集成 Task：
-
-```sh
-ctxferry task add integration-check \
-  --purpose 'Run integration checks against disposable data' \
-  --membership <membership-uuid> \
-  --working-directory . \
-  --program go --arg=test --arg=-tags=integration --arg=./... \
-  --storage shared \
-  --resource-slot '{"name":"db","kind":"database","stage":"dev"}' \
-  --credential-requirement '{"name":"login","resourceSlot":"db","purpose":"integration-tests","type":"connection-string","env":"DATABASE_URL"}' \
-  --format json
-```
-
-这表示 `integration-check` 需要一个开发数据库，以及一个通过 `DATABASE_URL` 交付的连接字符串。它没有指定后端条目，也不包含凭据值。
-
-## 6. 将要求连接到精确的 Provider 条目
-
-创建 Profile，将 Task 的 `db` 槽位映射到已注册 Resource，并为此检出目录选择 Profile：
-
-```sh
-ctxferry profile create development --format json
-ctxferry profile map-resource development integration-check db \
-  <resource-uuid> --format json
-ctxferry profile select development --format json
-```
-
-创建共享凭据引用。将后端 Project、环境、文件夹和键替换为包含开发连接字符串的精确 Infisical 条目：
-
-```sh
-ctxferry secret bind integration-check login --profile development \
-  --alias integration-db \
+ctxferry task add demo-api-check \
+  --purpose '使用一次性 API 令牌检查回环演示' \
+  --credential demo-token::demo-api:api-key:DEMO_API_TOKEN \
+  --storage shared -- python3 tools/demo_api.py check
+ctxferry secret bind demo-api-check demo-token \
   --provider infisical --provider-profile team --method universal-auth \
-  --backend-project <infisical-project-id> \
-  --environment dev --path /atlas-api --key ATLAS_DB_URL \
-  --format json
+  --backend-project <infisical-project-id> --environment dev
 ```
 
-后端键 `ATLAS_DB_URL` 刻意独立于子进程变量 `DATABASE_URL`。命令创建 SecretBinding 元数据和显式 Profile 映射；既不读取也不存储条目的值。
+`demo-token::demo-api:...` 中的空槽位使其成为独立凭据需求。绑定默认使用别名 `demo-token`、路径 `/` 和键 `DEMO_API_TOKEN`。由于 Project 没有 Profile，`secret bind` 会创建名为 `default` 的 Profile，无需执行 Profile 设置命令。这些命令只记录引用，不读取条目的值。
 
-```sh
-ctxferry secret list --format json
-ctxferry task inspect integration-check --format json
-```
-
-列表快照包含 Provider Profile 和定位器，但不包含值：
-
-```text
-alias: integration-db
-providerProfile: infisical / team / universal-auth
-locator: <infisical-project-id> / dev / /atlas-api / ATLAS_DB_URL
-resourceId: <resource-uuid>
-purpose: integration-tests
-type: connection-string
-```
-
-## 7. 在设备 A 上进行身份验证、评审信任并运行
-
-通过现有受保护启动器提供 `INFISICAL_CLIENT_ID` 和 `INFISICAL_CLIENT_SECRET`。在此次调用具有这些变量的情况下，运行：
+**人工：**在此设备上进行身份验证并检查状态，而不暴露该值。通过受保护启动器提供 `INFISICAL_CLIENT_ID` 和 `INFISICAL_CLIENT_SECRET`，绝不能把它们放入代理对话或命令行：
 
 ```sh
 CTXFERRY_INFISICAL_PROFILE=team \
-  ctxferry provider login infisical \
-  --provider-profile team --method universal-auth --format json
+  ctxferry provider login infisical --provider-profile team --method universal-auth
+ctxferry secret status demo-api-check demo-token
 ```
 
-CtxFerry 将生成的访问令牌存入此设备的操作系统凭据存储。它不会写入明文令牌文件，也不会同步会话。个人身份验证、无头令牌注入或 Bitwarden 使用[凭据](credentials.md)中的 Provider 特定流程。
+状态应显示已绑定的映射、身份验证成功以及条目可检索。独立凭据的 Resource 可达性为**不适用**。登录将 Provider 会话存入设备 A 的操作系统凭据存储，不会同步该会话。
 
-分别检查 Resource 和精确 Provider 条目：
+首次带凭据运行之前，人工必须检查并启用精确的执行定义：
 
 ```sh
-ctxferry resource check <resource-uuid> --format json
-ctxferry secret status integration-check login \
-  --profile development --format json
+ctxferry task trust preview demo-api-check
+ctxferry task trust enable demo-api-check --preview <task-preview-token>
 ```
 
-`resource check` 执行两秒 TCP 探测；它不能证明数据库协议或登录可用。可达探测和成功 Provider 读取后，`data` 中的事实应包括：
+检查程序和参数、Checkout 和工作目录、`default` Profile、Provider 定位器及独立映射。`Custom commands` 必须为 `false`。使用此设备输出的预览令牌。Provider 身份验证和执行信任刻意由人工负责；Skill 会告诉代理在遇到这些交接时停止并请求人工处理，而不是自行执行。
 
-```json
-{
-  "bound": true,
-  "authenticated": true,
-  "entryRetrievable": true,
-  "resourceReachable": true
-}
+**代理：**保持 fixture 服务器运行，然后提问：
+
+```text
+使用 CtxFerry 运行已注册的 demo-api-check Task。报告回环 API 是否接受请求。不得检查、打印、编码、保存或复制 DEMO_API_TOKEN。
 ```
 
-此报告不包含凭据值。`null` 事实表示未知，不是检查成功。
-
-首次带凭据运行前，预览精确执行定义：
+代理检查已注册定义并运行它：
 
 ```sh
-ctxferry task trust preview integration-check \
-  --profile development --format json
+ctxferry task inspect demo-api-check --format json
+ctxferry run demo-api-check --format jsonl
 ```
 
-至少检查 `definition.program`、`definition.argv`、`checkoutRoot`、`workingDirectory`、Resource 映射和每个凭据定位器。初始 `data.state` 为 `not-enabled`。启用与已检查预览完全一致的定义：
+fixture 返回其请求头，转发到代理的子进程输出包含：
+
+```text
+{"authorization": "Bearer [REDACTED]"}
+```
+
+CtxFerry 自行解析 Provider 条目，只将 `DEMO_API_TOKEN` 交付到子进程环境。代理无需读取该值，也无需把它放进命令参数。CtxFerry 将转发 stdout 和 stderr 中识别到的交付值替换为 `[REDACTED]`。
+
+脱敏不是操作系统安全边界：子进程仍可读取、转换、打印或传输收到的值。因此，Skill 禁止故意读取 Secret、打印、编码、写入文件、复制以及将值作为命令参数传递。只批准你信任的代码，不要要求代理通过 `env`、`printenv` 或自定义脚本展示原始值。
+
+## 4. 私有同步并在设备 B 上完成本地设置
+
+**设备 A 上的人工操作：**准备 Git 和 GitHub 元数据身份验证，然后验证专用私有目标。`sync enable` 不会上传任何内容：
 
 ```sh
-ctxferry task trust enable integration-check --profile development \
-  --preview <preview-token> --format json
+ctxferry sync enable --remote git@github.com:<owner>/atlas-context.git
 ```
 
-从 `data.preview` 复制 `<preview-token>`，不要使用 Task 修订。然后运行：
+只有结果显示已启用，且检查同时确认 Git 可访问和仓库为私有时才继续。检查共享源材料和计划导出的精确内容，然后批准当前预览：
 
 ```sh
-ctxferry run integration-check --profile development --format jsonl
+ctxferry sync preview
+ctxferry sync init --preview <sync-preview-id>
+ctxferry sync status
 ```
 
-子进程获得最小基础环境和 `DATABASE_URL`，而不是你的完整 shell 环境、Git 身份验证或 Provider 令牌。CtxFerry 将转发输出中识别到的交付值替换为 `[REDACTED]`。子进程仍可读取、编码、打印或传输该值：Task 不是操作系统安全边界。
+导出包括共享 Context 正文、Task、`default` Profile 和 SecretBinding 定位器。它排除令牌值、Provider 会话、Checkout 绑定和路径、Profile 选择及执行信任。已发布 Context 为明文，即使后来删除，也仍保留在仓库历史中。
 
-## 8. 检查并发布共享 catalog
-
-按照[私有同步](sync.md#启用并验证私有目标)准备 Git 身份验证和 GitHub 元数据身份验证。然后在不上传任何内容的情况下验证专用目标：
+**设备 B 上的人工操作：**安装相同 CLI，并准备此设备自己的源码检出目录。从全新的 CtxFerry 数据根目录开始：不要复制设备 A 的 SQLite catalog、WAL、锁、受管理 Git 仓库或凭据存储，也不要先运行 `init`。加入现有 Workspace 并订阅 Project：
 
 ```sh
-ctxferry sync enable \
-  --remote git@github.com:<owner>/atlas-context.git --format json
+ctxferry join git@github.com:<owner>/atlas-context.git --subscribe atlas-api
+cd /path/to/device-b/atlas-api
+ctxferry project bind . --project atlas-api --repository <repository-uuid>
+ctxferry project list
+ctxferry project inspect
 ```
 
-只有 `data.state` 为 `"enabled"`，且 `data.check` 同时报告 `gitReachable: true` 和 `privacy: "private"` 时才继续。未经验证的结果不授权发布。
+使用第 1 步保存的 Repository UUID。`--project atlas-api` 将此检出目录附加到已同步 Project，而不是创建重复 Project；`--repository` 复用已同步 Task 的 membership 所需的 Repository 身份。`project list` 应只显示一个 `atlas-api`，检查结果应显示设备 B 的本地路径以及与设备 A 相同的 Repository 和 membership ID。
 
-预览精确导出：
+为此设备上的代理安装 Skill，检查新的本地写入，并使用设备 B 预览中的令牌：
 
 ```sh
-ctxferry sync preview --format json
+ctxferry skill bootstrap install --target codex
+ctxferry skill bootstrap install --target codex --preview <device-b-skill-preview-token>
 ```
 
-检查每个 `data.files` 路径和原始共享源材料。保存 `data.previewId`。导出包括共享 Context 正文、Resource 和 Task 定义、Profile 映射，以及 SecretBinding 的定位器。它排除 local-only 笔记、Checkout 绑定和路径、本地路由和观察、Profile 选择、执行信任、Provider 会话和凭据值。仓库历史会保留已发布明文，包括后来删除的内容。
-
-批准该精确快照后，初始化同步分支：
+使用第 1 步选择的目标。然后建立此设备自己的 Provider 会话和 Task 信任。已同步的 `default` Profile 无需在本地创建或选择：
 
 ```sh
-ctxferry sync init --preview <preview-id> --format json
-ctxferry sync status --format json
+CTXFERRY_INFISICAL_PROFILE=team \
+  ctxferry provider login infisical --provider-profile team --method universal-auth
+ctxferry secret status demo-api-check demo-token
+ctxferry task trust preview demo-api-check
+ctxferry task trust enable demo-api-check --preview <device-b-task-preview-token>
 ```
 
-首次成功发布返回 `data.state: "synced"`、已确认的 `data.head`，最终状态中 `pending: 0`。预览后的任何共享变更都会使其过期；请重新预览，不要强制发布。
+即使设备 A 已启用同一个 Task，此处的信任预览仍从 `not-enabled` 开始。除了命令和凭据定位器，还要检查设备 B 解析出的 Checkout 和工作目录。登录和信任不会同步；每台设备和每个 Checkout 都在本地作出这些决定。
 
-## 9. 从设备 B 加入并运行
+## 5. 让设备 B 上的代理重复整套工作流
 
-在第二台设备上安装相同 CLI，并准备 Git/GitHub 身份验证。从全新的 CtxFerry 数据根目录开始。不要复制设备 A 的 SQLite catalog、WAL 文件、锁、受管理 Git 仓库或凭据存储，也不要先运行 `init` 创建独立 Workspace。
-
-加入现有 Workspace 并订阅 Project：
-
-```sh
-ctxferry join git@github.com:<owner>/atlas-context.git \
-  --subscribe atlas-api --format json
-ctxferry project list --format json
-```
-
-进入设备 B 自己的源码检出目录，将其绑定到已同步 Project 和 Repository：
+**人工：**确认第 3 步的 fixture 已存在于设备 B 的源码检出目录，然后在另一个终端启动其回环服务器：
 
 ```sh
 cd /path/to/device-b/atlas-api
-ctxferry project bind . --project atlas-api \
-  --repository <repository-uuid> --format json
-ctxferry project inspect --format json
-ctxferry profile select development --format json
+python3 tools/demo_api.py serve
 ```
 
-现在 Project、Repository、membership、Task、Resource 和 SecretBinding ID 与设备 A 匹配。Device ID 和 Checkout 路径不同且保留在本地。无需登录 Infisical，即可检查已同步上下文：
+**代理：**在设备 B 的检出目录中打开新会话并提问：
+
+```text
+使用 CtxFerry 阅读 Atlas agent handoff，然后运行 demo-api-check。报告结果，不得检查或打印 DEMO_API_TOKEN。
+```
+
+代理现在具有与设备 A 相同的发现和执行路径：
 
 ```sh
 ctxferry context show --format json
-ctxferry context get <shared-document-uuid> --format json
-ctxferry task inspect integration-check --format json
-ctxferry secret list --format json
+ctxferry context get 'Atlas agent handoff' --format json
+ctxferry task inspect demo-api-check --format json
+ctxferry run demo-api-check --format jsonl
 ```
 
-加入后，共享文档和凭据**引用**可以离线使用，local-only 笔记不可用。以下预期失败说明存储策略已生效：
+你应看到相同的私有笔记，以及另一个包含 `Bearer [REDACTED]` 的成功响应。Project、Task 和凭据引用身份与设备 A 相同；Device ID、Checkout 路径、Provider 会话和执行信任则为设备 B 本地所有。如果代理收到 `authentication-required`、`execution-definition-changed` 或其他交接错误，它必须停止并请求人工处理，而不是读取令牌或自行更改信任。
 
-```sh
-ctxferry context get <local-document-uuid> --format json
-# error.code: document-not-found
-```
+后续共享编辑先在编辑设备上运行 `ctxferry sync`，再在另一台设备上运行。同步离线时，本地读取仍然可用。
 
-设备 B 必须建立自己的网络证据、Provider 身份验证和执行信任。如果使用本地转发，先设置自己的路由：
-
-```sh
-ctxferry resource route <resource-uuid> \
-  --endpoint localhost:25432 --format json
-```
-
-然后进行身份验证并检查当前状态：
-
-```sh
-CTXFERRY_INFISICAL_PROFILE=team \
-  ctxferry provider login infisical \
-  --provider-profile team --method universal-auth --format json
-ctxferry resource check <resource-uuid> --format json
-ctxferry secret status integration-check login \
-  --profile development --format json
-ctxferry task trust preview integration-check \
-  --profile development --format json
-```
-
-信任预览必须再次从 `not-enabled` 开始：设备 A 的批准没有同步。检查设备 B 解析出的路径和相同执行字段，然后启用并运行：
-
-```sh
-ctxferry task trust enable integration-check --profile development \
-  --preview <device-b-preview-token> --format json
-ctxferry run integration-check --profile development --format jsonl
-```
-
-后续共享编辑先在编辑设备上运行 `ctxferry sync --format json`，再在另一台设备上运行。同步离线时，本地读取仍可用；`sync status --format json` 区分 pending、offline、conflict 和 synced 状态。
-
-## 概念验证检查清单
-
-满足以下全部条件时，你已经验证了核心产品承诺：
-
-| 预期 | 本教程中的证据 |
-| --- | --- |
-| 本地优先上下文 | 初始化、绑定、Context 读取和单元 Task 在同步或 Provider 登录前即可工作。 |
-| 渐进式披露 | `context show` 只索引文档而不包含正文；`context get` 只返回披露允许的内容。 |
-| 可重复执行 | 两台设备从各自绑定的检出目录，运行相同 Task 和参数数组。 |
-| 显式凭据解析 | Task 要求、Profile 映射、Resource 和精确 Provider 定位器一致；不会猜测相似条目。 |
-| 设备本地安全决策 | 每台设备分别执行 Provider 登录、Resource 观察和执行信任批准。 |
-| 有意的明文同步 | 首次上传要求仓库验证和精确预览；local-only 笔记绝不会到达设备 B。 |
-| 不传输 Secret 值 | `secret list`、`secret status`、同步记录和输出快照包含引用和事实，不包含连接字符串。 |
-
-要从 CtxFerry 源码检出目录检查对应实现路径，请运行：
-
-```sh
-go test -count=1 ./tests \
-  -run '^(TestFirstPrivatePublish|TestTwoDeviceSync|TestCredentialedRun)$'
-```
-
-这些集成测试使用隔离的本地 Git 传输和模拟 Provider；它们不能替代上述真实 GitHub、数据库和 Infisical 检查。更改实现前运行完整测试套件：
-
-```sh
-go test -count=1 ./...
-go vet ./...
-```
-
-更深入的参考请继续阅读 [Context](context.md)、[Resource 和 Task](tasks-and-resources.md)、[凭据](credentials.md)和[私有同步](sync.md)。
+继续阅读 [Context](context.md)、[凭据与执行信任](credentials.md)、[Resource 和 Task](tasks-and-resources.md)、[私有同步](sync.md)和 [CLI 参考](cli-reference.md)，了解高级策略、JSON 自动化、设备本地路由和恢复流程。
